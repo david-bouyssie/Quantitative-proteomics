@@ -34,4 +34,8 @@ This module, after filtering proteins, normalizing intensities and imputing miss
 | Comparisons | Liste des paires de conditions à comparer | Exemple : 50fmol/25fmol;50fmol/10fmol |
 | Figure.format | Choisir le format des figures du rapport généré | SVG / JPEG |
 
-Here you can see an example of parameters file : 
+Here you can see an example of parameters file : .
+<br/>
+The experimental also have to be provided as an input. Here you can see an example of experimental design file : .
+<br/>
+The module gives as outputs a TSV table summarizing input data, intensities after each step of processing and final results of statistical results. A report containg QC figures for each processing step and figures showing the results of differential analysis is also provided.
