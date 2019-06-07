@@ -1,0 +1,909 @@
+---
+title: "CytoC"
+output:
+  html_document
+params:
+  file_name : ""
+---
+
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+h1.title {
+  font-size: 20px;
+  color: #3686D5;
+  font-weight:bold;
+  text-align: center;
+}
+h1 { /* Header 1 */
+  font-size: 28px;
+  color: white;
+  font-weight:bold;
+}
+h2 { /* Header 2 */
+  font-size: 20px;
+  color: #3686D5;
+  font-weight:bold;
+}
+div#banner {
+       background-color: #3686D5; 
+       width: 100%; 
+}
+td{ 
+    font-size: 9pt;
+}
+th { 
+  font-size: 9pt;
+  font-weight: bold;
+  background-color: white;
+}
+</style>
+
+<script>
+function saveSvgFromParentDiv(divElId, name) {
+	var divSvgWrapperEl = document.getElementById(divElId);
+
+	var svgEl = divSvgWrapperEl.firstElementChild;
+  svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  var svgData = svgEl.outerHTML;
+  var preface = '<?xml version="1.0" standalone="no"?>\r\n';
+  var svgBlob = new Blob([preface, svgData], {type:"image/svg+xml;charset=utf-8"});
+  var svgUrl = URL.createObjectURL(svgBlob);
+  var downloadLink = document.createElement("a");
+  downloadLink.href = svgUrl;
+  downloadLink.download = name;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  document.body.removeChild(downloadLink);
+}
+</script>
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,warning=F,message=F,opts.label="kill_prefix",fig.dim=c(20,10))
+```
+
+```{r include=FALSE}
+#library("openxlsx")
+library(ggplot2)
+library(scales)
+library(grid)
+library(gridExtra)
+#library(cowplot)
+#library("RColorBrewer")
+library(knitr)
+library(kableExtra)
+library(reshape)
+#library(dplyr)
+library(knitr)
+library(svglite)
+library(kableExtra)
+```
+
+
+```{r file_import}
+
+#input = read.table(params$file_name,sep=",",header=T)
+cytoc_ref = read.table("../../Data/CytoC/Rapport/cytoc_xics_ref.csv",sep=",",header=T)
+cytoc_ref$Source = rep("reference",nrow(cytoc_ref))
+cytoc_ref = cytoc_ref[order(as.Date(cytoc_ref$AcquiredTime)),] #Sort by date
+
+cytoc_test = read.table("../../Data/CytoC/Rapport/cytoc_xics_test.csv",sep=",",header=T)
+cytoc_test$Source = rep("test",nrow(cytoc_test))
+cytoc_test = cytoc_test[order(as.Date(cytoc_test$AcquiredTime)),] #Sort by date
+
+#layout = length(unique(input$AcquiredTime)) < 40
+```
+
+<br>
+<div id="banner">
+# Global metrics distribution comparisons
+</div>
+<br>
+
+```{r compute_data}
+
+#############
+# Reference #
+#############
+
+# Extracting ppm
+PPM = substring(cytoc_ref$Annotations, regexpr("delta PPM = ", cytoc_ref$Annotations) + 12)
+cytoc_ref$PPM = as.numeric(PPM)
+
+# Median centering
+cytoc_ref = cytoc_ref[order(cytoc_ref$Precursor),] # Sort by precursor
+centered_rt_ref = c()
+medians_rt_ref = NULL
+centered_intensity = c()
+medians_intensity_ref = NULL
+medians_ppm_ref = NULL
+for (precursor in unique(cytoc_ref$Precursor)){
+  sub = subset(cytoc_ref, cytoc_ref$Precursor==precursor)
+  # RT
+  median = median(sub$Best.RT)
+  medians_rt_ref = rbind(medians_rt_ref,c(precursor,median))
+  centered_rt_ref = c(centered_rt_ref, sub$Best.RT-median)
+  # Intensity
+  median = median(sub$TotalArea)
+  medians_intensity_ref = rbind(medians_intensity_ref,c(precursor,median))
+  centered_intensity = c(centered_intensity, sub$TotalArea/median)
+  # ppm
+  median = median(sub$PPM)
+  medians_ppm_ref = rbind(medians_ppm_ref,c(precursor,median))
+}
+cytoc_ref$centered_rt = centered_rt_ref
+cytoc_ref$centered_intensity = centered_intensity
+
+#########
+# Query #
+#########
+
+# Extracting ppm
+PPM = substring(cytoc_test$Annotations, regexpr("delta PPM = ", cytoc_test$Annotations) + 12)
+cytoc_test$PPM = as.numeric(PPM)
+
+cytoc_test = cytoc_test[order(cytoc_test$Precursor),] # Sort by precursor
+centered_rt_ref = c()
+centered_intensity = c()
+z_rt = c()
+fc_intensity = c()
+
+for (precursor in unique(cytoc_test$Precursor)){
+  
+  # Median centering
+  sub = subset(cytoc_test, cytoc_test$Precursor==precursor)
+  ## RT
+  median = median(sub$Best.RT)
+  centered_rt_ref = c(centered_rt_ref, sub$Best.RT-median)
+  ## Intensity
+  median = median(sub$TotalArea)
+  centered_intensity = c(centered_intensity, sub$TotalArea/median)
+  
+  for (date in unique(sub$AcquiredTime)){
+    sub2 = subset(sub,sub$AcquiredTime==date)
+    
+    # RT Z-score computing
+    median_ref = as.numeric(subset(medians_rt_ref, medians_rt_ref[,1]==precursor)[,2])
+    z = (sub2$Best.RT - median_ref)
+    z_rt = c(z_rt,z)
+    
+    # intensity FC computing
+    median_ref = as.numeric(subset(medians_intensity_ref, medians_intensity_ref[,1]==precursor)[,2])
+    FC = sub2$TotalArea/median_ref
+    fc_intensity = c(fc_intensity,FC)
+  }
+}
+cytoc_test$centered_rt = centered_rt_ref
+cytoc_test$centered_intensity = centered_intensity
+cytoc_test$z_rt = z_rt
+cytoc_test$FC = log2(fc_intensity)
+
+# Group data for plots
+cytoc_ref$z_rt = rep(NA,nrow(cytoc_ref))
+cytoc_ref$FC = rep(NA,nrow(cytoc_ref))
+cytoc_test$Source = rep("test",nrow(cytoc_test))
+cytoc_ref$Source = rep("reference",nrow(cytoc_ref))
+data = rbind(cytoc_test,cytoc_ref)
+data = data[order(data$Source),]
+
+```
+
+
+
+## Retention time
+<br>
+
+```{r RT, fig.cap="RT-median"}
+
+# Boxplots
+gg2 = ggplot(data = data, aes(x = Precursor, y = centered_rt)) + 
+  geom_boxplot(aes(col = Source),size=0.8)+
+  ggtitle("Comparison of the distributions of \n centered RTs for each peptide")+
+  ylab("Centered RT")+
+  theme(axis.text.x = element_text(angle=90,size=25),
+        axis.text.y=element_text(size=30),
+        plot.title=element_text(size=24),
+        legend.text=element_text(size=30),
+        legend.title = element_text(size=30),
+        axis.title=element_text(size=30))
+
+colour = unique(ggplot_build(gg2)$data[[1]]$colour)
+
+# Histogram
+gg1 = ggplot() +
+  geom_histogram(data=cytoc_test, aes(x=centered_rt),fill=colour[2],col=colour[2],alpha = 0.4)+
+  geom_histogram(data=cytoc_ref, aes(x=centered_rt),fill=colour[1],col=colour[1],alpha = 0.4)+
+  ggtitle("Comparison of the global distributions of centered RTs")+
+  xlab("Centered RT")+
+  theme(axis.text.x = element_text(angle=90,size=30),
+        axis.text.y=element_text(size=30),
+        plot.title=element_text(size=24),
+        legend.text=element_text(size=30),
+        legend.title = element_text(size=30),
+        axis.title=element_text(size=30))
+
+s <- svgstring(width=20,height=10)
+grid.arrange(arrangeGrob(gg1+theme(plot.margin = unit(c(0,2,0,0), "cm"))), 
+                arrangeGrob(gg2),
+                ncol=2,nrow=1)
+htmltools::HTML("<div id=\"svgWrapper1\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper1','Proteins filtered.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+
+<br>
+
+```{r}
+# Curves
+cytoc_ref = cytoc_ref[order(as.Date(cytoc_ref$AcquiredTime)),]
+centered_rt_median_ref = c()
+for (date in unique(cytoc_ref$AcquiredTime)){
+  sub = subset(cytoc_ref, cytoc_ref$AcquiredTime==date)
+  median = median(sub$centered_rt)
+  centered_rt_median_ref = c(centered_rt_median_ref,median)
+}
+
+whiskers = boxplot.stats(centered_rt_median_ref)$stats[c(1, 5)]
+sd = sd(centered_rt_median_ref)
+
+cytoc_test = cytoc_test[order(as.Date(cytoc_test$AcquiredTime)),]
+centered_rt_median_test = c()
+for (date in unique(cytoc_test$AcquiredTime)){
+  sub = subset(cytoc_test, cytoc_test$AcquiredTime==date)
+  median = median(sub$centered_rt)
+  centered_rt_median_test = c(centered_rt_median_test,median)
+}
+
+gg3 = ggplot() +
+  geom_ribbon(aes(x=unique(cytoc_test$AcquiredTime),ymin=centered_rt_median_test-2*sd,ymax=centered_rt_median_test+2*sd,group=1,fill="SD"),alpha=0.2) +
+  geom_line(aes(x= unique(cytoc_test$AcquiredTime),y=centered_rt_median_test,group=1, colour="Median RT"),size=0.8)+
+  geom_hline(aes(yintercept=whiskers[1],linetype = "Acceptable range"),colour=colour[1],size=1)+
+  geom_hline(yintercept=whiskers[2],linetype = "dashed",col=colour[1],size=1)+
+  scale_colour_manual("Query",values=c("Median RT"=colour[2])) +
+  scale_fill_manual("",values=c("SD"=colour[2])) +
+   scale_linetype_manual("Reference", values = c(2, 2), 
+                      guide = guide_legend(override.aes = list(color = colour[1]))) +
+  ggtitle("RT distributions validity across acquired times")+
+  xlab("Acquired time")+
+  ylab("Centered RT")+
+ theme(axis.text.x=element_text(angle=90,size=30),
+       axis.text.y=element_text(size=30),
+       plot.title=element_text(size=34),
+       legend.text=element_text(size=30),
+       legend.title = element_text(size=30),
+       axis.title=element_text(size=30))
+
+s <- svgstring(width=20,height=10)
+plot(gg3)
+htmltools::HTML("<div id=\"svgWrapper1\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper1','Proteins filtered.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+```
+
+<br>
+
+```{r fig.caption="Z-score = (RT_obs - median_ref)/sd"}
+
+#df z-score for ploting
+df_z_rt = NULL
+for (date in unique(cytoc_test$AcquiredTime)){
+  sub = subset(cytoc_test,cytoc_test$AcquiredTime==date)
+  #RT
+  median = median(sub$z_rt)
+  min = min(sub$z_rt)
+  max = max(sub$z_rt)
+  df_z_rt = rbind(df_z_rt,c(date,median,min,max))
+}
+colnames(df_z_rt) = c("AcquiredTime","median","min","max")
+data_z = data.frame(df_z_rt)
+
+gg4 = ggplot(data_z) +
+  geom_ribbon(aes(x=AcquiredTime,ymin=as.numeric(as.character(min)),ymax=as.numeric(as.character(max)),group=1,fill="Range Z-score"),alpha=0.2) +
+  geom_line(aes(x=AcquiredTime,y=as.numeric(as.character(median)) ,group=1, colour="Median Z-score"),size=0.8)+
+  scale_colour_manual("",values=c("Median Z-score"=colour[2])) +
+  scale_fill_manual("",values=c("Range Z-score"=colour[2])) +
+  ggtitle("RT Z-score deviation")+
+  xlab("Acquired time")+
+  ylab("Z-score")+
+ theme(axis.text.x=element_text(angle=90,size=18),
+       axis.text.y=element_text(size=20),
+       plot.title=element_text(size=28),
+       legend.text=element_text(size=18),
+       legend.title = element_text(size=18),
+       axis.title=element_text(size=18))
+
+plot(gg4)
+
+```
+Z-score = (RT_obs - median_ref)/sd
+
+<br>
+<br>
+
+## Intensity
+<br>
+
+```{r intensities, fig.cap="log2(intensity/median)"}
+
+gg2 = ggplot(data = data, aes(x = Precursor, y = log2(centered_intensity))) + 
+  geom_boxplot(aes(col = Source),size=0.8)+
+  ggtitle("Intensity distribution accross peptides")+
+  ylab("Centered intensities")+
+  theme(axis.text.x = element_text(angle=90,size=18),
+        axis.text.y=element_text(size=20),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=18),
+        legend.title = element_text(size=18),
+        axis.title=element_text(size=18))
+
+# Histogram
+gg1 = ggplot() + 
+  geom_histogram(data=cytoc_test, aes(x=log2(centered_intensity)),fill=colour[2],col=colour[2],alpha = 0.4)+
+  geom_histogram(data=cytoc_ref, aes(x=log2(centered_intensity)),fill=colour[1],col=colour[1],alpha = 0.4)+
+  ggtitle("Intensity distribution accross series")+
+  xlab("Centered intensities")+
+  theme(axis.text.x = element_text(angle=90,size=18),
+        axis.text.y=element_text(size=20),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=18),
+        legend.title = element_text(size=18),
+        axis.title=element_text(size=18))
+
+grid.arrange(arrangeGrob(gg1+theme(plot.margin = unit(c(0,2,0,0), "cm"))), 
+                arrangeGrob(gg2),
+                ncol=2,nrow=1)
+
+```
+
+<br>
+
+```{r}
+# Curves
+cytoc_ref = cytoc_ref[order(as.Date(cytoc_ref$AcquiredTime)),]
+centered_intensity_median_ref = c()
+for (date in unique(cytoc_ref$AcquiredTime)){
+  sub = subset(cytoc_ref, cytoc_ref$AcquiredTime==date)
+  median = median(sub$centered_intensity)
+  centered_intensity_median_ref = c(centered_intensity_median_ref,median)
+}
+
+whiskers = boxplot.stats(centered_intensity_median_ref)$stats[c(1, 5)]
+sd = sd(centered_intensity_median_ref)
+
+cytoc_test = cytoc_test[order(as.Date(cytoc_test$AcquiredTime)),]
+centered_intensity_median_test = c()
+for (date in unique(cytoc_test$AcquiredTime)){
+  sub = subset(cytoc_test, cytoc_test$AcquiredTime==date)
+  median = median(sub$centered_intensity)
+  centered_intensity_median_test = c(centered_intensity_median_test,median)
+}
+
+gg3 = ggplot() +
+  geom_ribbon(aes(x=unique(cytoc_test$AcquiredTime),ymin=centered_intensity_median_test-2*sd,ymax=centered_intensity_median_test+2*sd,group=1,fill="SD"),alpha=0.2) +
+  geom_line(aes(x= unique(cytoc_test$AcquiredTime),y=centered_intensity_median_test,group=1, colour="Median intensity"),size=0.8)+
+  geom_hline(aes(yintercept=whiskers[1],linetype = "Acceptable median range"),colour=colour[1],size=1)+
+  geom_hline(yintercept=whiskers[2],linetype = "dashed",col=colour[1],size=1)+
+  scale_colour_manual("Query",values=c("Median intensity"=colour[2])) +
+  scale_fill_manual("",values=c("SD"=colour[2])) +
+   scale_linetype_manual("Reference", values = c(2, 2), 
+                      guide = guide_legend(override.aes = list(color = colour[1]))) +
+  ggtitle("Median intensity deviation")+
+  xlab("Acquired time")+
+  ylab("Centered intensities")+
+ theme(axis.text.x=element_text(angle=90,size=18),
+       axis.text.y=element_text(size=20),
+       plot.title=element_text(size=28),
+       legend.text=element_text(size=18),
+       legend.title = element_text(size=18),
+       axis.title=element_text(size=18))
+
+plot(gg3)
+```
+
+<br>
+
+```{r fig.cap="log2(intensity/median)"}
+
+#df FC for ploting
+df_fc = NULL
+for (date in unique(cytoc_test$AcquiredTime)){
+  sub = subset(cytoc_test,cytoc_test$AcquiredTime==date)
+  median = median(sub$FC)
+  min = min(sub$FC)
+  max = max(sub$FC)
+  df_fc = rbind(df_fc,c(date,median,min,max))
+}
+colnames(df_fc) = c("AcquiredTime","median","min","max")
+df_fc = data.frame(df_fc)
+
+gg4 = ggplot(df_fc) +
+  geom_ribbon(aes(x=AcquiredTime,ymin=as.numeric(as.character(min)),ymax=as.numeric(as.character(max)),group=1,fill="Range FC"),alpha=0.2) +
+  geom_line(aes(x=AcquiredTime,y=as.numeric(as.character(median)) ,group=1, colour="Median FC"),size=0.8)+
+  scale_colour_manual("",values=c("Median FC"=colour[2])) +
+  scale_fill_manual("",values=c("Range FC"=colour[2])) +
+  ggtitle("Intensity FC deviation")+
+  xlab("Acquired time")+
+  ylab("log2(FC)")+
+ theme(axis.text.x=element_text(angle=90,size=18),
+       axis.text.y=element_text(size=20),
+       plot.title=element_text(size=28),
+       legend.text=element_text(size=18),
+       legend.title = element_text(size=18),
+       axis.title=element_text(size=18))
+
+plot(gg4)
+
+```
+
+<br>
+<br>
+
+## PPM
+
+```{r ppm}
+
+gg2 = ggplot(data = data, aes(x = Precursor, y = PPM)) + 
+  geom_boxplot(aes(col = Source),size=0.8)+
+  ggtitle("PPM distribution accross peptides")+
+  ylab("Centered PPM")+
+  theme(axis.text.x = element_text(angle=90,size=18),
+        axis.text.y=element_text(size=20),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=18),
+        legend.title = element_text(size=18),
+        axis.title=element_text(size=18))
+
+# Histogram
+gg1 = ggplot() + 
+  geom_histogram(data=cytoc_test, aes(x=PPM),fill=colour[2],col=colour[2],alpha = 0.4)+
+  geom_histogram(data=cytoc_ref, aes(x=PPM),fill=colour[1],col=colour[1],alpha = 0.4)+
+  ggtitle("PPM distribution accross series")+
+  xlab("PP")+
+  theme(axis.text.x = element_text(angle=90,size=18),
+        axis.text.y=element_text(size=20),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=18),
+        legend.title = element_text(size=18),
+        axis.title=element_text(size=18))
+
+grid.arrange(arrangeGrob(gg1+theme(plot.margin = unit(c(0,2,0,0), "cm"))), 
+                arrangeGrob(gg2),
+                ncol=2,nrow=1)
+
+```
+
+<br>
+
+```{r}
+# Curves
+cytoc_ref = cytoc_ref[order(as.Date(cytoc_ref$AcquiredTime)),]
+ppm_median_ref = c()
+for (date in unique(cytoc_ref$AcquiredTime)){
+  sub = subset(cytoc_ref, cytoc_ref$AcquiredTime==date)
+  median = median(sub$PPM)
+  ppm_median_ref = c(ppm_median_ref,median)
+}
+
+whiskers = boxplot.stats(ppm_median_ref)$stats[c(1, 5)]
+sd = sd(ppm_median_ref)
+
+cytoc_test = cytoc_test[order(as.Date(cytoc_test$AcquiredTime)),]
+ppm_median_test = c()
+ppm_sd_test = c()
+for (date in unique(cytoc_test$AcquiredTime)){
+  sub = subset(cytoc_test, cytoc_test$AcquiredTime==date)
+  median = median(sub$PPM)
+  ppm_median_test = c(ppm_median_test,median)
+  sd = sd(sub$PPM)
+  ppm_sd_test = c(ppm_sd_test,sd)
+}
+
+gg3 = ggplot() +
+  geom_ribbon(aes(x=unique(cytoc_test$AcquiredTime),ymin=ppm_median_test-2*ppm_sd_test,ymax=ppm_median_test+2*ppm_sd_test,group=1,fill="SD"),alpha=0.2) +
+  geom_line(aes(x= unique(cytoc_test$AcquiredTime),y=ppm_median_test,group=1, colour="Median ppm"),size=0.8)+
+  geom_hline(aes(yintercept=whiskers[1],linetype = "Threshold"),colour=colour[1],size=1)+
+  #geom_hline(yintercept=whiskers[2],linetype = "dashed",col=colour[1],size=1)+
+  scale_colour_manual("Query",values=c("Median ppm"=colour[2])) +
+  scale_fill_manual("",values=c("SD"=colour[2])) +
+   scale_linetype_manual("Reference", values = c(2, 2), 
+                      guide = guide_legend(override.aes = list(color = colour[1]))) +
+  ggtitle("Median ppm deviation")+
+  xlab("Acquired time")+
+  ylab("ppm")+
+ theme(axis.text.x=element_text(angle=90,size=18),
+       axis.text.y=element_text(size=20),
+       plot.title=element_text(size=28),
+       legend.text=element_text(size=18),
+       legend.title = element_text(size=18),
+       axis.title=element_text(size=18))
+
+plot(gg3)
+```
+
+
+
+<br>
+
+<div id="banner">
+# Acquired times validity
+</div>
+<br>
+
+## Global visualization
+<br>
+
+```{r}
+whiskers = boxplot.stats(cytoc_ref$centered_rt)$stats[c(1, 5)]
+min_rt = whiskers[1]
+max_rt = whiskers[2]
+whiskers = boxplot.stats(log2(cytoc_ref$centered_intensity))$stats[c(1, 5)]
+min_intensity = 0.3*median(cytoc_ref$centered_intensity)
+max_intensity = NA
+whiskers = boxplot.stats(cytoc_ref$PPM)$stats[c(1, 5)]
+min_ppm = NA
+max_ppm = 10
+
+```
+
+```{r message=FALSE}
+
+rt_test = c()
+intensity_test=c()
+ppm_test = c()
+
+for (date in unique(cytoc_test$AcquiredTime)){
+  
+  sub = subset(cytoc_test,cytoc_test$AcquiredTime==date)
+  
+  if(T%in%(sub$centered_rt<min_rt) || T%in%(sub$centered_rt>max_rt)){
+    rt = F
+  }else{
+    rt = T
+  }
+  if(T%in%(sub$centered_intensity<min_intensity)){
+    intensity = F
+  }else{
+    intensity = T
+  }
+  if(T%in%(sub$PPM>max_ppm)){
+    ppm = F
+  }else{
+    ppm = T
+  }
+  
+  rt_test = c(rt_test,rt)
+  intensity_test = c(intensity_test,intensity)
+  ppm_test = c(ppm_test,ppm)
+}
+
+heatmapDF = data.frame(unique(cytoc_test$AcquiredTime),rt_test,intensity_test,ppm_test)
+colnames(heatmapDF)=c("AcquiredTime","RT","Intensity","PPM")
+heatmapDF_plot = melt(heatmapDF,id.vars = "AcquiredTime")
+
+gg = ggplot(data = heatmapDF_plot, aes(x = variable, y = ordered(AcquiredTime, levels=rev(levels(AcquiredTime))))) + 
+  geom_tile(aes(fill = value), color = "white", size = 1,alpha=0.5) +
+  scale_fill_manual("",breaks=c(F,T),values=c(colour[1],colour[2]))+
+  xlab("Metrics") + 
+  ggtitle("Metrics validity assessment") + 
+  theme(axis.text.x = element_text(size=22),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=24),
+        legend.title = element_text(size=24),
+        axis.title=element_text(size=18))
+
+s <- svgstring(width=20,height=10)
+if(!(F%in%heatmapDF_plot$value)){
+    plot(gg+ scale_fill_manual("",values=c(colour[2]),breaks=c(T),drop = FALSE))
+  }else{
+    if(!(T%in%heatmapDF_plot$value)){
+    plot(gg+ scale_fill_manual("",values=c(colour[1]),breaks=c(F),drop = FALSE))
+    }else{
+      plot(gg)
+    }
+  }
+htmltools::HTML("<div id=\"svgWrapper1\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper1','Proteins filtered.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+
+```
+
+<br>
+
+<div class="row">
+<div class = "col-md-4">
+```{r comment=NA, opts.label="kill_prefix",results='asis'}
+valid = subset(heatmapDF,heatmapDF$Intensity==T & heatmapDF$RT==T & heatmapDF$PPM==T)$AcquiredTime
+kable(valid,format="html",col.names = NULL,caption = "Valid acquired times") %>% kable_styling(full_width = T,position = "left")
+
+```
+<br>
+</div>
+<div class = "col-md-4">
+```{r comment=NA, opts.label="kill_prefix",results='asis'}
+invalid = subset(heatmapDF,heatmapDF$Intensity==F | heatmapDF$RT==F | heatmapDF$PPM==F)$AcquiredTime
+
+kable(invalid,format="html",col.names = NULL,caption = "Invalid acquired times") %>% kable_styling(full_width = T,position = "left")
+#cat(paste('-', invalid), sep = '\n') 
+```
+<br>
+</div>
+<div class = "col-md-4">
+```{r results='asis'}
+bounds = matrix(c(min_rt,max_rt,2^min_intensity,max_intensity,min_ppm,max_ppm),nrow=2)
+bounds = data.frame(bounds)
+colnames(bounds)=c("Centered RT","Centered intensity","Centered PPM")
+rownames(bounds)=c("min","max")
+
+kable(bounds,format="html",caption = "Boudaries") %>% kable_styling(full_width = F,position = "left")
+```
+</div>
+</div>
+
+```{r opts.label="kill_prefix", results='asis'}
+# 
+# plots = c()
+# 
+# for (date in unique(cytoc_test$AcquiredTime)){
+#   sub = subset(cytoc_test, cytoc_test$AcquiredTime==date)
+#   
+#   #cat(text_spec(date, bold=T, font_size=18 ))
+#   
+#   heatmapDF = NULL
+# 
+#   for (peptide in unique(cytoc_test$Precursor)){
+#   
+#     sub2 = subset(sub,sub$Precursor==peptide)
+#   
+#     if(T%in%(sub2$centered_rt<min_rt) || T%in%(sub$centered_rt>max_rt)){
+#       rt = F
+#     }else{
+#       rt = T
+#     }
+#     if(T%in%(log2(sub2$centered_intensity)<min_intensity) || T%in%(log2(sub2$centered_intensity)>max_intensity)){
+#       intensity = F
+#    }else{
+#       intensity = T
+#     }
+#    if(T%in%(sub2$PPM<min_ppm) || T%in%(sub2$PPM>max_ppm)){
+#       ppm = F
+#    }else{
+#      ppm = T
+#    }
+#   
+#   row = c(peptide,rt,intensity,ppm)
+#   heatmapDF = rbind(heatmapDF,row)
+#   }
+#   
+#   heatmapDF = data.frame(heatmapDF)
+#   colnames(heatmapDF)=c("Precursor","RT","Intensity","PPM")
+#   heatmapDF_plot = melt(heatmapDF,id.vars = "Precursor")
+#   
+#   gg = ggplot(data = heatmapDF_plot, aes(x = variable, y = Precursor)) + 
+#   geom_tile(aes(fill = value), color = "white", size = 1,alpha=0.5) +
+#   scale_fill_manual("",values=c(colour[1],colour[2]),breaks=c(F,T),drop = FALSE)+
+#   xlab("Metrics") + 
+#   ggtitle("Metrics validity assessment for each precursor") + 
+#   theme(axis.text.x = element_text(size=15),
+#         axis.text.y=element_text(size=20),
+#         plot.title=element_text(size=28),
+#         legend.text=element_text(size=13),
+#         legend.title = element_text(size=16),
+#         axis.title=element_text(size=16))
+#   
+#   # if(!(F%in%heatmapDF_plot$value)){
+#   #  gg+ scale_fill_manual("",values=c(colour[2]),breaks=c(T),drop = FALSE)
+#   # }else{
+#   #   if(!(T%in%heatmapDF_plot$value)){
+#   #   gg+ scale_fill_manual("",values=c(colour[1]),breaks=c(F),drop = FALSE)
+#   #   }else{
+#   #     plot(gg)
+#   #   }
+#   # }
+#   
+#   plots = c(plots,gg)
+#   if (length(plots)==27){
+#     grid.arrange(arrangeGrob(plots[1:9]), 
+#                 arrangeGrob(plots[9:18]), 
+#                 arrangeGrob(plots[18:27]), 
+#                 ncol=3,nrow=1)
+#     plots = c()
+#   }
+# }
+
+
+
+```
+
+<div id="banner">
+# Precursor validity
+</div>
+<br>
+
+```{r results='asis'}
+
+for (precursor in unique(cytoc_test$Precursor)){
+  sub = subset(cytoc_test, cytoc_test$Precursor==precursor)
+  
+  cat(text_spec(precursor, bold=T, font_size=18, color="#3686D5"))
+  
+  whiskers = boxplot.stats(sub$Best.RT)$stats[c(1, 5)]
+  min_rt = whiskers[1]
+  max_rt = whiskers[2]
+  whiskers = boxplot.stats(log10(cytoc_ref$TotalArea))$stats[c(1, 5)]
+  min_intensity = whiskers[1]
+  max_intensity = whiskers[2]
+  whiskers = boxplot.stats(cytoc_ref$PPM)$stats[c(1, 5)]
+  min_ppm = whiskers[1]
+  max_ppm = whiskers[2]
+  # 
+  # heatmapDF = NULL
+  # 
+  # for (date in unique(cytoc_test$AcquiredTime)){
+  # 
+  #   sub2 = subset(sub,sub$AcquiredTime==date)
+  # 
+  #   if(T%in%(sub2$centered_rt<min_rt) || T%in%(sub$centered_rt>max_rt)){
+  #     rt = F
+  #   }else{
+  #     rt = T
+  #   }
+  #   if(T%in%(log2(sub2$centered_intensity)<min_intensity) || T%in%(log2(sub2$centered_intensity)>max_intensity)){
+  #     intensity = F
+  #  }else{
+  #     intensity = T
+  #   }
+  #  if(T%in%(sub2$PPM<min_ppm) || T%in%(sub2$PPM>max_ppm)){
+  #     ppm = F
+  #  }else{
+  #    ppm = T
+  #  }
+  # 
+  # row = c(date,rt,intensity,ppm)
+  # heatmapDF = rbind(heatmapDF,row)
+  # }
+  # 
+  # heatmapDF = data.frame(heatmapDF)
+  # colnames(heatmapDF)=c("AcquiredTime","RT","Intensity","PPM")
+  # heatmapDF_plot = melt(heatmapDF,id.vars = "AcquiredTime")
+  # 
+  # gg1 = ggplot(data = heatmapDF_plot, aes(x = variable, y = AcquiredTime)) + 
+  # geom_tile(aes(fill = value), color = "white", size = 1,alpha=0.5) +
+  # scale_fill_manual("",values=c(colour[1],colour[2]),breaks=c(F,T),drop = FALSE)+
+  # xlab("AcquiredTime") + 
+  # ggtitle("") + 
+  # theme(axis.text.x = element_text(size=15),
+  #       axis.text.y=element_text(size=20),
+  #       plot.title=element_text(size=28),
+  #       legend.text=element_text(size=13),
+  #       legend.title = element_text(size=16),
+  #       axis.title=element_text(size=16))
+  # 
+  # if(!(F%in%heatmapDF_plot$value)){
+  #  gg1+ scale_fill_manual("",values=c(colour[2]),breaks=c(T),drop = FALSE)
+  # }else{
+  #   if(!(T%in%heatmapDF_plot$value)){
+  #   gg1+ scale_fill_manual("",values=c(colour[1]),breaks=c(F),drop = FALSE)
+  #   }else{
+  #     plot(gg1)
+  #   }
+  # }
+  
+  gg1 = ggplot(data = sub) +
+    geom_line(aes(x = AcquiredTime, y = Best.RT,group=1,col="RT in test serie"),show.legend = F,size=0.8)+
+    geom_hline(aes(yintercept=min_rt, color="Acceptable range"),linetype="dashed",size=1) +
+    geom_hline(yintercept=max_rt, color=colour[1],linetype="dashed",size=1) +
+    scale_color_manual("",values=c("RT in test serie"=colour[2],"Acceptable range"=colour[1])) +
+    ggtitle(paste0("RT deviation of ",precursor))+
+    ylab("RT")+
+     theme(axis.text.x=element_text(angle=90,size=15),
+         axis.text.y=element_text(size=20),
+         plot.title=element_text(size=28),
+         legend.text=element_text(size=18),
+         legend.title = element_text(size=18),
+         axis.title=element_text(size=18),
+         plot.margin = unit(c(2,0,2,0), "cm"))
+  
+  plot(gg1)
+  
+  gg2 = ggplot(data = sub) +
+    geom_line(aes(x = AcquiredTime, y = log10(TotalArea),group=1,col="Intensities in test serie"),show.legend = F,size=0.8)+
+    geom_hline(aes(yintercept=min_intensity, color="Acceptable range"),linetype="dashed",size=1) +
+    geom_hline(yintercept=max_intensity, color=colour[1],linetype="dashed",size=1) +
+    scale_color_manual("",values=c("Intensities in test serie"=colour[2],"Acceptable range"=colour[1])) +
+    ggtitle(paste0("Intensity deviation of ",precursor))+
+    ylab("log(intensity)")+
+     theme(axis.text.x=element_text(angle=90,size=18),
+         axis.text.y=element_text(size=20),
+         plot.title=element_text(size=28),
+         legend.text=element_text(size=18),
+         legend.title = element_text(size=18),
+         axis.title=element_text(size=18),
+         plot.margin = unit(c(0,0,2,0),"cm"))
+  
+  plot(gg2)
+  
+  gg1 = ggplot(data = sub) +
+    geom_line(aes(x = AcquiredTime, y = PPM,group=1,col="PPM in test serie"),show.legend = F,size=0.8)+
+    geom_hline(aes(yintercept=min_ppm, color="Acceptable range"),linetype="dashed",size=1) +
+    geom_hline(yintercept=max_ppm, color=colour[1],linetype="dashed",size=1) +
+    scale_color_manual("",values=c("PPM in test serie"=colour[2],"Acceptable range"=colour[1])) +
+    ggtitle(paste0("PPM deviation of ",precursor))+
+    ylab("PPM")+
+     theme(axis.text.x=element_text(angle=90,size=18),
+         axis.text.y=element_text(size=20),
+         plot.title=element_text(size=28),
+         legend.text=element_text(size=18),
+         legend.title = element_text(size=18),
+         axis.title=element_text(size=18),
+         plot.margin = unit(c(0,0,2,0),"cm"))
+  
+  plot(gg1)
+  
+}
+```
+
+<!-- ```{r opts.label="kill_prefix", results='asis'} -->
+
+<!-- colour = unique(ggplot_build(gg1)$data[[1]]$colour) -->
+<!-- input$Precursors = paste0(input$Precursor," (",input$mz,")") -->
+
+<!-- i=1 -->
+
+<!-- for (peptide in unique(input$Precursors)){ -->
+<!--   sub = subset(input, input$Precursors==peptide) -->
+<!--   peptide_name = unique(sub$Precursor) -->
+
+<!-- gg1 =   ggplot(data = sub) + -->
+<!--   geom_line(aes(x = AcquiredTime, y = TotalArea,group=1),col=colour[i],show.legend = F,size=0.8)+ -->
+<!--   ggtitle(paste0("Absolute intensity deviation of ",peptide_name))+ -->
+<!--   ylab("Intensity")+ -->
+<!--    theme(axis.text.x=element_text(angle=90,size=15), -->
+<!--          axis.text.y=element_text(size=20), -->
+<!--          plot.title=element_text(size=28), -->
+<!--          legend.text=element_text(size=13), -->
+<!--          legend.title = element_text(size=16), -->
+<!--          axis.title=element_text(size=16)) -->
+
+<!-- gg2 =   ggplot(data = sub) + -->
+<!--   geom_line(aes(x = AcquiredTime, y = Best.RT,group=1),col=colour[i],show.legend = F,size=0.8)+ -->
+<!--   ggtitle(paste0("Absolute RT deviation of ",peptide_name))+ -->
+<!--   ylab("RT")+ -->
+<!--   theme(axis.text.x=element_text(angle=90,size=15), -->
+<!--         axis.text.y=element_text(size=20), -->
+<!--         plot.title=element_text(size=28), -->
+<!--         legend.text=element_text(size=13), -->
+<!--         legend.title = element_text(size=16), -->
+<!--         axis.title=element_text(size=16)) -->
+
+<!-- gg3 =  ggplot(data = sub) + -->
+<!--   geom_line(aes(x = AcquiredTime, y = sub$PPM,group=1),col=colour[i],show.legend = F,size=0.8)+ -->
+<!--   ggtitle(paste0("Absolute PPM deviation of ",peptide_name))+ -->
+<!--   ylab("PPM")+ -->
+<!--   theme(axis.text.x=element_text(angle=90,size=15), -->
+<!--         axis.text.y=element_text(size=20), -->
+<!--         plot.title=element_text(size=28), -->
+<!--         legend.text=element_text(size=13), -->
+<!--         legend.title = element_text(size=16), -->
+<!--         axis.title=element_text(size=16)) -->
+
+<!--   cat(text_spec(peptide, color=as.character(colour[i]), bold=T, font_size=18 )) -->
+
+<!--   if(layout){ -->
+<!--     grid.arrange(arrangeGrob(gg1+theme(plot.margin=unit(c(2,0,2,0),"cm"),axis.text.x=element_text(angle=90,size=13),plot.title=element_text(size=15))),  -->
+<!--                  arrangeGrob(gg2+theme(plot.margin=unit(c(2,0,2,0),"cm"),axis.text.x=element_text(angle=90,size=13),plot.title=element_text(size=15))), -->
+<!--                  arrangeGrob(gg3+theme(plot.margin=unit(c(2,0,2,0),"cm"),axis.text.x=element_text(angle=90,size=13),plot.title=element_text(size=15))), -->
+<!--                  ncol=3,nrow=1) -->
+<!--   }else{ -->
+<!--     plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm"))) -->
+<!--     plot(gg2+theme(plot.margin = unit(c(0,0,2,0),"cm"))) -->
+<!--     plot(gg3+theme(plot.margin = unit(c(0,0,2,0),"cm"))) -->
+<!--   } -->
+
+<!--   i=i+1 -->
+<!-- } -->
+
+<!-- ``` -->
+

@@ -1,0 +1,751 @@
+---
+title: "CytoC"
+output:
+  html_document
+params:
+  file_name : "../../Data/CytoC/Rapport/cytoc_xics_ref.csv"
+---
+
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+h1.title {
+  font-size: 20px;
+  color: #3686D5;
+  font-weight:bold;
+  text-align: center;
+}
+h1 { /* Header 1 */
+  font-size: 28px;
+  color: white;
+  font-weight:bold;
+}
+h2 { /* Header 2 */
+  font-size: 20px;
+  color: #3686D5;
+  font-weight:bold;
+}
+div#banner {
+       background-color: #3686D5; 
+       width: 100%; 
+}
+</style>
+
+<script>
+function saveSvgFromParentDiv(divElId, name) {
+	var divSvgWrapperEl = document.getElementById(divElId);
+
+	var svgEl = divSvgWrapperEl.firstElementChild;
+  svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  var svgData = svgEl.outerHTML;
+  var preface = '<?xml version="1.0" standalone="no"?>\r\n';
+  var svgBlob = new Blob([preface, svgData], {type:"image/svg+xml;charset=utf-8"});
+  var svgUrl = URL.createObjectURL(svgBlob);
+  var downloadLink = document.createElement("a");
+  downloadLink.href = svgUrl;
+  downloadLink.download = name;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  document.body.removeChild(downloadLink);
+}
+</script>
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,warning=F,message=F,opts.label="kill_prefix",fig.dim=c(20,10))
+```
+
+```{r include=FALSE}
+
+library(ggplot2)
+library(scales)
+library(grid)
+library(gridExtra)
+library(knitr)
+library(kableExtra)
+library(svglite)
+
+```
+
+
+```{r file_import, include=F}
+
+input = read.table(params$file_name,sep=",",header=T)
+#input = read.table("../../Data/CytoC/Dusan/20190321_QC_cytoc_xics.csv",sep=",",header=T)
+
+# Labels for legend
+input$Precursors = paste0(input$Precursor,"\n (",input$mz,")")
+
+# To order X axis by date
+input$AcquiredTime <- as.POSIXct(input$AcquiredTime, format = "%d/%m/%Y %H:%M")
+input = input[order(input$AcquiredTime),] #Sort by date
+input$AcquiredTime <- factor(input$AcquiredTime,ordered = T)
+
+# Display plots next to each other or not
+layout = length(unique(input$AcquiredTime)) < 0
+```
+
+```{r file_names}
+
+file_names = sub(";.*","",sub("RAW = ","",input$Annotations))
+Link_AcquiredTime_FileName = data.frame(input$AcquiredTime,file_names)
+colnames(Link_AcquiredTime_FileName) = c("Acquired time","File name")
+kable(Link_AcquiredTime_FileName,format="html") %>% kable_styling(full_width = T,position = "left") %>% scroll_box(height = "200px")
+```
+
+
+
+<br>
+<div id="banner">
+# Retention time
+</div>
+
+## Raw RT
+
+```{r plot_raw_rt, results='asis'}
+
+gg1 = ggplot(data = input, aes(x = AcquiredTime, y = Best.RT,group=Precursors)) + 
+  geom_line(aes(colour = Precursors),size=0.8)+
+  ggtitle("Raw RT distribution")+
+  ylab("Retention time") +
+  theme(axis.text.x=element_text(angle=90,size=18),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg1)
+htmltools::HTML("<div id=\"svgWrapper1\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper1','Raw RT distribution.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+cat(text_spec("\n"))
+
+gg2 = ggplot(data = input, aes(x = Precursor, y = Best.RT)) + 
+  geom_boxplot(aes(col = Precursors),size=0.8)+
+  ggtitle("RT distribution accross peptides")+
+  ylab("Retention Time")+
+  xlab("")+
+  theme(axis.text.x = element_blank(),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg2)
+htmltools::HTML("<div id=\"svgWrapper2\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper2','RT distribution accross peptides.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+# if (layout==T){
+#   grid.arrange(arrangeGrob(gg1+theme(plot.margin = unit(c(0,2,0,0), "cm"))), 
+#                arrangeGrob(gg2),
+#                ncol=2,nrow=1)
+# }else{
+#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
+#   plot(gg2)
+# }
+
+```
+
+<br>
+
+## Median relative RT
+
+
+```{r plot_median_relative_rt, results='asis'}
+
+# Median centering of RT
+input = input[order(input$Precursor),] #Sort by precursor
+centered_rt = c()
+for (precursor in unique(input$Precursor)){
+  sub = subset(input, input$Precursor==precursor)
+  median = median(sub$Best.RT)
+  centered_rt = c(centered_rt, sub$Best.RT-median)
+}
+input$centered_rt = centered_rt
+
+# Median computing for each AcquiredTime
+input = input[order(as.Date(input$AcquiredTime)),]
+centered_rt_median = c()
+for (date in unique(input$AcquiredTime)){
+  sub = subset(input, input$AcquiredTime==date)
+  median = median(sub$centered_rt)
+  centered_rt_median = c(centered_rt_median,median)
+}
+
+legend = c("median",as.character(unique(input$Precursor)))
+color = c("black",hue_pal()(9))
+
+gg1 = ggplot() +
+  geom_line(data = input, aes(x = AcquiredTime, y = centered_rt,group=as.factor(input$Precursor), colour = Precursors),size=0.8)+
+  geom_line(aes(x= unique(input$AcquiredTime),y=centered_rt_median,group=1,linetype="median"),col="black",size=0.8)+
+  ggtitle("Median RT deviation")+
+  ylab("Centered retention time")+
+ theme(axis.text.x=element_text(angle=90,size=18),
+       axis.text.y=element_text(size=22),
+       plot.title=element_text(size=28),
+       legend.text=element_text(size=20),
+       legend.title = element_text(size=22),
+       axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg1)
+htmltools::HTML("<div id=\"svgWrapper3\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper3','Median RT deviation.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+cat(text_spec("\n"))
+
+gg2 = ggplot() +
+  geom_boxplot(data = input,aes(x = Precursor, y = centered_rt, col = Precursors),size=0.8)+
+  geom_boxplot(aes(x="1",y=centered_rt_median,linetype="median"),size=0.8)+
+  ggtitle("RT distribution accross peptides")+
+  ylab("RT")+
+  xlab("")+
+  theme(axis.text.x = element_blank(),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg2)
+htmltools::HTML("<div id=\"svgWrapper4\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper4','RT distribution accross peptides.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+# if (layout==T){
+#   grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
+# }else{
+#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
+#   plot(gg2)
+# }
+```
+
+_RT were normalized by computing the difference beetween each acquired RT and the median of all for each precursor._
+
+<br>
+
+## First time relative RT
+
+
+```{r 1rst_acquiredTime_relative_RT, results='asis'}
+
+# Centering of RT
+input = input[order(input$Precursor),] #Sort by precursor
+
+## Find the reference
+nb_precursors = length(unique(input$Precursor))
+ref_found = F
+i=1
+while(ref_found==F){
+  ref_data = subset(input,input$AcquiredTime==factor(input$AcquiredTime)[i])
+  nb_precursors_test = length(unique(ref_data$Precursor))
+  if(nb_precursors_test==nb_precursors){
+    ref_found=T
+  }else{
+    i=i+1
+  }
+}
+
+## Compute FC
+if(ref_found){
+  
+  centered_rt = c()
+  for (precursor in unique(input$Precursor)){
+    sub = subset(input, input$Precursor==precursor)
+    ref = subset(ref_data,ref_data$Precursor==precursor)$Best.RT
+    centered_rt = c(centered_rt, sub$Best.RT-ref)
+  }
+  input$centered_rt = centered_rt
+  
+  # Median computing for each AcquiredTime
+  input = input[order(as.Date(input$AcquiredTime)),]
+  centered_rt_median = c()
+  for (date in unique(input$AcquiredTime)){
+    sub = subset(input, input$AcquiredTime==date)
+    median = median(sub$centered_rt)
+    centered_rt_median = c(centered_rt_median,median)
+  }
+
+  legend = c("median",as.character(unique(input$Precursor)))
+  color = c("black",hue_pal()(9))
+
+  gg1 = ggplot() +
+    geom_line(data = input, aes(x = AcquiredTime, y = centered_rt,group=as.factor(input$Precursor), colour = Precursors),size=0.8)+
+    geom_line(aes(x= unique(input$AcquiredTime),y=centered_rt_median,group=1,linetype="median"),col="black",size=0.8)+
+    ggtitle("RT deviation related to 1rst acquired time")+
+    ylab("Centered retention time")+
+    theme(axis.text.x=element_text(angle=90,size=18),
+       axis.text.y=element_text(size=22),
+       plot.title=element_text(size=28),
+       legend.text=element_text(size=20),
+       legend.title = element_text(size=22),
+       axis.title=element_text(size=22))
+  
+  s <- svgstring(width=20,height=10)
+  plot(gg1)
+  cat(htmltools::HTML("<div id=\"svgWrapper5\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper5','RT deviation related to 1rst acquired time.svg');\" >Save figure</a></div>"))
+  invisible(dev.off())
+  
+  cat(text_spec("\n"))
+
+  gg2 = ggplot() +
+    geom_boxplot(data = input,aes(x = Precursor, y = centered_rt, col = Precursors),size=0.8)+
+    geom_boxplot(aes(x="1",y=centered_rt_median,linetype="median"),size=0.8)+
+    ggtitle("RT distribution accross peptides")+
+    ylab("RT")+
+    xlab("")+
+    theme(axis.text.x = element_blank(),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+  s <- svgstring(width=20,height=10)
+  plot(gg2)
+  cat(htmltools::HTML("<div id=\"svgWrapper6\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper6','RT distribution accross peptides.svg');\" >Save figure</a></div>"))
+  invisible(dev.off())
+
+  # if (layout==T){
+  #  grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
+  # }else{
+  #  plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
+  #   plot(gg2)
+  # }
+  
+  cat(text_spec(paste0("RT were normalized by computing the difference beetween each acquired RT and the first acquired time where all precursors were observed (",ref_data$AcquiredTime[1],")"), italic=T, font_size="12px"))
+  
+}else{
+  cat(text_spec("No acquired time at which one all precursors were observed was found."))
+}
+
+```
+
+
+<br>
+<div id="banner">
+# Intensity
+</div>
+
+<br>
+
+## Raw intensities
+
+
+```{r plot_raw_intensities, results='asis'}
+
+gg1 = ggplot(data = input, aes(x = AcquiredTime, y = TotalArea,group=as.factor(input$Precursor))) +
+  geom_line(aes(colour = Precursors),size=0.8)+
+  ggtitle("Raw intensity distribution")+
+  ylab("Intensity")+
+  theme(axis.text.x=element_text(angle=90,size=18),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg1)
+htmltools::HTML("<div id=\"svgWrapper7\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper7','Raw intensity distribution.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+cat(text_spec("\n"))
+
+gg2 = ggplot(data = input, aes(x = Precursor, y = TotalArea)) +
+  geom_boxplot(aes(col = Precursors),size=0.8)+
+  ggtitle("Intensity distribution accross peptides")+
+  ylab("intensity")+
+  xlab("")+
+  theme(axis.text.x = element_blank(),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg2)
+htmltools::HTML("<div id=\"svgWrapper8\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper8','Intensity distribution accross peptides.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+# if (layout==T){
+#   grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
+# }else{
+#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
+#   plot(gg2)
+# }
+```
+
+<br>
+
+## Log intensities
+
+```{r plot_log_intensities, results='asis'}
+
+gg1 = ggplot(data = input, aes(x = AcquiredTime, y = log10(TotalArea),group=as.factor(input$Precursor)),size=0.8) +
+  geom_line(aes(colour = Precursors),size=0.8)+
+  ggtitle("Log intensity deviation")+
+  ylab("log(intensity)")+
+  theme(axis.text.x=element_text(angle=90,size=18),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg1)
+htmltools::HTML("<div id=\"svgWrapper9\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper9','Log intensity deviation.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+cat(text_spec("\n"))
+
+gg2 = ggplot(data = input, aes(x = Precursor, y = log10(TotalArea)),size=0.8) +
+  geom_boxplot(aes(col = Precursors),size=0.8)+
+  ggtitle("Log intensity distribution accross peptides")+
+  ylab("log(intensity)")+
+  xlab("")+
+  theme(axis.text.x = element_blank(),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg2)
+htmltools::HTML("<div id=\"svgWrapper10\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper10','Log intensity distribution accross peptides.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+# if (layout==T){
+#   grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
+# }else{
+#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
+#   knitr::asis_output(htmltools::htmlPreserve("
+#     <br>
+#   "))
+#   plot(gg2)
+# }
+```
+
+<br>
+
+## Median relative intensities
+
+
+```{r median_centering_intensities, results='asis'}
+
+# Median centering
+input = input[order(input$Precursor),] # Sort by precursor
+centered_intensity = c()
+for (precursor in unique(input$Precursor)){
+  sub = subset(input, input$Precursor==precursor)
+  median = median(sub$TotalArea)
+  centered_intensity = c(centered_intensity, sub$TotalArea/median)
+}
+input$centered_intensity = centered_intensity
+
+# Median computing for each AcquiredTime
+input = input[order(as.Date(input$AcquiredTime)),]
+centered_intensity_median = c()
+for (date in unique(input$AcquiredTime)){
+  sub = subset(input, input$AcquiredTime==date)
+  median = median(sub$centered_intensity)
+  centered_intensity_median = c(centered_intensity_median,median)
+}
+
+gg1 = ggplot() +
+  geom_line(data = input, aes(x = AcquiredTime, y = log2(centered_intensity),group=as.factor(input$Precursor),colour = Precursors),size=0.8)+
+  geom_line(aes(x= unique(input$AcquiredTime),y=log2(centered_intensity_median),group=1,linetype="median"),col="black",size=0.8)+
+  ggtitle("Median intensity deviation")+
+  ylab("Centered intensities")+
+  theme(axis.text.x=element_text(angle=90,size=18),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg1)
+htmltools::HTML("<div id=\"svgWrapper11\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper11','Median intensity deviation.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+cat(text_spec("\n"))
+
+gg2 = ggplot() +
+  geom_boxplot(data = input, aes(x = Precursor, y = log2(centered_intensity), col = Precursors),size=0.8)+
+  geom_boxplot(aes(x="1",y=log2(centered_intensity_median),linetype="median"),size=0.8)+
+  ggtitle("Intensity distribution accross peptides")+
+  ylab("Centered intensities")+
+  xlab("")+
+  theme(axis.text.x = element_blank(),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg2)
+htmltools::HTML("<div id=\"svgWrapper12\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12','Intensity distribution accross peptides.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+# if (layout==T){
+#   grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
+# }else{
+#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
+#   knitr::asis_output(htmltools::htmlPreserve("
+#     <br>
+#   "))
+#   plot(gg2)
+# }
+```
+
+<br>
+
+_Intensities were normalized by dividing each acquired intensity by the median of all for each precursor, and transforming the ratios by log2._
+
+## First time relative intensities
+
+```{r 1rst_acquiredTime_relative_intensities, results='asis'}
+
+# Centering of intensities
+
+## Compute FC
+if(ref_found){
+  
+  centered_intensity = c()
+  for (precursor in unique(input$Precursor)){
+    sub = subset(input, input$Precursor==precursor)
+    ref = subset(ref_data,ref_data$Precursor==precursor)$TotalArea
+    centered_intensity = c(centered_intensity, sub$TotalArea-ref)
+  }
+  input$centered_intensity = centered_intensity
+  
+  # Median computing for each AcquiredTime
+  input = input[order(as.Date(input$AcquiredTime)),]
+  centered_intensity_median = c()
+  for (date in unique(input$AcquiredTime)){
+    sub = subset(input, input$AcquiredTime==date)
+    median = median(sub$centered_intensity)
+    centered_intensity_median = c(centered_intensity_median,median)
+  }
+
+  legend = c("median",as.character(unique(input$Precursor)))
+  color = c("black",hue_pal()(9))
+
+  gg1 = ggplot() +
+    geom_line(data = input, aes(x = AcquiredTime, y = centered_intensity,group=as.factor(input$Precursor), colour = Precursors),size=0.8)+
+    geom_line(aes(x= unique(input$AcquiredTime),y=centered_intensity_median,group=1,linetype="median"),col="black",size=0.8)+
+    ggtitle("Intensity deviation related to 1rst acquired time")+
+    ylab("Centered intensities")+
+    theme(axis.text.x=element_text(angle=90,size=18),
+       axis.text.y=element_text(size=22),
+       plot.title=element_text(size=28),
+       legend.text=element_text(size=20),
+       legend.title = element_text(size=22),
+       axis.title=element_text(size=22))
+  
+  s <- svgstring(width=20,height=10)
+  plot(gg1)
+  cat(htmltools::HTML("<div id=\"svgWrapper13\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper13','Intensity deviation related to 1rst acquired time.svg');\" >Save figure</a></div>"))
+  invisible(dev.off())
+  
+  cat(text_spec("\n"))
+
+  gg2 = ggplot() +
+    geom_boxplot(data = input,aes(x = Precursor, y = centered_rt, col = Precursors),size=0.8)+
+    geom_boxplot(aes(x="1",y=centered_rt_median,linetype="median"),size=0.8)+
+    ggtitle("Intensity distribution accross peptides")+
+    ylab("Intensities")+
+    xlab("")+
+    theme(axis.text.x = element_blank(),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+  s <- svgstring(width=20,height=10)
+  plot(gg2)
+  cat(htmltools::HTML("<div id=\"svgWrapper14\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper14','Intensity distribution accross peptides.svg');\" >Save figure</a></div>"))
+  invisible(dev.off())
+  
+  # if (layout==T){
+  #  grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
+  # }else{
+  #  plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
+  #   plot(gg2)
+  # }
+  
+  cat(text_spec(paste0("Intensities were normalized by computing the ratio beetween each acquired intensity and the intensity of the first acquired time where all precursors were observed (",ref_data$AcquiredTime[1],")"), italic=T, font_size="12px"))
+  
+}else{
+  cat(text_spec("No acquired time at which one all precursors were observed was found."))
+}
+
+```
+
+
+<br>
+<div id="banner">
+# PPM
+</div>
+<br>
+
+```{r extract_PPM}
+
+PPM = substring(input$Annotations, regexpr("delta PPM = ", input$Annotations) + 12)
+input$PPM = as.numeric(PPM)
+
+```
+
+```{r median_centering_ppm, results='asis'}
+# Median computing for each AcquiredTime
+input = input[order(as.Date(input$AcquiredTime)),]
+ppm_median = c()
+for (date in unique(input$AcquiredTime)){
+  sub = subset(input, input$AcquiredTime==date)
+  median = median(sub$PPM)
+  ppm_median = c(ppm_median,median)
+}
+
+gg1 = ggplot() +
+  geom_line(data = input, aes(x = AcquiredTime, y = PPM,group=as.factor(input$Precursor), colour = Precursors),size=0.8)+
+  geom_line(aes(x= unique(input$AcquiredTime),y=ppm_median,group=1,linetype="median"),col="black",size=0.8)+
+  ggtitle("PPM deviation")+
+  ylab("Centered PPM") +
+  theme(axis.text.x=element_text(angle=90,size=12),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg1)
+htmltools::HTML("<div id=\"svgWrapper15\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper15','PPM deviation.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+cat(text_spec("\n"))
+
+gg2 = ggplot() +
+  geom_boxplot(data = input, aes(x = Precursor, y = PPM, col = Precursors),size=0.8)+
+  geom_boxplot(aes(x="1",y=ppm_median,linetype="median"),size=0.8)+
+  ggtitle("PPM distribution accross peptides")+
+  ylab("PPM")+
+  xlab("")+
+  theme(axis.text.x = element_blank(),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+plot(gg2)
+htmltools::HTML("<div id=\"svgWrapper16\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper16','PPM distribution accross peptides.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+# if (layout==T){
+#   grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
+# }else{
+#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
+#   knitr::asis_output(htmltools::htmlPreserve("
+#     <br>
+#   "))
+#   plot(gg2)
+# }
+```
+
+<br>
+<div id="banner">
+# Metrics deviation by precursor
+</div>
+<br>
+
+```{r opts.label="kill_prefix", results='asis'}
+
+colour = unique(ggplot_build(gg1)$data[[1]]$colour)
+input$Precursors = paste0(input$Precursor," (",input$mz,")")
+
+i=1
+
+for (peptide in unique(input$Precursors)){
+  sub = subset(input, input$Precursors==peptide)
+  peptide_name = unique(sub$Precursor)
+  
+gg1 =   ggplot(data = sub) +
+  geom_line(aes(x = AcquiredTime, y = TotalArea,group=1),col=colour[i],show.legend = F,size=0.8)+
+  ggtitle(paste0("Absolute intensity deviation of ",peptide_name))+
+  ylab("Intensity")+
+   theme(axis.text.x=element_text(angle=90,size=18),
+         axis.text.y=element_text(size=22),
+         plot.title=element_text(size=28),
+         legend.text=element_text(size=20),
+         legend.title = element_text(size=22),
+         axis.title=element_text(size=22))
+
+gg2 =   ggplot(data = sub) +
+  geom_line(aes(x = AcquiredTime, y = Best.RT,group=1),col=colour[i],show.legend = F,size=0.8)+
+  ggtitle(paste0("Absolute RT deviation of ",peptide_name))+
+  ylab("RT")+
+  theme(axis.text.x=element_text(angle=90,size=18),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+gg3 =  ggplot(data = sub) +
+  geom_line(aes(x = AcquiredTime, y = sub$PPM,group=1),col=colour[i],show.legend = F,size=0.8)+
+  ggtitle(paste0("Absolute PPM deviation of ",peptide_name))+
+  ylab("PPM")+
+  theme(axis.text.x=element_text(angle=90,size=18),
+        axis.text.y=element_text(size=22),
+        plot.title=element_text(size=28),
+        legend.text=element_text(size=20),
+        legend.title = element_text(size=22),
+        axis.title=element_text(size=22))
+
+  cat(text_spec(peptide, color=as.character(colour[i]), bold=T, font_size=18 ))
+  
+  # if(layout){
+  #   grid.arrange(arrangeGrob(gg1+theme(plot.margin=unit(c(2,0,2,0),"cm"),axis.text.x=element_text(angle=90,size=13),plot.title=element_text(size=15))), 
+  #                arrangeGrob(gg2+theme(plot.margin=unit(c(2,0,2,0),"cm"),axis.text.x=element_text(angle=90,size=13),plot.title=element_text(size=15))),
+  #                arrangeGrob(gg3+theme(plot.margin=unit(c(2,0,2,0),"cm"),axis.text.x=element_text(angle=90,size=13),plot.title=element_text(size=15))),
+  #                ncol=3,nrow=1)
+  # }else{
+  #   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
+  #   plot(gg2+theme(plot.margin = unit(c(0,0,2,0),"cm")))
+  #   plot(gg3+theme(plot.margin = unit(c(0,0,2,0),"cm")))
+  # }
+  
+  s <- svgstring(width=20,height=10)
+  plot(gg1)
+  cat(htmltools::HTML("<div id=\"svgWrapper17\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper17','PPM distribution accross   peptides.svg');\" >Save figure</a></div>"))
+  invisible(dev.off())
+
+  s <- svgstring(width=20,height=10)
+  plot(gg2)
+  cat(htmltools::HTML("<div id=\"svgWrapper17\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper17','PPM distribution accross   peptides.svg');\" >Save figure</a></div>"))
+  invisible(dev.off())
+  
+  s <- svgstring(width=20,height=10)
+  plot(gg3)
+  cat(htmltools::HTML("<div id=\"svgWrapper17\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper17','PPM distribution accross   peptides.svg');\" >Save figure</a></div>"))
+  invisible(dev.off())
+  
+  i=i+1
+}
+
+```
+
