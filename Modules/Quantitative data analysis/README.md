@@ -36,7 +36,7 @@ This module, after filtering proteins, normalizing intensities and imputing miss
 
 Here you can see an example of parameters file : .<br/>
 <br/>
-The experimental also have to be provided as an input. Here you can see an example of experimental design file : .<br/>
+The experimental design also have to be provided as an input. Here you can see an example of experimental design file : .<br/>
 <br/>
 The module gives as outputs a TSV table summarizing input data, intensities after each step of processing and final results of statistical results. A report containg QC figures for each processing step and figures showing the results of differential analysis is also provided.
 <br/>
