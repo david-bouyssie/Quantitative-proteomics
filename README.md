@@ -9,4 +9,4 @@ The 1rst project contains modules that allow the controlling of LC-MS devices st
 The 2nd project is dedicated to quantitative proteomic data analysis from QC to statistical differential analysis.
 <br/>
 <br/>
-All modules can be launched by command line thanks to the R scripts stored in the **"Launchers"** folder. The QC, differential analysis and ROC modules make use of the functions implemented in the library stored in the **"Library"** folder. These modules work with a standardized input format that can be obtain from any quantification file thanks to the parsers stored in the **"Parsers"** folder.
+All modules can be launched by command line thanks to the R scripts stored in the **"Launchers"** folder. The modules from the quantitative data analysis project make use of the functions implemented in the library stored in the **"Library"** folder. These modules work with a standardized input format that can be obtain from any quantification file thanks to the parsers stored in the **"Parsers"** folder.
