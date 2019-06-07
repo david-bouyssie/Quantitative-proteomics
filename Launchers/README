@@ -1,4 +1,0 @@
- 
-These scripts allow the automated launch of modules in command line.
-
-The "run.bat" file shows you example of how command lines are supposed to be written, and the R scripts treat the command line and launch the corresponding modules. 
