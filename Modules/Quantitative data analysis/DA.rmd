@@ -3,10 +3,10 @@
 output:
   html_document
 params:
-  quantif_file: "../../Data/Quanti/Parsed_data/Human_yeast/all_mrf_withsamplename.txt"
-  design_exp: "../../Data/Quanti/Parsed_data/Human_yeast/designExp.txt"
-  parameters: "../../Data/Quanti/Parsed_data/Human_yeast/Params_da.txt"
-  output_table: "..."
+  quantif_file: "path_to/standardized_quantification_file"
+  design_exp: "path_to/experimental_design_file"
+  parameters: "path_to/parameter_file"
+  output_table: "path_to/desired_output_table"
 title: "Differential analysis"
 ---
 
@@ -72,9 +72,7 @@ function saveSvgFromParentDiv(divElId, name) {
 knitr::opts_chunk$set(echo = F,warning=F,message=F,opts.Label="kill_prefix",fig.dim=c(20,10))
 ```
 
-
 ```{r include=FALSE}
-#library(xlsx)
 library("openxlsx")
 library(ggplot2)
 library(limma)
@@ -90,9 +88,7 @@ library(ggdendro)
 library(tibble)
 library(multtest)
 
-#install.packages("../../../Package/quantitativeProteomics_0.0.0.9000.tar.gz", repos = NULL, type="source")
-#library(quantitativeProteomics)
-source("../../../Package/quantitativeProteomics.R")
+source("../../Library/quantitativeProteomics.R")
 ```
 
 ```{r file_import, echo=FALSE}
@@ -140,7 +136,7 @@ kable(expDesign,format="html",col.names = NULL,booktabs = T, caption = "Experime
 </div>
 <br> 
 
-```{r specific_peptides, results='asis'}
+```{r filter_specific_peptides, results='asis'}
 
 if("Specific_peptides"%in%colnames(data)){
   nb = nrow(data)
