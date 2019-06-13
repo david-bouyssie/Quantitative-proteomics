@@ -1,11 +1,11 @@
 library(stringr)
 library(readxl)
 
-# quantif_file = "../Data/Quanti/Raw/MaxQuant/proteinGroups.xlsx"
-# output_file = "../Data/Quanti/Parsed_data/Pascaline/proteinGroupshaha.csv"
-# source = "MaxQuant"
-# intensities_type = "Intensity"
-# sheet = 1
+# Parameters set in launcher script (see "Lauchers" section)
+# quantif_file = quantification file to parse
+# output_file = output table
+# intensities_type = Intensity/LFQ/iBAQ
+# sheet = sheet number if quantif_file is a xlsx file
 
 # Load data
 if(grepl(".xlsx",quantif_file)){
@@ -17,8 +17,10 @@ if(grepl(".xlsx",quantif_file)){
 # Extract data
 Id = proteinGroupsInput[,grepl("Protein.IDs",names(proteinGroupsInput))]
 colnames(Id) = "Id"
+
 Accession = Id
 colnames(Accession) = "Accession"
+
 Gene_name = proteinGroupsInput[,grepl("Gene.names",names(proteinGroupsInput))]
 if(length(Gene_name)>0){
   colnames(Gene_name) = "Gene_name"
@@ -36,7 +38,6 @@ identification_types = proteinGroupsInput[,grepl("Identification.type.",names(pr
 identification_types[identification_types == ""] <- NA
 colnames(identification_types) = paste0("Identification_type_",sub("Identification.type.","",colnames(identification_types)))
 
-# Specific peptides
 specific_peptides = proteinGroupsInput[grepl("^Unique.peptides$",names(proteinGroupsInput))]
 colnames(specific_peptides)="Specific_peptides"
 
