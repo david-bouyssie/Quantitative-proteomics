@@ -1,28 +1,36 @@
 library(stringr)
 library(readxl)
 
+# Parameters set in launcher script (see "Lauchers" section)
+# quantif_file = quantification file to parse
+# output_file = output table
+# intensities_type = abundance/raw_abundance
+# sheet = sheet number if quantif_file is a xlsx file
+
+# Load data
 if(grepl(".xlsx",quantif_file)){
   proteinGroupsInput = read_excel(quantif_file, sheet, col_names = TRUE)
 }else{
   proteinGroupsInput <- read.table(quantif_file, header = T, stringsAsFactors = F, sep = "\t")
 }
 
-# Id
+
+# Extract data
 Id = proteinGroupsInput[grepl("id$",names(proteinGroupsInput))][1]
 colnames(Id)="Id"
-#Accession = proteinGroupsInput[,grepl("^accession$",names(proteinGroupsInput))]
+
+
 Accession = proteinGroupsInput[grepl("accession$",names(proteinGroupsInput))][1]
 colnames(Accession)="Accession"
+
 Gene_name = proteinGroupsInput[grepl("gene_name",names(proteinGroupsInput))]
 if(length(Gene_name)>0){
   colnames(Gene_name)="Gene_name"
 }
 
-# Intensities
 intensities = proteinGroupsInput[grepl(paste0("^",intensities_type,".+"),names(proteinGroupsInput))]
 colnames(intensities) = paste0("Intensity",sub(intensities_type, "", colnames(intensities)))
 
-# Identification type
 identification_types = proteinGroupsInput[grepl("psm_count",names(proteinGroupsInput))]
 samples = sub("psm_count_", "", colnames(identification_types))
 for(sample in samples){
@@ -35,7 +43,6 @@ for(sample in samples){
 }
 colnames(identification_types) = paste0("Identification_type_",samples)
 
-# Specific peptides
 specific_peptides = proteinGroupsInput[grepl("specific_peptide_matches",names(proteinGroupsInput))]
 if(length(specific_peptides)>0){
   colnames(specific_peptides)="Specific_peptides"
