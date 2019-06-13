@@ -3,7 +3,7 @@ title: "CytoC"
 output:
   html_document
 params:
-  file_name : "../../Data/CytoC/Rapport/cytoc_xics_ref.csv"
+  file_name : "cytoc_xics_ref.csv"
 ---
 
 <style type="text/css">
@@ -73,26 +73,24 @@ library(svglite)
 ```{r file_import, include=F}
 
 input = read.table(params$file_name,sep=",",header=T)
-#input = read.table("../../Data/CytoC/Dusan/20190321_QC_cytoc_xics.csv",sep=",",header=T)
 
-# Labels for legend
+# Labels for legend (add theoretical mz to precursor id)
 input$Precursors = paste0(input$Precursor,"\n (",input$mz,")")
 
-# To order X axis by date
+# Order dates
 input$AcquiredTime <- as.POSIXct(input$AcquiredTime, format = "%d/%m/%Y %H:%M")
 input = input[order(input$AcquiredTime),] #Sort by date
 input$AcquiredTime <- factor(input$AcquiredTime,ordered = T)
 
-# Display plots next to each other or not
-layout = length(unique(input$AcquiredTime)) < 0
 ```
 
-```{r file_names}
+```{r list_file_names}
 
 file_names = sub(";.*","",sub("RAW = ","",input$Annotations))
 Link_AcquiredTime_FileName = data.frame(input$AcquiredTime,file_names)
 colnames(Link_AcquiredTime_FileName) = c("Acquired time","File name")
 kable(Link_AcquiredTime_FileName,format="html") %>% kable_styling(full_width = T,position = "left") %>% scroll_box(height = "200px")
+
 ```
 
 
@@ -140,15 +138,6 @@ s <- svgstring(width=20,height=10)
 plot(gg2)
 htmltools::HTML("<div id=\"svgWrapper2\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper2','RT distribution accross peptides.svg');\" >Save figure</a></div>")
 invisible(dev.off())
-
-# if (layout==T){
-#   grid.arrange(arrangeGrob(gg1+theme(plot.margin = unit(c(0,2,0,0), "cm"))), 
-#                arrangeGrob(gg2),
-#                ncol=2,nrow=1)
-# }else{
-#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
-#   plot(gg2)
-# }
 
 ```
 
@@ -218,12 +207,6 @@ plot(gg2)
 htmltools::HTML("<div id=\"svgWrapper4\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper4','RT distribution accross peptides.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
-# if (layout==T){
-#   grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
-# }else{
-#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
-#   plot(gg2)
-# }
 ```
 
 _RT were normalized by computing the difference beetween each acquired RT and the median of all for each precursor._
@@ -311,13 +294,6 @@ if(ref_found){
   plot(gg2)
   cat(htmltools::HTML("<div id=\"svgWrapper6\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper6','RT distribution accross peptides.svg');\" >Save figure</a></div>"))
   invisible(dev.off())
-
-  # if (layout==T){
-  #  grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
-  # }else{
-  #  plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
-  #   plot(gg2)
-  # }
   
   cat(text_spec(paste0("RT were normalized by computing the difference beetween each acquired RT and the first acquired time where all precursors were observed (",ref_data$AcquiredTime[1],")"), italic=T, font_size="12px"))
   
@@ -375,12 +351,6 @@ plot(gg2)
 htmltools::HTML("<div id=\"svgWrapper8\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper8','Intensity distribution accross peptides.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
-# if (layout==T){
-#   grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
-# }else{
-#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
-#   plot(gg2)
-# }
 ```
 
 <br>
@@ -424,15 +394,6 @@ plot(gg2)
 htmltools::HTML("<div id=\"svgWrapper10\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper10','Log intensity distribution accross peptides.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
-# if (layout==T){
-#   grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
-# }else{
-#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
-#   knitr::asis_output(htmltools::htmlPreserve("
-#     <br>
-#   "))
-#   plot(gg2)
-# }
 ```
 
 <br>
@@ -498,15 +459,6 @@ plot(gg2)
 htmltools::HTML("<div id=\"svgWrapper12\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12','Intensity distribution accross peptides.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
-# if (layout==T){
-#   grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
-# }else{
-#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
-#   knitr::asis_output(htmltools::htmlPreserve("
-#     <br>
-#   "))
-#   plot(gg2)
-# }
 ```
 
 <br>
@@ -579,13 +531,6 @@ if(ref_found){
   cat(htmltools::HTML("<div id=\"svgWrapper14\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper14','Intensity distribution accross peptides.svg');\" >Save figure</a></div>"))
   invisible(dev.off())
   
-  # if (layout==T){
-  #  grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
-  # }else{
-  #  plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
-  #   plot(gg2)
-  # }
-  
   cat(text_spec(paste0("Intensities were normalized by computing the ratio beetween each acquired intensity and the intensity of the first acquired time where all precursors were observed (",ref_data$AcquiredTime[1],")"), italic=T, font_size="12px"))
   
 }else{
@@ -655,15 +600,6 @@ plot(gg2)
 htmltools::HTML("<div id=\"svgWrapper16\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper16','PPM distribution accross peptides.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
-# if (layout==T){
-#   grid.arrange(arrangeGrob(gg1), arrangeGrob(gg2),ncol=2,nrow=1,respect=TRUE) 
-# }else{
-#   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
-#   knitr::asis_output(htmltools::htmlPreserve("
-#     <br>
-#   "))
-#   plot(gg2)
-# }
 ```
 
 <br>
@@ -717,17 +653,6 @@ gg3 =  ggplot(data = sub) +
         axis.title=element_text(size=22))
 
   cat(text_spec(peptide, color=as.character(colour[i]), bold=T, font_size=18 ))
-  
-  # if(layout){
-  #   grid.arrange(arrangeGrob(gg1+theme(plot.margin=unit(c(2,0,2,0),"cm"),axis.text.x=element_text(angle=90,size=13),plot.title=element_text(size=15))), 
-  #                arrangeGrob(gg2+theme(plot.margin=unit(c(2,0,2,0),"cm"),axis.text.x=element_text(angle=90,size=13),plot.title=element_text(size=15))),
-  #                arrangeGrob(gg3+theme(plot.margin=unit(c(2,0,2,0),"cm"),axis.text.x=element_text(angle=90,size=13),plot.title=element_text(size=15))),
-  #                ncol=3,nrow=1)
-  # }else{
-  #   plot(gg1+theme(plot.margin = unit(c(2,0,2,0), "cm")))
-  #   plot(gg2+theme(plot.margin = unit(c(0,0,2,0),"cm")))
-  #   plot(gg3+theme(plot.margin = unit(c(0,0,2,0),"cm")))
-  # }
   
   s <- svgstring(width=20,height=10)
   plot(gg1)
