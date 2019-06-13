@@ -3,9 +3,9 @@
 output:
   html_document
 params:
-  quantif_file : "../../Data/Quanti/Parsed_data/Human_yeast/all_mrf_withsamplename.txt"
-  normalization : TRUE
-  keep_empty_rows : FALSE
+  quantif_file : path_to_/standardized_quantification_file
+  normalization : TRUE/FALSE
+  keep_empty_rows : TRUE/FALSE
 title:  | 
   | Quality control of
   | `r gsub(".*/","",params$quantif_file)`
@@ -91,16 +91,12 @@ library(imp4p)
 library(GGally)
 #library(RColorBrewer)
 library(gridExtra)
-#library("openxlsx")
 library(data.table)
 library(knitr)
 library(kableExtra)
 library(svglite)
 
-#install.packages("../../../Package/quantitativeProteomics_0.0.0.9000.tar.gz", repos = NULL, type="source")
-#library(quantitativeProteomics)
-
-source("../../../Package/quantitativeProteomics.R")
+source("../../Library/quantitativeProteomics.R")
 ```
 
 
@@ -140,6 +136,7 @@ if (max_lenght_sample_name>15){
 }
 namesDF = data.frame(sample_names_parsed,sample_numero)
 colnames(namesDF)=c("Sample","Id")
+
 ```
 
 
@@ -259,7 +256,7 @@ identification_type = data[,grepl("Identification.type.",names(data))]
 
 if(length(identification_type)>0){
   
-  # Formating data into df for ploting samples = c()
+  # Formating data into df for ploting
   identifications = c()
   samples = c()
   for(sample in colnames(identification_type)){
