@@ -1,6 +1,12 @@
 library(stringr)
 library(readxl)
 
+# Parameters set in launcher script (see "Lauchers" section)
+# quantif_file = quantification file to parse
+# output_file = output table
+# intensities_type = 
+# sheet = sheet number if quantif_file is a xlsx file
+
 # Load data
 if(grepl(".xlsx",quantif_file)){
   proteinGroupsInput = read_excel(quantif_file, 1, col_names = TRUE)
@@ -10,6 +16,7 @@ if(grepl(".xlsx",quantif_file)){
 
 # Extract data
 Id = proteinGroupsInput[,grepl("Protein.Group.IDs",names(proteinGroupsInput))]
+
 Accession = proteinGroupsInput[,grepl("^Accession$",names(proteinGroupsInput))]
 
 intensities = proteinGroupsInput[,grepl(paste0(intensities_type," .+Sample"),names(proteinGroupsInput))]
@@ -21,7 +28,6 @@ identification_types[identification_types=="High"] <- "By matching"
 identification_types[identification_types=="Peak Found"] <- "By MS/MS"
 colnames(identification_types) = paste0("Identification_type_",sub("Found in Sample in .* Sample ","",colnames(identification_types)))
 
-# Specific peptides
 specific_peptides = proteinGroupsInput[grepl("Number.of.Unique.Peptides",names(proteinGroupsInput))]
 colnames(specific_peptides)="Specific_peptides"
 
