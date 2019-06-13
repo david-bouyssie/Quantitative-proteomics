@@ -1,0 +1,1139 @@
+
+---
+output:
+  html_document
+params:
+  quantif_file: "../../Data/Quanti/Parsed_data/Human_yeast/all_mrf_withsamplename.txt"
+  design_exp: "../../Data/Quanti/Parsed_data/Human_yeast/designExp.txt"
+  parameters: "../../Data/Quanti/Parsed_data/Human_yeast/Params_da.txt"
+  output_table: "..."
+title: "Differential analysis"
+---
+
+<style type="text/css">
+
+body{
+      font-size: 12px;
+}
+h1.title {
+  font-size: 20px;
+  color: #3686D5;
+  font-weight:bold;
+  text-align: center;
+}
+h1 { /* Header 1 */
+  font-size: 28px;
+  color: white;
+  font-weight:bold;
+}
+div#banner {
+       background-color: #3686D5; 
+       width: 100%; 
+}
+td{ 
+    font-size: 9pt;
+  }
+th { 
+  font-size: 9pt;
+  font-weight: bold;
+  background-color: #E3E3E3;
+}
+@media print
+{    
+  .no-print, .no-print *
+  {
+    display: none !important;
+  }
+}
+</style>
+
+<script>
+function saveSvgFromParentDiv(divElId, name) {
+	var divSvgWrapperEl = document.getElementById(divElId);
+
+	var svgEl = divSvgWrapperEl.firstElementChild;
+  svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  var svgData = svgEl.outerHTML;
+  var preface = '<?xml version="1.0" standalone="no"?>\r\n';
+  var svgBlob = new Blob([preface, svgData], {type:"image/svg+xml;charset=utf-8"});
+  var svgUrl = URL.createObjectURL(svgBlob);
+  var downloadLink = document.createElement("a");
+  downloadLink.href = svgUrl;
+  downloadLink.download = name;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  document.body.removeChild(downloadLink);
+}
+</script>
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,warning=F,message=F,opts.Label="kill_prefix",fig.dim=c(20,10))
+```
+
+
+```{r include=FALSE}
+#library(xlsx)
+library("openxlsx")
+library(ggplot2)
+library(limma)
+library(reshape2)
+library(kableExtra)
+library(grid)
+library(gridExtra)
+library(imp4p)
+library(svglite)
+library(matrixStats)
+library(scico)
+library(ggdendro)
+library(tibble)
+library(multtest)
+
+#install.packages("../../../Package/quantitativeProteomics_0.0.0.9000.tar.gz", repos = NULL, type="source")
+#library(quantitativeProteomics)
+source("../../../Package/quantitativeProteomics.R")
+```
+
+```{r file_import, echo=FALSE}
+
+data <- read.csv(params$quantif_file, check.names = F, sep="\t")
+Label = ifelse(is.na(data$Gene_name),as.character(data$Accession),as.character(data$Gene_name))
+data = add_column(data, Label, .after = "Gene_name")
+
+expDesign <- read.csv(params$design_exp, header = T, sep="\t")
+parameters <- read.csv(params$parameters, header=T, sep="=")
+
+```
+
+
+<br>
+<div id="banner">
+# **Metadata**
+</div>
+<br> 
+
+```{r date, results='asis'}
+kable(data.frame(c("File","Number of rows", "Date"),c(gsub('.*/','',params$quantif_file),nrow(data),format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
+          kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
+          column_spec(1, bold = T)
+```
+
+
+```{r parameters}
+kable(parameters,format="html",col.names = NULL,booktabs = T, caption = "Parameters") %>%
+          kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
+          column_spec(1, bold = T)
+```
+
+
+```{r expDesign}
+kable(expDesign,format="html",col.names = NULL,booktabs = T, caption = "Experimental design") %>%
+          kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
+          column_spec(1, bold = T)
+```
+
+
+<br>
+<div id="banner">
+# **Data filtering**
+</div>
+<br> 
+
+```{r specific_peptides, results='asis'}
+
+if("Specific_peptides"%in%colnames(data)){
+  nb = nrow(data)
+  data = subset(data,data[,"Specific_peptides"]>0)
+  nb_specific = nb-nrow(data)
+}
+```
+
+
+```{r normalization}
+
+normalization = as.logical(parameters["Normalization",])
+
+if (normalization){
+  
+  raw_abundance = data[c("Id",as.character(expDesign$File))]
+  
+   ## Find the sample with less NA
+  na_count_by_sample = fast_apply_nb_na(as.matrix(raw_abundance[,-1]),2)
+  na_by_sample = data.frame(na_count_by_sample,colnames(raw_abundance[,-1]))
+  reference_sample = as.character(subset(na_by_sample,na_by_sample$na_count_by_sample==min(na_by_sample$na_count_by_sample))[,2][1])
+  
+  # Normalization
+  normalized_abundance = normalize(raw_abundance,reference_sample)
+  data = merge.data.frame(data,normalized_abundance,by="Id")
+  normalized_abundance = normalized_abundance[,grepl("_norm",colnames(normalized_abundance))]
+  
+  pattern="_norm"
+}else{
+  pattern=""
+}
+```
+
+```{r group_definition, results='asis'}
+group_ids <- unique(expDesign$Condition)
+for (group in group_ids){
+  assign(group,paste0(unique(expDesign$repBio[which(expDesign$Condition==group)]),"_",group))
+}
+```
+
+```{r mean_technical_replicates, results='asis'}
+mean_abundance_repbio = data.frame(data$Id)
+colnames(mean_abundance_repbio) = "Id"
+
+mean_identification_type_repbio = data.frame(data$Id)
+colnames(mean_identification_type_repbio) = "Id"
+
+for(group in group_ids){
+  
+  sub = subset(expDesign,expDesign$Condition==group)
+  
+  for (rBio in unique(sub$repBio)){
+    
+    samples_intensities = subset(sub,sub$repBio==rBio)$File
+    samples_identification_type = paste0("Identification_type",sub("Intensity","",samples_intensities))
+    
+    if(length(samples_intensities)>1){
+      mean = rowMeans(data[paste0(as.character(samples_intensities),pattern)],na.rm=T)
+      mean_abundance_repbio = cbind(mean_abundance_repbio,mean)
+      
+      id_type = apply(data[samples_identification_type],1,function(x) ifelse("By MS/MS"%in%x,"By MS/MS","By matching"))
+      mean_identification_type_repbio = cbind(mean_identification_type_repbio,id_type)
+      
+    }else{
+      mean_abundance_repbio = cbind(mean_abundance_repbio,data[paste0(as.character(samples_intensities),pattern)])
+      mean_identification_type_repbio = cbind(mean_identification_type_repbio,data[samples_identification_type])
+    }
+    
+    colnames(mean_abundance_repbio)[ncol(mean_abundance_repbio)] = paste0(rBio,"_",group,"_mean")
+    colnames(mean_identification_type_repbio)[ncol(mean_identification_type_repbio)] = paste0(rBio,"_",group,"_identification_type")
+  }
+}
+
+data = merge.data.frame(data,mean_abundance_repbio,by="Id")
+data = merge.data.frame(data,mean_identification_type_repbio,by="Id")
+```
+
+```{r select_quantifiable_proteins, results='asis'}
+
+Filter.threshold.obs = as.numeric(as.character(parameters["Filter.threshold.obs",]))
+
+filtered_data = data
+
+nb_obs = 0
+nb_ms = 0
+for (row in 1:nrow(data)){
+  protein = data[row,]
+  
+  enough=T
+  
+  # of MS/MS > threshold_ms
+  identification = protein[grep("Identification_type_",colnames(protein))]
+  sum = sum(identification=="By MS/MS", na.rm=T)
+  if(sum<as.numeric(as.character(parameters["Filter.threshold.ms",]))){
+      enough=F
+      nb_ms=nb_ms+1
+  }else{
+    
+    cptr_not_enough = 0
+    for(group in group_ids){
+      aValues = protein[paste0(get(as.character(group)),"_mean")]
+      na = is.na(aValues)
+      
+      if((sum(na==F)/length(na))<Filter.threshold.obs){
+        cptr_not_enough = cptr_not_enough+1
+      }
+    }
+    
+    if (cptr_not_enough==length(group_ids)){
+      enough=F
+      nb_obs = nb_obs+1
+    }
+  }
+  
+  if (enough==F){
+    filtered_data = subset(filtered_data,filtered_data$Id!=protein$Id)
+  }
+}
+
+nbProteins = nrow(filtered_data)
+filtered_raw_abundance = filtered_data[c("Id",as.character(expDesign$File))]
+mean_abundance_repbio = filtered_data[,grepl("_mean|Id$",names(filtered_data))]
+
+```
+
+
+```{r diagramm}
+
+diagrammDF <- data.frame(
+  group = c(paste0("No specific peptides : ", nb_specific),
+            paste0("Less than ",Filter.threshold.obs,"% observations in one group at least : ", nb_obs), 
+            paste0("Less than ",as.numeric(as.character(parameters["Filter.threshold.ms",]))," files identified by MS/MS : ",nb_ms),
+            paste0("Proteins kept for analysis : ", nbProteins)),
+  value = c(nb_specific, nb_obs, nb_ms, nbProteins)
+  )
+
+diagramm <- ggplot(diagrammDF, aes(x="", y=value, fill=group)) +
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar("y") +
+  scale_fill_brewer(palette="Blues") +
+  xlab("") +
+  ylab("") +
+  #geom_text(aes(label = value, col=group),size=10) +
+  ggtitle("Proteins filtered") +
+  theme(legend.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        plot.title = element_text(size=22),
+        legend.text=element_text(size=21))
+
+s <- svgstring(width=20,height=10)
+plot(diagramm)
+htmltools::HTML("<div id=\"svgWrapper1\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper1','Proteins filtered.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+
+
+<br>
+<div id="banner">
+# **Normalization**
+</div>
+<br>
+
+```{r normalization_plots, results='asis'}
+
+if (normalization){
+  
+  normalized_abundance = filtered_data[c("Id",paste0(as.character(expDesign$File),"_norm"))]
+
+  # Plots
+  df_raw_intensity = melt(filtered_raw_abundance[-1])
+  colnames(df_raw_intensity) = c("Sample","Intensity")
+  df_raw_intensity$Sample = sub("Intensity_","",df_raw_intensity$Sample)
+
+  density1 <- ggplot(data = df_raw_intensity) +
+    geom_density(mapping = aes(x=log10(as.numeric(Intensity)),group=Sample,color=Sample), na.rm = T) +
+    ggtitle("Intensity distribution before normalization")+
+    xlab("log(intensity)")+
+    theme(plot.title = element_text(size=22),
+          axis.title=element_text(size=18),
+          axis.text.y=element_text(angle=90,size=18),
+          axis.text.x=element_text(size=18),
+          legend.text=element_text(size=16),
+          legend.title=element_text(size=18))
+  
+  s <- svgstring(width=20,height=10)
+    plot(density1)
+    cat(htmltools::HTML("<div id=\"svgWrapper2\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper2','Intensity distribution before normalization.svg');\" >Save figure</a></div>"))
+    invisible(dev.off())
+
+  cat(text_spec("\n"))  
+    
+  df_norm_intensity = melt(normalized_abundance[-1])
+  colnames(df_norm_intensity) = c("Sample","Intensity")
+  df_norm_intensity$Sample = sub("Intensity_","", df_norm_intensity$Sample)
+  df_norm_intensity$Sample = sub("_norm","", df_norm_intensity$Sample)
+
+  density2 <- ggplot(data = df_norm_intensity) +
+    geom_density(mapping = aes(x=log10(as.numeric(Intensity)),group=Sample,color=Sample), na.rm = T) +
+    ggtitle("Intensity distribution after normalization")+
+    xlab("log(intensity)")+
+    theme(plot.title = element_text(size=22),
+          axis.title=element_text(size=18),
+          axis.text.y=element_text(angle=90,size=18),
+          axis.text.x=element_text(size=18),
+          legend.text=element_text(size=16),
+          legend.title=element_text(size=18))
+  
+    s <- svgstring(width=20,height=10)
+    plot(density2)
+    cat(htmltools::HTML("<div id=\"svgWrapper3\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper3','Intensity distribution after normalization.svg');\" >Save figure</a></div>"))
+    invisible(dev.off())
+  
+  cat(text_spec(paste0("\n Normalization method : each intensity is expressed relatively to a reference intensity, as a ratio of intensities. Intensities of the sample with the lowest number of missing values (",reference_sample,") are used as reference intensities. Intensities are then centered by substracting the median of the ratios for each sample."),italic=T,font_size="12px"))
+
+}else{
+
+  cat(text_spec("Intensities were not normalized.",italic=T,font_size="12px"))
+
+}
+
+```
+
+
+<br>
+<div id="banner">
+# **Missing values imputation**
+</div>
+<br>
+
+```{r na_distribution, results='asis'}
+
+
+na_distribution = data.frame(median=numeric(),sums_na=numeric())
+# medians = c()
+# sums_na = c()
+na_percentage = data.frame(Group=character(),na_percentage=character(),na_count=character())
+for(Group in group_ids){
+  current_group_intensities = mean_abundance_repbio[paste0(get(as.character(Group)),"_mean")]
+  
+  na_count = sum(is.na(current_group_intensities))
+  NA_percentage = na_count/(nrow(current_group_intensities)*ncol(current_group_intensities))*100
+  na_percentage = rbind(na_percentage,data.frame(Group,NA_percentage,na_count))
+  
+  current_group_intensities$median = rowMedians(as.matrix(current_group_intensities),na.rm = T)
+  #medians = c(medians,median)
+  current_group_intensities$sum_na = as.factor(apply(current_group_intensities[-ncol(current_group_intensities)],1,function(x) sum(is.na(x))))
+  #sums_na = c(sums_na,sum_na)
+  na_distribution = rbind(na_distribution,current_group_intensities[,(ncol(current_group_intensities)-1):ncol(current_group_intensities)])
+}
+
+na_percentage = rbind(na_percentage, data.frame(Group="All groups",
+                                                NA_percentage=sum(is.na(mean_abundance_repbio))/(nrow(mean_abundance_repbio)*ncol(mean_abundance_repbio))*100,
+                                                na_count=sum(is.na(mean_abundance_repbio))))
+
+```
+
+
+```{r title4, results='asis'}
+cat(text_spec("Distribution of NA values accross groups", color="#3686D5", bold=T, font_size=18 ))
+```
+
+<br>
+
+```{r na_summary}
+kable(na_percentage,format="html",booktabs = T, caption = "") %>%
+          kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
+          column_spec(1, bold = T)
+```
+
+<br>
+
+```{r title5, results='asis'}
+cat(text_spec("Distribution of NA values accross median intensities", color="#3686D5", bold=T, font_size=18 ))
+```
+
+<br>
+
+<div class="row">
+<div class = "col-md-6">
+
+```{r boxplot_na_distribution}
+boxplot <- ggplot(na_distribution) +
+    geom_violin(mapping = aes(x=sum_na, y=log10(median),group=sum_na,colour=sum_na), na.rm = T) +
+    geom_boxplot(mapping = aes(x=sum_na, y=log10(median),group=sum_na,colour=sum_na), na.rm = T) +
+    ggtitle("Median intensity / # NA")+
+    xlab("Number of NA") +
+    ylab("log(median intensity)") +
+    theme(legend.position="none",
+        plot.title = element_text(size=22),
+          axis.title=element_text(size=22),
+          axis.text=element_text(size=20),
+          legend.text=element_text(size=16),
+          legend.title=element_text(size=18))
+
+s <- svgstring()
+boxplot
+htmltools::HTML("<div id=\"svgWrapper9\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper9','Median intensity / # NA.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+colour = unique(ggplot_build(boxplot)$data[[1]]$colour)
+```
+
+</div>
+<div class = "col-md-6">
+
+```{r densityPlot_na_distribution}
+na_distribution$sum_na = as.factor(na_distribution$sum_na)
+
+density <- ggplot() +
+    geom_density(data = na_distribution, mapping = aes(x=log10(median),group=sum_na,colour=sum_na), na.rm = T) +
+    scale_color_manual(values=colour) +
+    ggtitle("Median intensity / # NA")+
+    xlab("Intensity") +
+    theme(plot.title = element_text(size=22),
+          axis.title=element_text(size=22),
+          axis.text=element_text(size=20),
+          legend.text=element_text(size=16),
+          legend.title=element_text(size=18))
+
+s <- svgstring()
+density
+htmltools::HTML("<div id=\"svgWrapper10\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper10','Median intensity / # NA.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+```
+
+</div>
+</div>
+<br>
+
+<br>
+```{r title6, results='asis'}
+cat(text_spec("Imputed values distribution", color="#3686D5", bold=T, font_size=18 ))
+```
+<br>
+
+```{r missing_values_imputation, results='asis'}
+
+###################
+# MCAR IMPUTATION #
+###################
+
+warning = ""
+
+if(parameters["Imputation.MCAR.model",] != "MNAR"){
+  
+  #Parse parameters
+  Imputation.knn.min.occurrences = as.numeric(as.character(parameters["Imputation.knn.min.occurrences",]))
+  # if(Imputation.knn.min.occurrences<3){
+  #   warning = paste0(warning,"\n Warning : Imputation.knn.min.occurrences have to be greater or equal to 3, 3 was then used instead of ",Imputation.knn.min.occurrences)
+  #   Imputation.knn.min.occurrences = 3
+  # }else if(Imputation.knn.min.occurrences>length(samples_names)){
+  #   warning = paste0(warning,"\n Warning : Imputation.knn.min.occurrences can't be greater than the number of biological replicates, ",length(samples_names), " was then used instead of ",Imputation.knn.min.occurrences)
+  #   Imputation.knn.min.occurrences = length(samples_names)
+  # }
+  Imputation.MCAR.threshold.obs = as.numeric(as.character(parameters["Imputation.MCAR.threshold.obs",]))
+  Imputation.MCAR.threshold.MSMS = as.numeric(as.character(parameters["Imputation.MCAR.threshold.MSMS",]))
+  
+  # MCAR processing by condition
+  for(group in group_ids){
+    intensities_current_condition = data.frame(filtered_data$Id,mean_abundance_repbio[paste0(get(as.character(group)),"_mean")],check.names=F)
+    identification_type_current_condition = data.frame(filtered_data[grepl(paste0("^Id$|",group,"_identification_type$"),names(filtered_data))],check.names=F)
+    imputed_intensities = impute_mcar(intensities_current_condition,
+                                      identification_type_current_condition,
+                                      parameters["Imputation.MCAR.model",],
+                                      Imputation.MCAR.threshold.obs,
+                                      Imputation.MCAR.threshold.MSMS,
+                                      Imputation.knn.min.occurrences)
+    # 
+    # if(ncol(intensities_current_condition)>3){
+    #   imputed_intensities = impute_mcar(intensities_current_condition,parameters["Imputation.MCAR.model",],Imputation.MCAR.threshold.obs,Imputation.knn.min.occurrences)
+    # }else{
+    #   warning = paste0(warning,"\n Warning: KNN algorithm can't be used for groups with less than 3 replicates")
+    #   imputed_intensities = intensities_current_condition
+    # }
+  
+    colnames(imputed_intensities) = paste0(sub("_mean","",colnames(imputed_intensities)),"_mcar")
+    colnames(imputed_intensities)[1] = colnames(filtered_data)[1]
+    
+    filtered_data = merge.data.frame(filtered_data,imputed_intensities,by=colnames(filtered_data)[1])
+  
+  }
+  
+  pattern = "_mcar"
+  
+}else{
+  pattern = "_mean"
+}
+
+###################
+# MNAR IMPUTATION #
+###################
+
+intensities_to_impute = filtered_data[grepl(paste0(pattern,"$|Id$"),colnames(filtered_data))]
+if(parameters["Imputation.MNAR.model",] == "gaussian"){
+  imputation_results = impute_background_noise_gaussian(intensities_to_impute)
+  gaussian_parameters = c(imputation_results[[1]],imputation_results[[2]])
+  imputed_abundance = imputation_results[[3]]
+}else{
+  if(parameters["Imputation.MNAR.model",] == "percentile"){
+    percentile = as.numeric(as.character(parameters["Imputation.MNAR.percentile",]))/100
+    imputed_abundance = impute_background_noise_percentile(intensities_to_impute,percentile)
+  }
+}
+
+imputed_abundance[imputed_abundance=="MCAR"] <- NA
+
+filtered_data = merge.data.frame(filtered_data,imputed_abundance,by="Id")
+
+imputed_abundance_log = imputed_abundance
+imputed_abundance_log[,2:ncol(imputed_abundance_log)] = log10(data.matrix(imputed_abundance_log[,2:ncol(imputed_abundance_log)]))
+colnames(imputed_abundance_log)[2:ncol(imputed_abundance_log)] = paste0(colnames(imputed_abundance)[2:ncol(imputed_abundance_log)],"_log")
+
+filtered_data = merge.data.frame(filtered_data,imputed_abundance_log,by="Id")
+
+# Make a data frame of values to plot
+imputed_abundance_log = filtered_data[grepl("_log$|Id$",colnames(filtered_data))]
+imputationDF = melt(imputed_abundance_log[,-1])
+colnames(imputationDF) = c("Sample","log_abundance")
+
+## imputed?
+imputed = melt(is.na(mean_abundance_repbio[,-1]))
+imputationDF = cbind(imputationDF,imputed$value)
+colnames(imputationDF) = c("Sample","Intensity","Is_imputed")
+
+# plot
+histogram <- ggplot() +
+  geom_histogram(data = imputationDF, mapping = aes(x = Intensity, fill = Is_imputed), alpha=0.7, bins = 100) +
+  scale_fill_manual(values=c("dodgerblue3", "darkorchid4"))+
+  ggtitle("Log intensities distribution with imputed values") +
+  xlab("log(intensity)")+
+  theme(plot.title = element_text(size=22),
+          axis.title=element_text(size=22),
+          axis.text=element_text(size=22),
+          legend.text=element_text(size=22),
+          legend.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+histogram
+htmltools::HTML("<div id=\"svgWrapper11\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper11','Log intensities distribution with imputed values.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+if(exists("gaussian_parameters")){
+  cat(text_spec(paste0("The gaussian model has a median of ", formatC(gaussian_parameters[1],format = "e", digits=2), " and a sd of ",formatC(gaussian_parameters[2],format = "e", digits=2),"."),italic=T,font_size="12px"))
+}
+
+```
+
+
+<br>
+<div id="banner">
+#**CV distribution**
+</div>
+<br>
+
+```{r compute_cv_distribution, results='asis'}
+
+df_median_deviation_before_processing = seq(1,nrow(filtered_data))
+df_median_deviation_after_processing = seq(1,nrow(filtered_data))
+df_cv_before_processing = seq(1,nrow(filtered_data))
+df_cv_after_processing = seq(1,nrow(filtered_data))
+
+for (group in group_ids){
+  
+  # Before processing
+  intensities = filtered_data[grep(paste0(group,"_mean$"),names(filtered_data),value=T)]
+
+  intensities_median_deviation = compute_median_deviation(intensities)
+  colnames(intensities_median_deviation) = rep(group,ncol(intensities_median_deviation))
+  df_median_deviation_before_processing = cbind(df_median_deviation_before_processing,intensities_median_deviation)
+
+  df_cv_before_processing = cbind(df_cv_before_processing,compute_cv(intensities))
+
+  # After processing
+  intensities = filtered_data[grepl(paste0(group,".*_imputed$"),names(filtered_data))]
+
+  intensities_median_deviation = compute_median_deviation(intensities)
+  colnames(intensities_median_deviation) = rep(group,ncol(intensities_median_deviation))
+  df_median_deviation_after_processing = cbind(df_median_deviation_after_processing,intensities_median_deviation)
+  
+  df_cv_after_processing = cbind(df_cv_after_processing,compute_cv(intensities))
+  
+}
+
+```
+
+
+```{r title7, results='asis'}
+cat(text_spec("Median deviation", color="#3686D5", bold=T, font_size=18 ))
+```
+
+
+```{r plot_median_deviation, results='asis'}
+
+df_median_deviation_before_processing = melt(df_median_deviation_before_processing[,-1])
+colnames(df_median_deviation_before_processing) = c("Group","value")
+df_median_deviation_before_processing$Group = sub("\\..*","",df_median_deviation_before_processing$Group)
+
+median_deviation_density_before_processing = ggplot() +
+    geom_density(data = df_median_deviation_before_processing, mapping = aes(x=log2(value),group=Group,color=Group), na.rm = T) +
+    ggtitle("Median deviation distribution before processing")+
+    xlab("log2((X-median)/median)")+
+    theme(plot.title = element_text(size=22),
+          axis.title=element_text(size=18),
+          axis.text=element_text(size=18),
+          legend.text=element_text(size=16),
+          legend.title=element_text(size=18))
+
+df_median_deviation_after_processing = melt(df_median_deviation_after_processing[,-1])
+colnames(df_median_deviation_after_processing) = c("Group","value")
+df_median_deviation_after_processing$Group = sub("\\..*","",df_median_deviation_after_processing$Group)
+
+median_deviation_density_after_processing = ggplot() +
+  geom_density(data = df_median_deviation_after_processing, mapping = aes(x=log2(value),group=Group,color=Group), na.rm = T) +
+  ggtitle("Median deviation distribution after processing")+
+  xlab("log2((X-median)/median)")+
+  theme(plot.title = element_text(size=22),
+            axis.title=element_text(size=22),
+            axis.text=element_text(size=22),
+            legend.text=element_text(size=22),
+            legend.title=element_text(size=22))
+
+s <- svgstring(width=20,height=10)
+grid.arrange(arrangeGrob(median_deviation_density_before_processing),
+            arrangeGrob(median_deviation_density_after_processing),
+            ncol=2,nrow=1)
+htmltools::HTML("<div id=\"svgWrapper4\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper4','Median deviation.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+
+<br>
+
+
+```{r title2, results='asis'}
+cat(text_spec("\n CV distribution", color="#3686D5", bold=T, font_size=18 ))
+```
+
+
+```{r plot_cv_distribution, results='asis'}
+
+df_cv_before_processing = df_cv_before_processing[,-1]
+colnames(df_cv_before_processing) = group_ids
+df_cv_before_processing = melt(df_cv_before_processing)
+colnames(df_cv_before_processing) = c("num","Group","value")
+
+cv_density_before_processing = ggplot() +
+    geom_density(data = subset(df_cv_before_processing,df_cv_before_processing$value<=100), mapping = aes(x=value,group=Group,color=Group), na.rm = T) +
+    expand_limits(x = 0) +
+    ggtitle("Truncated CV distribution before processing")+
+    xlab("CV")+
+    theme(plot.title = element_text(size=22),
+          axis.title=element_text(size=18),
+          axis.text=element_text(size=18),
+          legend.text=element_text(size=16),
+          legend.title=element_text(size=18))
+
+df_cv_after_processing = df_cv_after_processing[,-1]
+colnames(df_cv_after_processing) = group_ids
+df_cv_after_processing2 = melt(df_cv_after_processing)
+colnames(df_cv_after_processing2) = c("num","Group","value")
+  
+cv_density_after_processing = ggplot() +
+      geom_density(data = subset(df_cv_after_processing2,df_cv_after_processing2$value<=100), mapping = aes(x=value,group=Group,color=Group), na.rm = T) +
+      ggtitle("Truncated CV distribution after processing")+
+      xlab("CV")+
+      expand_limits(x = 0) +
+      theme(plot.title = element_text(size=22),
+            axis.title=element_text(size=18),
+            axis.text=element_text(size=18),
+            legend.text=element_text(size=16),
+            legend.title=element_text(size=18))
+  
+s <- svgstring(width=20,height=10)
+grid.arrange(arrangeGrob(cv_density_before_processing),
+               arrangeGrob(cv_density_after_processing),
+               ncol=2,nrow=1)
+htmltools::HTML("<div id=\"svgWrapper5\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper5','CV distribution.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+
+<br>
+
+```{r plot_cv_distribution_before_processing_log, results='asis'}
+
+# cv_density_before_processing = ggplot() +
+#     geom_density(data = df_cv_before_processing, mapping = aes(x=log2(value),group=Group,color=Group), na.rm = T) +
+#     ggtitle("CV distribution before normalization")+
+#     xlab("log2(CV)")+
+#     theme(plot.title = element_text(size=22),
+#           axis.title=element_text(size=18),
+#           axis.text=element_text(size=18),
+#           legend.text=element_text(size=16),
+#           legend.title=element_text(size=18))
+# 
+# if(normalization){
+#   
+#   cv_density_after_processing = ggplot() +
+#     geom_density(data = df_cv_after_processing2, mapping = aes(x=log2(value),group=Group,color=Group), na.rm = T) +
+#     ggtitle("CV distribution after normalization")+
+#     xlab("log2(CV)")+
+#     theme(plot.title = element_text(size=22),
+#           axis.title=element_text(size=18),
+#           axis.text=element_text(size=18),
+#           legend.text=element_text(size=16),
+#           legend.title=element_text(size=18))
+#   
+#   s <- svgstring(width=20,height=10)
+#   grid.arrange(arrangeGrob(cv_density_before_processing+ggtitle("CV distribution before normalization")),
+#                arrangeGrob(cv_density_after_processing),
+#                ncol=2,nrow=1)
+#   cat(htmltools::HTML("<div id=\"svgWrapper6\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper6','Log CV distribution.svg');\" >Save figure</a></div>"))
+#   invisible(dev.off())
+#   
+# }else{
+#   s <- svgstring(width=20,height=10)
+#   plot(cv_density_before_processing+ggtitle("Log CV distribution"))
+#   cat(htmltools::HTML("<div id=\"svgWrapper6\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper6','Log CV distribution.svg');\" >Save figure</a></div>"))
+#   invisible(dev.off())
+# }
+
+
+```
+
+<br>
+
+<div class="row">
+
+```{r title3, results='asis'}
+cat(text_spec("\n Heterogeneity of biological error", color="#3686D5", bold=T, font_size=18 ))
+```
+
+<div class = "col-md-6">
+
+```{r boxplot_cv_distribution_after_processing, results='asis'}
+
+cv_density_after_processing = ggplot() +
+    geom_boxplot(data = df_cv_after_processing2, mapping = aes(y=value,x=Group,color=Group), na.rm = T) +
+    ggtitle("CV distribution after processing")+
+    xlab("")+
+    theme(plot.title = element_text(size=22),
+          axis.title=element_text(size=18),
+          axis.text.x=element_text(angle=90,size=18),
+          axis.text.y=element_text(size=18),
+          legend.text=element_text(size=16),
+          legend.title=element_text(size=18))
+
+s <- svgstring()
+cv_density_after_processing
+htmltools::HTML("<div id=\"svgWrapper7\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper7','CV distribution.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+
+</div>
+<div class = "col-md-6">
+```{r biological_error, results='asis'}
+
+df_cv_after_processing2$within_boundaries = rep("",nrow(df_cv_after_processing2))
+
+for (group in group_ids){
+  sub = subset(df_cv_after_processing2,df_cv_after_processing2$Group==group)
+  whiskers = boxplot.stats(df_cv_after_processing2$value)$stats[c(1, 5)]
+  max_whisker = whiskers[2]
+
+  df_cv_after_processing2$within_boundaries[df_cv_after_processing2$Group==group & df_cv_after_processing2$value <= max_whisker] <- TRUE
+  df_cv_after_processing2$within_boundaries[df_cv_after_processing2$Group==group & df_cv_after_processing2$value > max_whisker] <- FALSE
+  df_cv_after_processing2$within_boundaries[df_cv_after_processing2$Group==group & is.na(df_cv_after_processing2$value)] <- NA
+}
+
+df_cv_after_processing2 = subset(df_cv_after_processing2, df_cv_after_processing2$within_boundaries==F)
+
+barplot <- ggplot(data = df_cv_after_processing2) +
+  geom_bar(aes(x=Group, fill=Group),alpha=0.8) +
+  xlab("")+
+  ggtitle("Extreme biological errors (boxplot's outliers)") +
+  theme(plot.title = element_text(size=22),
+          axis.title=element_text(size=18),
+          axis.text.y=element_text(size=18),
+          axis.text.x=element_text(angle=90,size=18),
+          legend.text=element_text(size=16),
+          legend.title=element_text(size=18))
+
+s <- svgstring()
+barplot
+htmltools::HTML("<div id=\"svgWrapper8\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper8','Extreme biological errors (boxplot's outliers).svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+
+</div>
+</div>
+
+<br>
+<div id="banner">
+# **Heatmap**
+</div>
+<br>
+
+
+```{r echo=FALSE, warning=FALSE}
+
+df_log_intensities_heatmap = filtered_data[grepl("Id$|Label$|_log$",names(filtered_data))]
+colnames(df_log_intensities_heatmap) = sub(paste0(pattern,"_imputed_log"),"",colnames(df_log_intensities_heatmap))
+samples_names = colnames(df_log_intensities_heatmap)[3:ncol(df_log_intensities_heatmap)]
+
+imputed = cbind.data.frame(mean_abundance_repbio[,1],is.na(mean_abundance_repbio [,-1]))
+
+heatmap_plot = create_heatmap(df_log_intensities_heatmap,imputed,samples_names, group_ids)
+
+s <- svgstring(width=20,height=10)
+grid.newpage()
+grid.draw(heatmap_plot)
+htmltools::HTML("<div id=\"svgWrapper12\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12','Global heatmap.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+
+
+<br>
+<div id="banner">
+# **Differential analysis**
+</div>
+<br>
+
+
+```{r DA, results='asis'}
+imputed_abundance = imputed_abundance[grepl("_imputed$",names(imputed_abundance))]
+
+Fold.Change = as.character(parameters["Fold.Change",])
+Volcano.threshold.pvalue = as.numeric(as.character(parameters["Volcano.threshold.pvalue",]))
+Volcano.threshold.fc = as.numeric(strsplit(as.character(parameters["Volcano.threshold.fc",]),";")[[1]])
+comparisons = strsplit(as.character(parameters["Comparisons",]),";")[[1]]
+
+final_data = filtered_data
+
+for (comparison in comparisons){
+
+  cat(text_spec(comparison, color="#3686D5", bold=T, font_size=18 ))
+  
+  statDF = data.frame(filtered_data$Accession,filtered_data$Label)
+  colnames(statDF) = c("Accession","Label")
+
+  # Extract data for the couple of condition
+  couple = strsplit(comparison,"/")[[1]]
+  A_name = couple[1]
+  B_name = couple[2]
+  A = cbind(filtered_data$Accession,filtered_data$Label,imputed_abundance[grepl(A_name,colnames(imputed_abundance))])
+  B = cbind(filtered_data$Accession,filtered_data$Label,imputed_abundance[grepl(B_name,colnames(imputed_abundance))])
+  
+  # Extract max intensity for each protein
+  totIntensities = merge.data.frame(A,B,by=c("filtered_data$Accession","filtered_data$Label"))
+  colnames(totIntensities)[1] = "Accession"
+  totIntensities$mean_intensity = apply(totIntensities[,3:ncol(totIntensities)],1,function(x) mean(x, na.rm=T))
+  
+  ##############
+  # Compute FC #
+  ##############
+  
+  if(as.logical(parameters["Test.paired",])){
+    paired_ratios = data.matrix(totIntensities[grepl(A_name,names(totIntensities))])/data.matrix(totIntensities[grepl(B_name,names(totIntensities))])
+    log_paired_ratios = log2(paired_ratios)
+    totIntensities$fc = 2^(rowMeans(log_paired_ratios))
+  }else{
+    totIntensities$mean_A = rowMeans(log2(data.matrix(totIntensities[grepl(A_name,names(totIntensities))])),na.rm = TRUE)
+    totIntensities$mean_B = rowMeans(log2(data.matrix(totIntensities[grepl(B_name,names(totIntensities))])),na.rm = TRUE)
+    totIntensities$fc = 2^(totIntensities$mean_A-totIntensities$mean_B)
+  }
+  
+  statDF = merge.data.frame(statDF,totIntensities[,c("Accession","mean_intensity","fc")],by="Accession")
+
+  if(Fold.Change=="zscore"){
+    statDF$zscore <- scale(log2(statDF$fc),center = TRUE, scale = TRUE)
+  }
+
+  ###################
+  # Compute pvalues #
+  ###################
+
+  ## Test.log ?
+  if(parameters["Test.log",]==T){
+    A = cbind(filtered_data$Accession,filtered_data$Label,filtered_data[grepl(paste0(A_name,".*_imputed_log$"),colnames(filtered_data))])
+    B = cbind(filtered_data$Accession,filtered_data$Label,filtered_data[grepl(paste0(B_name,".*_imputed_log$"),colnames(filtered_data))])
+    if(parameters["Test.var.equal",]==F){
+      cat(text_spec("\n"))
+      cat(text_spec("Warning : intensities should not be transformed by log with a Welch test (variance not equal)",italic=T,font_size="12px"))
+    }
+  }
+
+  ## Test
+  if(parameters["Test.type",]=="limma"){
+
+    # Limma test
+    if(as.logical(parameters["Test.paired",])){
+      paired = c(seq(1,ncol(A)-2),seq(1,ncol(B)-2))
+      design <- model.matrix(~paired+factor(c(rep(1,length(A)-2), rep(2,length(B)-2))))
+      colnames(design) <- c("Intercept","paired", "B-A")
+    }else{
+      design <- model.matrix(~factor(c(rep(1,length(A)-2), rep(2,length(B)-2))))
+      colnames(design) <- c("Intercept", "B-A")
+    }
+  
+    data_limma<- cbind(A[,3:ncol(A)],B[,3:ncol(B)])
+    rownames(data_limma)=filtered_data$Accession
+
+    fit <- lmFit(data_limma, design)
+    fit <- eBayes(fit)
+
+    alllimma<-topTable(fit, coef=2,adjust.method="BH",p.value=1,"P")
+
+    # Extract pvalues & q values
+    statDF$pval <- rep("", nrow(statDF))
+    statDF$pval[match(rownames(alllimma),statDF$Accession)]<- alllimma$P.Value
+    statDF$qval <- rep("", nrow(statDF))
+    statDF$qval[match(rownames(alllimma),statDF$Accession)]<- alllimma$adj.P.Val
+
+  }else if(parameters["Test.type",]=="t.test"){
+
+    statDF$pval <- rep("", nrow(statDF))
+
+    for(prot in 1:nrow(A)){
+      pval = t.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
+                    alternative=as.character(parameters["Test.alternative",]),
+                    paired=as.logical(parameters["Test.paired",]),
+                    var.equal=as.logical(parameters["Test.var.equal",]))$p.value
+      statDF$pval[match(A[prot,1],statDF$Accession)]<- pval
+    }
+
+  }else if(params$test=="wilcoxon"){
+    pval = wilcox.test(as.numeric(A[prot,-1]),as.numeric(B[prot,-1]),
+                    alternative=as.character(parameters["Test.alternative",]),
+                    paired=as.logical(parameters["Test.paired",]))
+    statDF$pval[match(A[prot,1],statDF$Accession)]<- pval
+  }
+  
+  # FDR correction
+  if(parameters["Test.adjust.procedure",]!="none"){
+    value="qval"
+    procedure_results = mt.rawp2adjp(as.numeric(statDF$pval), proc=as.character(parameters["Test.adjust.procedure",]), alpha=parameters["Test.adjust.FDR",])
+    qval = data.frame(procedure_results$adjp,procedure_results$index)[order(procedure_results$index),2]
+  }else{
+    value="pval"
+    qval = rep(NA,nrow(statDF))
+  }
+  statDF$qval = qval
+  statDF[,3:ncol(statDF)]=sapply(statDF[,3:ncol(statDF)], as.numeric)
+
+  ########################
+  # Significant proteins #
+  ########################
+  
+  statDF$significant<-rep(F, nrow(statDF))
+  statDF$significant[(statDF[value]<=Volcano.threshold.pvalue) & (abs(log2(statDF[Fold.Change]))>Volcano.threshold.fc)] <- T
+  
+  ###########
+  # MA Plot #
+  ###########
+  
+  MA = ggplot(statDF, aes(x=log10(mean_intensity), y=log2(abs(fc)))) +
+    geom_point() +
+    ggtitle("MA plot")+
+    xlab("log maximum intensity")+
+    ylab(paste0('log2(abs(',Fold.Change,'))')) +
+    theme(legend.position = "none",
+      plot.title = element_text(size=22),
+      axis.title=element_text(size=24),
+      axis.text=element_text(size=22),
+      legend.text=element_text(size=16),
+      plot.margin = unit(c(2,0,2,0), "cm"),
+      legend.title=element_text(size=18))
+  
+  s <- svgstring(width=20,height=10)
+  plot(MA)
+  cat(htmltools::HTML(paste0("<div id=\"svgWrapper12bis\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12bis','MA plot.svg');\" >Save figure</a></div>")))
+  invisible(dev.off())
+  
+  cat(text_spec("\n"))
+    
+
+  ################
+  # Volcano Plot #
+  ################
+
+  if(value=="qval" & Fold.Change=="fc"){
+    Volcano = ggplot(statDF, aes(x=log2(fc), y=-log10(as.numeric(qval))))
+  }else if(value=="pval" & Fold.Change=="fc"){
+    Volcano = ggplot(statDF, aes(x=log2(fc), y=-log10(as.numeric(pval))))
+  }else if(value=="qval" & Fold.Change=="zscore"){
+    Volcano = ggplot(statDF, aes(x=zscore, y=-log10(as.numeric(qval))))
+  }else{
+    Volcano = ggplot(statDF, aes(x=zscore, y=-log10(as.numeric(pval))))
+  }
+
+  Volcano = Volcano +
+    geom_point(aes(colour=significant),size=3) +
+    geom_hline(yintercept=-log10(Volcano.threshold.pvalue),linetype="dashed")+
+    geom_vline(xintercept=Volcano.threshold.fc,linetype="dashed")+
+    geom_vline(xintercept=-Volcano.threshold.fc,linetype="dashed")+
+    scale_colour_manual(values = c("black", "tomato1"))+
+    geom_text(aes(label=ifelse(statDF$significant==T,as.character(Label),'')),hjust=1,vjust=-1, size=6)+
+    ggtitle("")+
+    xlab(paste0('log2(',Fold.Change,')'))+
+    ylab(paste0('-log10(',value,')'))+
+    theme(legend.position = "none",
+      plot.title = element_text(size=22),
+      axis.title=element_text(size=18),
+      axis.text=element_text(size=18),
+      legend.text=element_text(size=16),
+      plot.margin = unit(c(2,0,2,0), "cm"),
+      legend.title=element_text(size=18))
+
+  s <- svgstring(width=20,height=10)
+  plot(Volcano)
+  cat(htmltools::HTML(paste0("<div id=\"svgWrapper13\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper13','Volcano.svg');\" >Save figure</a></div>")))
+  invisible(dev.off())
+  
+  cat(text_spec("\n"))
+
+  ###########
+  # Heatmap #
+  ###########
+
+  if(length(statDF$significant[statDF$significant==T])>1){
+    
+      # Extract data for significant proteins
+      significant_proteins = subset(statDF,statDF$significant==T)
+      significant_proteins_data = subset(filtered_data,filtered_data$Accession%in%significant_proteins$Accession)
+      significant_proteins_intensities = significant_proteins_data[grepl(paste0("((",A_name,"|",B_name,").*imputed_log$|Accession$|Label$)"),names(filtered_data))]
+      colnames(significant_proteins_intensities) = c("Accession","Label",sub(paste0(pattern,"_imputed.*"),"",colnames(significant_proteins_intensities)[3:ncol(significant_proteins_intensities)]))
+      
+      samples_names_comparison = colnames(significant_proteins_intensities)[3:ncol(significant_proteins_intensities)]
+      group_ids_comparison = c(A_name,B_name)
+      
+      raw_intensities_significant_proteins = subset(filtered_data,filtered_data$Accession%in%significant_proteins_intensities$Accession)[c("Accession","Label",paste0(samples_names_comparison,"_mean"))]
+      imputed = cbind.data.frame(raw_intensities_significant_proteins[,1],is.na(raw_intensities_significant_proteins [,-c(1,2)]))
+      colnames(imputed)[1] = "Id"
+      
+      heatmap_plot = create_heatmap(significant_proteins_intensities, imputed, samples_names_comparison, group_ids_comparison)
+    
+      s <- svgstring(width=20,height=10)
+      plot(heatmap_plot)
+      cat(htmltools::HTML("<div id=\"svgWrapper14\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper14','Heatmap.svg');\" >Save figure</a></div>"))
+      invisible(dev.off())
+    
+    cat(text_spec("\n"))
+    
+    #################
+    # Summary table #
+    ################
+    
+    map = merge.data.frame(raw_intensities_significant_proteins,statDF,by=c("Accession","Label"))
+    significant_proteins_table = map[ , -which(names(map) %in% c("mean_intensity","significant"))]
+  
+   cat(knitr::knit_print(DT::datatable(significant_proteins_table,
+                                  rownames=FALSE,
+                                  extensions = 'Buttons',
+                                  options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
+                    DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt')))
+  
+  }
+  
+  ###############################
+  # Add results to global table #
+  ###############################
+  
+  if(value=="pval"){
+    statistics = cbind(as.character(statDF$Accession),statDF$fc,log2(statDF$fc),statDF$pval,-log10(statDF$pval),statDF$significant)
+    colnames(statistics) = c("Accession",paste0("FC_",comparison),paste0("log2(FC_",comparison,")"),paste0("pval_",comparison),paste0("-log10(pval_",comparison,")"),paste0(comparison,"_significant"))
+  }else{
+    statistics = cbind(as.character(statDF$Accession),statDF$fc,log2(statDF$fc),statDF$pval,-log10(statDF$pval),statDF$qval,-log10(statDF$qval),statDF$significant)
+    colnames(statistics) = c("Accession",paste0("FC_",comparison),paste0("log2(FC_",comparison,")"),paste0("pval_",comparison),paste0("-log10(pval_",comparison,")"),paste0("qval_",comparison),paste0("-log10(qval_",comparison,")"),paste0(comparison,"_significant"))
+  }
+
+  final_data = merge(final_data,statistics,by="Accession")
+  
+}
+
+```
+
+```{r include=FALSE}
+# You need this code to conduct the magic dependences attaching...
+knitr::knit_print(DT::datatable(matrix(),
+                                extensions = 'Buttons',
+                                options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE)))
+```
+
+
+```{r save_data}
+
+# output_name = tail(strsplit(params$quantif_file,"/")[[1]],n=1)
+# output_name = paste0("DA_",output_name)
+write.table(final_data,output_table,row.names=FALSE,sep="\t")
+
+```

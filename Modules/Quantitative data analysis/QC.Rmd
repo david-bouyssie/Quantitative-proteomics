@@ -1,0 +1,798 @@
+
+---
+output:
+  html_document
+params:
+  quantif_file : "../../Data/Quanti/Parsed_data/Human_yeast/all_mrf_withsamplename.txt"
+  normalization : TRUE
+  keep_empty_rows : FALSE
+title:  | 
+  | Quality control of
+  | `r gsub(".*/","",params$quantif_file)`
+---
+
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+td {  /* Table  */
+  font-size: 8px;
+}
+h1.title {
+  font-size: 20px;
+  color: #3686D5;
+  font-weight:bold;
+  text-align: center;
+}
+h1 { /* Header 1 */
+  font-size: 28px;
+  color: white;
+  font-weight:bold;
+}
+div#banner {
+       background-color: #3686D5; 
+       width: 100%; 
+}
+td{ 
+    font-size: 9pt;
+  }
+  th { 
+    font-size: 9pt;
+    font-weight: bold;
+    background-color: #E3E3E3;
+  }
+@media print
+{    
+    .no-print, .no-print *
+    {
+        display: none !important;
+    }
+}
+</style>
+
+<script>
+function saveSvgFromParentDiv(divElId, name) {
+	var divSvgWrapperEl = document.getElementById(divElId);
+
+	var svgEl = divSvgWrapperEl.firstElementChild;
+  svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  var svgData = svgEl.outerHTML;
+  var preface = '<?xml version="1.0" standalone="no"?>\r\n';
+  var svgBlob = new Blob([preface, svgData], {type:"image/svg+xml;charset=utf-8"});
+  var svgUrl = URL.createObjectURL(svgBlob);
+  var downloadLink = document.createElement("a");
+  downloadLink.href = svgUrl;
+  downloadLink.download = name;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  document.body.removeChild(downloadLink);
+}
+</script>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, dev = "svglite", fig.ext = ".svg")
+```
+
+
+```{r include=FALSE}
+
+library(ggplot2)
+theme_set(theme_bw(base_size = 11))
+library(ggrepel)
+library(ggdendro)
+library(scico)
+library(gtable)
+library(grid)
+library(corrplot)
+library(ade4)
+library(factoextra)
+library(imp4p)
+library(GGally)
+#library(RColorBrewer)
+library(gridExtra)
+#library("openxlsx")
+library(data.table)
+library(knitr)
+library(kableExtra)
+library(svglite)
+
+#install.packages("../../../Package/quantitativeProteomics_0.0.0.9000.tar.gz", repos = NULL, type="source")
+#library(quantitativeProteomics)
+
+source("../../../Package/quantitativeProteomics.R")
+```
+
+
+```{r file_import, include=FALSE}
+
+data <- read.table(file = params$quantif_file, header=T, sep="\t")
+sample_names = colnames(data)[grepl("Intensity",names(data))]
+sample_names_parsed = sub("Intensity.", "", sample_names)
+
+```
+
+
+```{r delete_empty_rows}
+if(params$keep_empty_rows==FALSE){
+  data$na_count = apply(data[grepl("Intensity",names(data))],1,function(x) sum(is.na(x)))
+  data = subset(data,data$na_count!=ncol(data[grepl("Intensity",names(data))]))
+}
+
+```
+
+
+```{r colname_parsing, results='asis'}
+
+max_lenght_sample_name = nchar(sample_names_parsed[nchar(sample_names_parsed)==max(nchar(sample_names_parsed))][1])
+
+if (max_lenght_sample_name>15){
+  #Replace sample names by numbers
+  sample_numero = paste0(rep("S",length(sample_names)),as.character(1:length(sample_names)))
+  setnames(data, old=as.character(sample_names),new=sample_numero)
+  sample_names = sample_numero
+  #Print new names
+  kable(data.frame(sample_names_parsed,sample_numero),format="html",caption="Samples id") %>% kable_styling() %>% scroll_box(height = "200px")
+}else{
+  sample_numero = sample_names_parsed
+  setnames(data, old=as.character(sample_names),new=sample_names_parsed)
+  sample_names = sample_names_parsed
+}
+namesDF = data.frame(sample_names_parsed,sample_numero)
+colnames(namesDF)=c("Sample","Id")
+```
+
+
+<br>
+<div id="banner">
+# **Raw data visualization**
+</div>
+
+
+</br>
+
+```{r log_transformation}
+
+# Compute log10 values
+for (sample in sample_names){
+  colname = paste0(sample,"_log")
+  data[colname] <- log10(as.numeric(unlist(data[sample])))
+}
+
+# Data parsing to a data frame with a single column containing all the values to plot, and sample in an other column
+log_abundance = data[,grepl("_log",names(data))]
+colnames(log_abundance) = sample_names
+logIntensitiesDF = melt(log_abundance)
+colnames(logIntensitiesDF) = c("sample","log_intensity")
+
+```
+
+
+<div class="row">
+<div class = "col-md-6">
+```{r density_plot}
+
+logIntensitiesDF$sample <- factor(logIntensitiesDF$sample, as.character(sample_names))
+
+density <- ggplot() +
+  geom_density(data = logIntensitiesDF, mapping = aes(x=log_intensity,group=sample,color=sample), na.rm = T) +
+  ggtitle("Intensity distribution over all samples")+
+  xlab("log(intensity)")+
+  #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T,breaks=sample_names)+
+  geom_vline(aes(xintercept=median(na.omit(logIntensitiesDF$log_intensity))), linetype="dashed", size=1)+
+  geom_text(mapping=aes(x=median(na.omit(logIntensitiesDF$log_intensity)), y=0, label="median"), size=6, angle=90, vjust=-0.4, hjust=0) +
+  theme(plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text=element_text(size=16),
+        legend.title=element_text(size=18))
+
+s <- svgstring()
+plot(density)
+htmltools::HTML("<div id=\"svgWrapper1\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper1','Intensity distribution over all samples.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+</div>
+<div class = "col-md-6">
+```{r boxplots}
+violinPlot <- ggplot() +
+    geom_violin(data = logIntensitiesDF, mapping = aes(x = factor(sample,level=sample_names), y = log_intensity, color=sample), na.rm = T) +
+    geom_boxplot(data = logIntensitiesDF, mapping = aes(x = factor(sample,level=sample_names), y = log_intensity, color=sample), width = 0.5, na.rm = T) +
+    ggtitle("Intensity distribution in each sample") +
+    xlab("")+
+    ylab("log(intensity)")+
+    theme(legend.position="none", 
+        plot.title=element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text.x=element_text(angle=90,size=18),
+        axis.text.y = element_text(size=18))
+
+s <- svgstring()
+plot(violinPlot)
+htmltools::HTML("<div id=\"svgWrapper2\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper2','Intensity distribution in each sample.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+</div>
+</div>
+
+<br/>
+
+<div class="row">
+<div class = "col-md-6">
+
+```{r correlation_plot, fig.cap="Correlation coefficient were computed with pearson method."}
+if (length(sample_names)<16 & nrow(data)<5000){
+  correlogram = ggpairs(log_abundance,title="Sample correlation",upper=list(continuous=wrap("cor",size=2.5)))
+}else{
+  cormat <- round(cor(log_abundance,use = "complete.obs"),2)
+  cormat = melt(cormat)
+  colnames(cormat) = c("Samples1","Samples2","Coefficient")
+  correlogram = ggplot(data = cormat, aes(x=Samples1, y=Samples2, fill=Coefficient)) + 
+    geom_tile() +
+    scale_fill_gradient2(low = "dodgerblue", mid = "white",high = "red", midpoint = 0.55) +
+    xlab("")+
+    ylab("")+
+    ggtitle("Sample correlation") +
+    theme(plot.title=element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text.y=element_text(size=18),
+        axis.text.x=element_text(angle=90,size=18),
+        legend.title=element_text("Correlation coefficient",size=16),
+        legend.text = element_text(size=16))
+}
+
+s <- svgstring()
+correlogram
+htmltools::HTML("<div id=\"svgWrapper3\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper3','Sample correlation.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+```
+</div>
+
+<div class = "col-md-6">
+
+```{r identification_type_plot}
+
+# Extract data
+identification_type = data[,grepl("Identification.type.",names(data))]
+
+if(length(identification_type)>0){
+  
+  # Formating data into df for ploting samples = c()
+  identifications = c()
+  samples = c()
+  for(sample in colnames(identification_type)){
+    sample_name = as.character(subset(namesDF,namesDF$Sample==sub(".*.type.", "", sample))$Id)
+    samples = c(samples, rep(sample_name,nrow(identification_type)))
+    identifications = c(identifications,as.vector(unlist(identification_type[sample])))
+  }
+  IdentificationTypeDF = data.frame(samples,identifications)
+  IdentificationTypeDF$samples <- factor(IdentificationTypeDF$samples, as.character(namesDF$Id))
+  
+  # Format and order labels for ploting
+  IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, rev(levels(IdentificationTypeDF$identifications))) # reverse order
+  levels = levels(IdentificationTypeDF$identifications) 
+  levels[length(levels) + 1] <- "Not available" # add a new factor for missing values
+  IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, rev(levels(IdentificationTypeDF$identifications))) # reverse order
+  IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, levels = levels)
+  IdentificationTypeDF$identifications[is.na(IdentificationTypeDF$identifications)] <- "Not available"
+  IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, rev(levels(IdentificationTypeDF$identifications))) # reverse order
+  
+  identification_type_plot = ggplot(data = IdentificationTypeDF, mapping = aes(x=samples, fill = identifications, col=identifications)) +
+  geom_bar(alpha=0.8,width=1) +
+  xlab("")+
+  scale_fill_manual("",values=c("By MS/MS"="dodgerblue4","By matching"="dodgerblue1","Not available"="gray70"))+
+  scale_colour_manual("",values=c("By MS/MS"="dodgerblue4","By matching"="dodgerblue1","Not available"="gray70"))+
+  ggtitle("Identification types distribution accross samples") +
+   theme(plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text.x=element_text(angle=90,size=18),
+        axis.text.y=element_text(size=18),
+        legend.text=element_text(size=16))
+  
+}
+
+s <- svgstring()
+identification_type_plot
+htmltools::HTML("<div id=\"svgWrapper4\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper4','Identification types distribution accross samples.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+```
+
+</div>
+</div>
+
+<br>
+<div id="banner">
+# **Normalization**
+</div>
+<br>
+
+```{r normalization}
+
+na_count_by_sample = fast_apply_nb_na(as.matrix(data[,sample_names]),2)
+na_by_sample = data.frame(na_count_by_sample,sample_names)
+
+# Extract raw intensities
+raw_abundance = data[sample_names]
+
+if (params$normalization){
+  
+  # Find the sample with less NA
+  reference_sample = subset(na_by_sample,na_by_sample$na_count_by_sample==min(na_by_sample$na_count_by_sample))$sample_names[1]
+  
+  # Normalization
+  intensities_to_normalize = cbind(data$Id,raw_abundance)
+  colnames(intensities_to_normalize)[1] = "Id"
+  normalized_abundance = normalize(intensities_to_normalize,reference_sample)
+  data = cbind(data,normalized_abundance[,-1])
+  
+  pattern = "_norm"
+  
+}else{
+  
+  pattern = ""
+}
+
+```
+
+
+<div class="row">
+<div class = "col-md-6">
+
+```{r plot_ratios, messages=FALSE, results='asis'}
+
+if(params$normalization){
+  ratiosDF = normalized_abundance[,grepl("_ratio_",names(normalized_abundance))]
+  ratiosDF = data.table::melt.data.table(data.table(ratiosDF))
+  colnames(ratiosDF) = c("samples","ratio")
+  
+  ratiosDF$sample <- factor(sub("_ratio_.*","",ratiosDF$sample), as.character(sample_names))
+  
+  ratioPlot <- ggplot() +
+    geom_boxplot(data = ratiosDF, mapping = aes(x=factor(samples,level=unique(samples)), y=log2(ratio),color=samples), na.rm = T) +
+    ggtitle("Ratio distribution for each sample")+
+    #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T)+
+    ylab("log2(ratio)") +
+    xlab("") +
+    theme(legend.position="none",
+        plot.title=element_text(size=20),
+        axis.title=element_text(size=18),
+        axis.text.x=element_text(angle=90,size=18),
+        axis.text.y=element_text(size=18))
+  
+  s <- svgstring()
+  plot(ratioPlot)
+  cat(htmltools::HTML("<div id=\"svgWrapper5\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper5','Ratio distribution for each sample.svg');\" >Save figure</a></div>"))
+  invisible(dev.off())
+}
+
+```
+</div>
+</div>
+
+<br>
+
+<div class="row">
+<div class = "col-md-6">
+```{r plot_normalized_abundance, results='asis'}
+
+if (params$normalization){
+
+  # Plot
+  normalized_abundance = normalized_abundance[grepl("_norm",names(normalized_abundance))]
+  normDF = melt(normalized_abundance)
+  colnames(normDF) = c("sample","intensity")
+  normDF$sample = sub("_norm","",normDF$sample)
+  
+  median = log10(median(normDF$intensity,na.rm = T))
+  
+  normDF$sample <- factor(normDF$sample, as.character(sample_names))
+  
+  densityPlot <- ggplot(normDF) +
+    geom_density(mapping = aes(x=log10(intensity),group=sample,color=sample), na.rm = T) +
+    ggtitle("Intensity distribution over all samples after normalization")+
+    xlab("intensity")+
+    #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete=T,breaks=sample_names)+
+    #geom_vline(aes(xintercept=median), linetype="dashed", size=1)+
+    #geom_text(mapping=aes(x=median, y=0, label="median"), size=4, angle=90, vjust=-0.4, hjust=0) +
+    theme(plot.title = element_text(size=20),
+          axis.title=element_text(size=18),
+          axis.text=element_text(size=18),
+          legend.title = element_text(size=16),
+          legend.text=element_text(size=16))
+  
+  s <- svgstring()
+  plot(densityPlot)
+  cat(htmltools::HTML("<div id=\"svgWrapper6\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper6','Intensity distribution over all samples after normalization.svg');\" >Save figure</a></div>"))
+  invisible(dev.off())
+  
+}
+
+```
+</div>
+
+<div class = "col-md-6">
+
+```{r boxplots_after_normalization, results='asis'}
+
+if (params$normalization){
+
+  bxPlot <- ggplot(normDF) +
+    geom_boxplot(mapping = aes(x=sample,y=log10(intensity),color=sample), na.rm = T) +
+    ggtitle("Intensity distribution in each sample after normalization")+
+    xlab("")+
+    #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete=T,breaks=sample_names)+
+    #geom_vline(aes(xintercept=median), linetype="dashed", size=1)+
+    #geom_text(mapping=aes(x=median, y=0, label="median"), size=4, angle=90, vjust=-0.4, hjust=0) +
+    theme(plot.title = element_text(size=20),
+          axis.title=element_text(size=18),
+          axis.text=element_text(size=18),
+          axis.text.x=element_text(angle=90,size=18),
+          legend.position="none")
+  
+  s <- svgstring()
+  plot(bxPlot)
+  cat(htmltools::HTML("<div id=\"svgWrapper6bis\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper6bis','Intensity distribution in each sample after normalization.svg');\" >Save figure</a></div>"))
+  invisible(dev.off())
+  
+}
+
+
+```
+
+
+</div>
+</div>
+
+
+```{r normalization_legend, results='asis'}
+
+if (params$normalization){
+  cat(text_spec("\n Normalization method : each intensity is expressed relatively to a reference intensity, as a ratio of intensities. Intensities of the sample with the lowest number of missing values are used as reference intensities. Intensities are then centered by substracting the median of the ratios for each sample.",italic=T,font_size="12px"))
+}else{
+  cat(text_spec("Intensities were not normalized.",italic=T,font_size="12px"))
+}
+
+```
+
+
+<br/>
+<div id="banner">
+# **Missing values imputation**
+</div>
+<br/>
+
+<div class="row">
+<div class = "col-md-6">
+```{r na_count_by_sample, echo=FALSE}
+barPlot <-ggplot(data=na_by_sample) +
+  geom_bar(stat="identity",aes(x=factor(sample_names,level=sample_names), y=na_count_by_sample,fill=sample_names))+
+  scale_y_continuous(name = expression("Count"), sec.axis = sec_axis(~ . * 1/nrow(data) *100 , name = "Frenquency (%)"))+
+  #viridis::scale_fill_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T)+
+  ggtitle("Missing values distribution accross samples") +
+  ylab("Count")+
+  xlab("")+
+  theme(legend.position="none",
+        plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        axis.text.x=element_text(angle=90))
+
+s <- svgstring()
+plot(barPlot)
+htmltools::HTML("<div id=\"svgWrapper7\" ",s(),"<a href=\"javascript:saveSvgFromParentDiv('svgWrapper7','Missing values distribution accross samples.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+```
+</div>
+
+<div class = "col-md-6">
+```{r na_count_by_protein, echo=FALSE}
+na_count_by_protein <- apply(log_abundance, 1, function(x) sum(is.na(x)))
+
+barPlot <- ggplot() +
+  aes(na_count_by_protein)+
+  geom_histogram(binwidth=0.5, fill="dodgerblue3",alpha=0.6)+
+  ggtitle("Missing values distribution accross proteins") +
+  ylab("NA count by proteins")+
+  xlab("Number of NA values")+
+  scale_y_continuous(name = expression("Number of proteins"), sec.axis = sec_axis(~ . * 1/nrow(data) * 100 , name = "Frenquency (%)"))+
+  theme(plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18))
+
+s <- svgstring()
+plot(barPlot)
+htmltools::HTML("<div id=\"svgWrapper8\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper8','Missing values distribution accross proteins.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+</div>
+</div>
+
+<br>
+
+<div class="row">
+<div class = "col-md-6">
+```{r missing_values_imputation, results='asis'}
+
+if(exists('normalized_abundance') && is.data.frame(get('normalized_abundance'))){
+  data_to_impute = cbind.data.frame(data$Id,normalized_abundance)
+}else{
+  data_to_impute = cbind.data.frame(data$Id,raw_abundance)
+}
+
+imputed_samples = impute_background_noise_gaussian(data_to_impute)[[3]]
+data = cbind(data,imputed_samples)
+
+imputed_samples_log = imputed_samples
+imputed_samples_log[,1:ncol(imputed_samples_log)] = log10(imputed_samples_log)
+colnames(imputed_samples_log)[1:ncol(imputed_samples_log)] = paste0(colnames(imputed_samples_log)[1:ncol(imputed_samples_log)],"_log")
+data = cbind(data,imputed_samples_log)
+
+# Make a data frame of values to plot
+imputed_abundance = data[,grepl("_imputed_log",names(data))]
+imputedIntensityDF = melt(imputed_abundance)
+colnames(imputedIntensityDF) = c("sample","log10_intensity")
+imputedIntensityDF$sample = sub("_imputed_log","",imputedIntensityDF$sample)
+
+## imputed?
+imputed = c()
+for (sample_name in sample_names){
+  imputed = c(imputed,is.na(raw_abundance))
+}
+## final dataframe
+imputedIntensityDF <- data.frame(imputedIntensityDF,imputed)
+
+
+# plot
+histogram <- ggplot() +
+  geom_histogram(data = imputedIntensityDF, mapping = aes(x = log10_intensity, fill = imputed), alpha=0.7, bins = 100) +
+  scale_fill_manual(values=c("dodgerblue3", "darkorchid4"))+
+  ggtitle("Log intensities distribution with imputed values") +
+  xlab("log(intensity)")+
+  theme(plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.title = element_text(size=16),
+        legend.text = element_text(size=16))
+
+s <- svgstring()
+plot(histogram)
+htmltools::HTML("<div id=\"svgWrapper9\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper9','Log intensities distribution with imputed values.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+cat(text_spec("\n Missing values are imputed with the gaussian model implemented in the library.",italic=T,font_size="12px"))
+```
+</div>
+</div>
+
+<br>
+<div id="banner">
+# **Dimension reduction**
+</div>
+<br>
+
+```{r echo=FALSE}
+pcaInput <- imputed_abundance
+colnames(pcaInput) = sub("_imputed_log","",colnames(pcaInput))
+pca=dudi.pca(pcaInput,scannf = FALSE, nf = 2)
+
+```
+
+<div class="row">
+<div class = "col-md-6">
+```{r echo=FALSE}
+s <- svgstring()
+fviz_eig(pca,addlabels=TRUE,
+         barfill="dodgerblue3",
+         alpha.ind=1, 
+         title="Inertia",
+         ggtheme=theme(plot.title = element_text(size=22),
+                       axis.title=element_text(size=18),
+                       axis.text=element_text(size=18)))
+htmltools::HTML("<div id=\"svgWrapper10\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper10','Inertia.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+</div>
+<div class = "col-md-6">
+```{r echo=FALSE, warning=FALSE}
+
+rotatedData <- pca$li
+Missing_values = rep(0,length(rotatedData[,1]))
+for (sample_name in sample_names){
+  Missing_values <- Missing_values + is.na(data[[sample_name]])
+}
+rotatedData$Missing_values <- Missing_values
+
+rotationPlot <- ggplot() +
+  geom_point(data = rotatedData, mapping = aes(x = Axis1, y = Axis2, col = Missing_values), alpha = 0.5) +
+  ggtitle("Projection of proteins")+
+  theme(plot.title=element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text = element_text(size=16),
+        legend.title = element_text(size=16))
+
+s <- svgstring()
+plot(rotationPlot)
+htmltools::HTML("<div id=\"svgWrapper11\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper11','Projection of proteins.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+</div>
+</div>
+
+<br>
+
+<div class="row">
+<div class = "col-md-6">
+```{r echo=FALSE, warning=FALSE, message=FALSE}
+
+s <- svgstring()
+fviz_pca_var(pca,
+             col.var = "contrib",
+             gradient.cols = c("black", "dodgerblue"),
+             repel = TRUE,
+             labelsize = 4,
+             title = "Samples contribution",
+             ggtheme=theme(plot.title=element_text(size=20),
+                           axis.title=element_text(size=18),
+                           axis.text=element_text(size=18),
+                           legend.text = element_text(size=16),
+                          legend.title = element_text(size=16))
+             )
+htmltools::HTML("<div id=\"svgWrapper12\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12','Samples contribution.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+```
+</div>
+
+<div class = "col-md-6">
+```{r echo=FALSE, warning=FALSE}
+pc1 <- pca$co[,1]
+pc2 <- pca$co[,2]
+contribution1 <- round(100 * pca$eig[1] / sum(pca$eig))
+contribution2 <- round(100 * pca$eig[2] / sum(pca$eig))
+
+pcaPlot <- ggplot() +
+    geom_point(mapping = aes(x = pc1, y = pc2)) +
+    geom_label_repel(aes(x = pc1, y = pc2, label = sample_names, col=sample_names),size=5) +
+    geom_hline(yintercept=0, linetype=2) +
+    geom_vline(xintercept=0,linetype=2) +
+    xlab(paste0("PC1 [", contribution1, "%]")) +
+    ylab(paste0("PC2 [", contribution2, "%]")) +
+   ggtitle("Samples projection") +
+  #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T,breaks=sample_names)+
+  theme(legend.position="none",
+        plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18))
+
+s <- svgstring()
+plot(pcaPlot)
+htmltools::HTML("<div id=\"svgWrapper13\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper13','Samples projection.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+```
+</div>
+</div>
+
+<br>
+<div id="banner">
+# **Hierarchical clustering**
+</div>
+<br>
+
+```{r echo=FALSE}
+
+inputProteins = imputed_abundance
+distMatrixProteins <- dist(inputProteins)
+hClustProteins <- fastcluster::hclust(distMatrixProteins)
+
+inputSamples <- t(inputProteins)
+distMatrixSamples <- dist(inputSamples)
+hClustSamples <- fastcluster::hclust(distMatrixSamples)
+
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+
+# Create data frame
+nProteins = nrow(data)
+
+proteinRank = c()
+for (i in 1:length(sample_names)){
+  proteinRank = c(proteinRank,1:nProteins)
+}
+heatmapDF = melt(imputed_abundance)
+heatmapDF$variable = sub(paste0(pattern,"_imputed_log"),"",heatmapDF$variable)
+heatmapDF = cbind(heatmapDF,proteinRank,imputed)
+colnames(heatmapDF) = c("sample","log_intensity","proteinRank","imputed")
+
+heatmapDF=subset(heatmapDF,heatmapDF$imputed==F)
+
+# Order samples according to clustering results
+orderedSamples <- sample_names[hClustSamples$order]
+heatmapDF$orderedSamples <- factor(heatmapDF$sample, levels = orderedSamples)
+heatmapDF$x <- as.numeric(heatmapDF$orderedSamples)
+
+# Order proteins according to clustering results
+heatmapDF$orderedProteins <- factor(heatmapDF$proteinRank, levels = hClustProteins$order)
+heatmapDF$y <- as.numeric(heatmapDF$orderedProteins)
+
+# Adjust colors
+minRatio <- min(heatmapDF$log_intensity)
+maxRatio <- max(heatmapDF$log_intensity)
+maxabsRatio <- max(abs(heatmapDF$log_intensity))
+
+# Make ratio plot
+hcPlot <- ggplot() +
+    geom_raster(data = heatmapDF, mapping = aes(x = x, y = y, fill = log_intensity)) +
+    scale_fill_gradientn(colours=c("green","yellow","red")) +
+    #scale_fill_scico(palette = "tokyo") +
+    ggtitle("")+
+    xlab("")+
+    scale_x_continuous(name = "Sample", breaks = 1:length(orderedSamples), labels = orderedSamples, expand = c(0, 0)) +
+    scale_y_continuous(name = "Protein", expand = c(0, 0)) +
+    theme(axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          plot.title=element_text(size=22),
+          axis.title=element_text(size=18),
+          axis.text=element_text(angle=90, size=14),
+          legend.text=element_text(size=16),
+          legend.title=element_text(size=18))
+matrixGrob <- ggplotGrob(hcPlot)
+
+# Make dendrogram plots
+dendrogramSamples <- dendro_data(hClustSamples, type="rectangle")
+dendrogramDataSamples <- segment(dendrogramSamples)
+dendrogramSamplesPlot <- ggplot() +
+    geom_segment(data = dendrogramDataSamples, mapping = aes(x=x, y=y, xend=xend, yend=yend)) +
+    #scale_y_continuous(expand = c(0, 0)) +
+    #scale_x_continuous(expand = c(0, 0), limits = c(0.5, 6.5)) +
+    theme(axis.line = element_blank(),
+          axis.ticks = element_blank(),
+          axis.text = element_blank(),
+          axis.title = element_blank(),
+          panel.background = element_blank(),
+          panel.grid = element_blank(),
+          panel.border = element_blank())
+dendroSampleGrob <- ggplotGrob(dendrogramSamplesPlot)
+
+# if(nProteins<10000){
+#   dendrogramProteins <- dendro_data(hClustProteins, type="rectangle")
+#   dendrogramDataProteins <- segment(dendrogramProteins)
+#   dendrogramProteinsPlot <- ggplot() +
+#     geom_segment(data = dendrogramDataProteins, mapping = aes(x=x, y=y, xend=xend, yend=yend)) +
+#     coord_flip() +
+#     scale_y_reverse(expand = c(0, 0)) +
+#     scale_x_continuous(expand = c(0, 0), limits = c(0.5, nProteins + 0.5)) +
+#     theme(axis.line = element_blank(),
+#           axis.ticks = element_blank(),
+#           axis.text = element_blank(),
+#           axis.title = element_blank(),
+#           panel.background = element_blank(),
+#           panel.grid = element_blank(),
+#           panel.border = element_blank())
+#   dendroProteinGrob <- ggplotGrob(dendrogramProteinsPlot)
+# }
+
+dendroSampleGrob <- gtable_add_cols(dendroSampleGrob, unit(rep(1, ncol(matrixGrob) - ncol(dendroSampleGrob)), "null"), pos = -1)
+result <- rbind(dendroSampleGrob[7, ], matrixGrob[7:nrow(matrixGrob), ], size = "last")
+result <- rbind(matrixGrob[1:6, ], result, size = "last")
+result$heights[7] <- unit(0.2, "null")
+result$widths[5] <- unit(0.2, "null")
+
+s <- svgstring()
+grid.newpage()
+grid.draw(result)
+htmltools::HTML("<div id=\"svgWrapper14\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper14','Heatmap.svg');\" >Save figure</a></div>")
+invisible(dev.off())
+
+
+```
+
+<br>
+

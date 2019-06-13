@@ -1,0 +1,580 @@
+---
+output:
+  html_document
+params:
+  repository: "../../Results/Human_yeast/ROC/imputation/mcar"
+  variants: "../../Results/Human_yeast/ROC/variants.csv"
+  default_ratio_threshold: 1
+  default_pval_threshold: 0.01
+  min_pval: 0.001
+  max_pval: 0.05
+  min_ratio: 0.5
+  max_ratio: 3
+  nb_tests: 20
+    
+title: "ROC"
+---
+
+<style type="text/css">
+
+body{ /* Normal  */
+      font-size: 12px;
+  }
+h1.title {
+  font-size: 20px;
+  color: #3686D5;
+  font-weight:bold;
+  text-align: center;
+}
+h1 { /* Header 1 */
+  font-size: 28px;
+  color: white;
+  font-weight:bold;
+}
+h2 { /* Header 2 */
+  font-size: 20px;
+  color: #3686D5;
+  font-weight:bold;
+}
+div#banner {
+       background-color: #3686D5; 
+       width: 100%; 
+}
+td{ 
+    font-size: 9pt;
+}
+th { 
+  font-size: 9pt;
+  font-weight: bold;
+  background-color: white;
+}
+</style>
+
+<script>
+function saveSvgFromParentDiv(divElId, name) {
+	var divSvgWrapperEl = document.getElementById(divElId);
+
+	var svgEl = divSvgWrapperEl.firstElementChild;
+  svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  var svgData = svgEl.outerHTML;
+  var preface = '<?xml version="1.0" standalone="no"?>\r\n';
+  var svgBlob = new Blob([preface, svgData], {type:"image/svg+xml;charset=utf-8"});
+  var svgUrl = URL.createObjectURL(svgBlob);
+  var downloadLink = document.createElement("a");
+  downloadLink.href = svgUrl;
+  downloadLink.download = name;
+  document.body.appendChild(downloadLink);
+  downloadLink.click();
+  document.body.removeChild(downloadLink);
+}
+</script>
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,warning=F,message=F,opts.Label="kill_prefix",fig.dim=c(20,10))
+```
+
+```{r}
+library(dplyr)
+library(reshape2)
+library(ggplot2)
+library(svglite)
+library(kableExtra)
+
+source("../../../Package/quantitativeProteomics.R")
+```
+
+```{r read_files}
+files = list.files(path = params$repository, pattern = ".txt",full.names = T)
+ldf <- lapply(files, read.delim,sep = "\t",check.names=F)
+names(ldf) <- sapply(files, function(x) tail(strsplit(sub(".csv","",x),"/")[[1]],n=1))
+
+variants = as.character(unlist(read.table(params$variants)))
+```
+
+<br>
+<div id="banner">
+# **Metadata**
+</div>
+<br> 
+
+
+```{r date, results='asis'}
+kable(data.frame(c("Number of files", "File names", "Date"),c(length(files),paste(names(ldf),collapse=" ; "),format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
+          kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
+          column_spec(1, bold = T)
+```
+
+```{r extract_statistics}
+
+statistics_tables_notMerged_list = list()
+names_statistics_tables_notMerged_list = c()
+i=1
+
+statistics_tables_merged_list = list()
+j=1
+
+for (file in names(ldf)){
+  
+  #######################################
+  # Extract accession, ratio and pval #
+ #######################################
+  
+  Accession = ldf[[file]]$Accession
+  FC = ldf[[file]][grepl("^log2\\(FC|^zscore",colnames(ldf[[file]]))]
+  qval = ldf[[file]][grepl("^qval",colnames(ldf[[file]]))]
+  
+  if (length(qval)<1){
+    pval = ldf[[file]][grepl("^pval",colnames(ldf[[file]]))]
+    statistic_data = data.frame(Accession,FC,pval,check.names=F)
+  }else{
+    statistic_data = data.frame(Accession,FC,qval,check.names=F)
+  }
+  
+  ############################################################
+  # Separate the different comparisons into different tables #
+  ############################################################
+  
+  # Separate the columns according to the comparison
+  DFlist <- split.default(statistic_data, gsub(".*_|\\)", "", names(statistic_data)))
+  
+  for(k in 1:length(DFlist)){
+    
+    if (!("Accession" %in% names(DFlist[[k]]))){
+      table = cbind(Accession,DFlist[[k]])
+      colnames(table) = c("Accession","ratio","pval")
+      
+      statistics_tables_notMerged_list[[i]] = table
+      i=i+1
+      
+      names_statistics_tables_notMerged_list = c(names_statistics_tables_notMerged_list,paste0(file,"_",sub(".*_", "", names(DFlist[[k]]))[1]))
+    }
+  }
+  
+  ################################################
+  # Create a global table by merging comparisons #
+  ################################################
+  
+  # Separate the columns according to its content (ratio or pval/qval)
+  DFlist <- split.default(statistic_data, sub("_.*", "", names(statistic_data)))
+  
+  statistic_data = data.frame(as.character(unlist(rep(DFlist[[1]],ncol(DFlist[[2]])))),melt(DFlist[[2]]),melt(DFlist[[3]])$value)
+  colnames(statistic_data) = c("Accession","Comparison","ratio","pval")
+  
+  statistic_data$Comparison = sub(".*_","",statistic_data$Comparison)
+  
+  statistic_data$specificity = rep(NA,nrow(statistic_data))
+  statistic_data$specificity[(abs(statistic_data$ratio) >= params$default_ratio_threshold) & (statistic_data$pval <= params$default_pval_threshold) & !(statistic_data$Accession %in% variants)] <-"FP"
+  statistic_data$specificity[(abs(statistic_data$ratio) >= params$default_ratio_threshold) & (statistic_data$pval <= params$default_pval_threshold) & (statistic_data$Accession %in% variants)] <-"TP"
+  statistic_data$specificity[((abs(statistic_data$ratio) < params$default_ratio_threshold) | (statistic_data$pval > params$default_pval_threshold)) & !(statistic_data$Accession %in% variants)] <-"TN"
+  statistic_data$specificity[((abs(statistic_data$ratio) < params$default_ratio_threshold) | (statistic_data$pval > params$default_pval_threshold)) & (statistic_data$Accession %in% variants)] <-"FN"
+  
+  # Source file
+  statistic_data$Source = rep(file,nrow(statistic_data))
+  
+  statistics_tables_merged_list[[j]] = statistic_data
+  j=j+1
+  
+}
+
+names(statistics_tables_merged_list) = names(ldf)
+names(statistics_tables_notMerged_list) = names_statistics_tables_notMerged_list
+
+```
+
+
+<br>
+<div id="banner">
+# **Volcano plots**
+</div>
+<br>
+
+
+
+```{r merged_volcano_plots_by_file, results='asis'}
+
+for (file in names(statistics_tables_merged_list)){
+  
+  cat(text_spec(paste0(" \n ",file),bold=T,font_size=18,color="#3686D5"))
+  
+  statistic_data = statistics_tables_merged_list[[file]]
+  
+  Volcano = ggplot(statistic_data) +
+  geom_point(aes(x=ratio, y=-log10(pval), colour=specificity,shape=Comparison),size=3) +
+  #scale_colour_manual("",breaks=c("TP","FP","FN"),values=c("green","red","orange")) +
+  scale_colour_manual("",values = c("TP" = "green","FP" = "red","FN" = "orange","TN" = "grey60")) +
+  guides(colour = guide_legend(override.aes = list(shape = 15,size=5))) +
+  geom_hline(yintercept=0)+
+  geom_vline(xintercept=0)+
+  ggtitle(paste0("Sensibility and specificity"))+
+  xlab("ratio")+
+  ylab('-log10(pval)')+
+  theme(plot.title = element_text(size=22),
+      axis.title=element_text(size=30),
+      axis.text=element_text(size=30),
+      legend.text=element_text(size=30),
+      plot.margin = unit(c(2,0,0,0), "cm"),
+      legend.title=element_text(size=30))
+
+  
+  plot(Volcano)
+  
+}
+
+```
+
+
+
+```{r merged_volcano_plots_all_file, results='asis'}
+
+cat(text_spec(" \n All files",bold=T,font_size=18,color="#3686D5"))
+
+global_statistic_data = bind_rows(statistics_tables_merged_list)
+
+Volcano = ggplot(global_statistic_data, aes(x=ratio, y=-log10(pval),shape=Comparison)) +
+    geom_point(size=3,col="grey60") +
+    geom_point(data=subset(global_statistic_data,global_statistic_data$specificity %in% c("TP","FP")), aes(x=ratio, y=-log10(pval), colour=Source, shape=Comparison),size=3) +
+    guides(colour = guide_legend(override.aes = list(shape = 15))) +
+    #scale_shape_manual(breaks=unique(global_statistic_data$Comparison),values=sample(1:20,length(unique(global_statistic_data$Comparison)))) + 
+    geom_hline(yintercept=0)+
+    geom_vline(xintercept=0)+
+    ggtitle("Merged volcano plot for all files")+
+    xlab("Ratio")+
+    ylab('-log10(pval)')+
+    theme(plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text=element_text(size=18),
+        plot.margin = unit(c(2,0,0,0), "cm"),
+        legend.title=element_text(size=20))
+
+  plot(Volcano)
+
+```
+
+
+<br>
+<div id="banner">
+# **ROC curves**
+</div>
+<br>
+
+```{r parameters}
+
+n <- params$nb_tests
+ratioVar <- c(round(seq(params$min_ratio, params$max_ratio, length.out = n-1),2),params$default_ratio_threshold)
+pvalVar <- c(round(seq(params$min_pval, params$max_pval, length.out = n-1),3),params$default_pval_threshold)
+
+```
+
+
+
+```{r individual_ROC, results='asis'}
+
+cat(text_spec("Each comparison from each file \n \n ",bold=T,font_size=22,color="#3686D5"))
+
+ROClist <- list()
+
+for (file in names(statistics_tables_notMerged_list)) {
+  
+  cat(text_spec(file,bold=T,underline=T,font_size=18,color="black"))
+  
+  statistic_table = statistics_tables_notMerged_list[[file]]
+  
+  gtab = compute_ROC(statistic_table,n,ratioVar,pvalVar,variants)
+  ROClist[[length(ROClist)+1]] <- gtab
+  
+  g <- ggplot(gtab, aes(x = FDP, y = Sensitivity, group = factor(ratio_threshold))) + 
+    geom_hline(yintercept = 95, col = "grey") + 
+    geom_vline(xintercept = 5, col = "grey") + 
+    geom_line() + facet_wrap(~ratio_threshold) + 
+    ggtitle("Ratio threshold effect") +
+    theme(plot.title = element_text(size=22),
+      strip.text.x = element_text(size = 20),
+      axis.title=element_text(size=18),
+      axis.text=element_text(size=18),
+      legend.text=element_text(size=18),
+      plot.margin = unit(c(2,0,0,0), "cm"),
+      legend.title=element_text(size=20))
+  
+  
+  plot(g)
+  
+  g <- ggplot(gtab, aes(x = FDP, y = Sensitivity, group = factor(pval_threshold))) + 
+    geom_hline(yintercept = 95, col = "grey") + 
+    geom_vline(xintercept = 5, col = "grey") + 
+    geom_line() + facet_wrap(~pval_threshold) + 
+    ggtitle("Pval threshold effect") +
+    theme(plot.title = element_text(size=22),
+      strip.text.x = element_text(size = 20),
+      axis.title=element_text(size=18),
+      axis.text=element_text(size=18),
+      legend.text=element_text(size=18),
+      plot.margin = unit(c(2,0,0,0), "cm"),
+      legend.title=element_text(size=20))
+
+  
+  plot(g)
+    
+  g <- ggplot(gtab, aes(x = factor(pval_threshold))) + 
+    theme_minimal()  + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    stat_summary(aes(x = factor(pval_threshold), y = Sensitivity, col = "Sensitivity"),fun.y = median, fun.ymin = min, fun.ymax = max) +
+    stat_summary(aes(x = factor(pval_threshold), y = FDP, col = "FDP"),fun.y = median, fun.ymin = min, fun.ymax = max) + 
+    scale_colour_manual("",values = c("Sensitivity"="darkblue","FDP"="red")) +
+    xlab("-log10(p-value)") + 
+    ggtitle("Impact of the choice of the p-value") +
+    theme(plot.title = element_text(size=22),
+      axis.title=element_text(size=18),
+      axis.text=element_text(size=18),
+      legend.text=element_text(size=18),
+      plot.margin = unit(c(2,0,0,0), "cm"),
+      legend.title=element_text(size=20))
+  
+  
+  plot(g)
+
+  # Calculate inflexion point for the Z-score curves:
+  vec <- vector(length=length(ratioVar))
+  for (i in 1:length(ratioVar)) {
+    sub <- gtab[gtab[,3]==ratioVar[i],]
+    vec[i] <- min(sub[,1][sub[,2]>95])
+  }
+  
+  gtab2 <- data.frame("ratio_threshold" = ratioVar, "Min_95_FDP" = vec)
+  
+  g <- ggplot(gtab2, aes(x = ratio_threshold, y = Min_95_FDP)) + 
+    theme_minimal()  + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+    geom_smooth() + 
+    ylab("Minimum FDP value with sensitivity above 95%") + 
+    xlab("abs(ratio)") + 
+    ggtitle("Evaluation of the impact of the ratio") +
+    theme(plot.title = element_text(size=22),
+      axis.title=element_text(size=18),
+      axis.text=element_text(size=18),
+      legend.text=element_text(size=18),
+      plot.margin = unit(c(2,0,0,0), "cm"),
+      legend.title=element_text(size=20))
+  
+  
+  plot(g)
+
+}
+
+names(ROClist) = names(statistics_tables_notMerged_list)
+
+```
+
+
+```{r ROC_by_file, results='asis'}
+
+if(length(ROClist)>length(ldf)){
+  
+  ROClist <- list()
+
+  cat(text_spec("Merged comparisons for each file \n \n ",bold=T,font_size=22,color="#3686D5"))
+
+  for (file in names(statistics_tables_merged_list)) {
+
+    cat(text_spec(file,bold=T,font_size=18,underline=T,color="black"))
+
+    statistic_table = statistics_tables_merged_list[[file]]
+
+    gtab = compute_ROC(statistic_table,n,ratioVar,pvalVar,variants)
+    ROClist[[length(ROClist)+1]] <- gtab
+
+    g <- ggplot(gtab, aes(x = FDP, y = Sensitivity, group = factor(ratio_threshold))) +
+      geom_hline(yintercept = 95, col = "grey") +
+      geom_vline(xintercept = 5, col = "grey") +
+      geom_line() + facet_wrap(~ratio_threshold) +
+      ggtitle("Ratio threshold effect") +
+      theme(plot.title = element_text(size=22),
+        strip.text.x = element_text(size = 20),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text=element_text(size=18),
+        plot.margin = unit(c(2,0,0,0), "cm"),
+        legend.title=element_text(size=20))
+
+    
+    plot(g)
+
+    g <- ggplot(gtab, aes(x = FDP, y = Sensitivity, group = factor(pval_threshold))) +
+      geom_hline(yintercept = 95, col = "grey") +
+      geom_vline(xintercept = 5, col = "grey") +
+      geom_line() + facet_wrap(~pval_threshold) +
+      ggtitle("Pval threshold effect") +
+      theme(plot.title = element_text(size=22),
+        strip.text.x = element_text(size = 20),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text=element_text(size=18),
+        plot.margin = unit(c(2,0,0,0), "cm"),
+        legend.title=element_text(size=20))
+
+    plot(g)
+
+    g <- ggplot(gtab, aes(x = factor(pval_threshold))) +
+      theme_minimal()  +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+      stat_summary(aes(x = factor(pval_threshold), y = Sensitivity, col = "Sensitivity"),fun.y = median, fun.ymin = min, fun.ymax = max) +
+      stat_summary(aes(x = factor(pval_threshold), y = FDP, col = "FDP"),fun.y = median, fun.ymin = min, fun.ymax = max) +
+      scale_colour_manual("",values = c("Sensitivity"="darkblue","FDP"="red")) +
+      xlab("-log10(p-value)") +
+      ggtitle("Impact of the choice of the p-value") +
+      theme(plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text=element_text(size=18),
+        plot.margin = unit(c(2,0,0,0), "cm"),
+        legend.title=element_text(size=20))
+
+    plot(g)
+
+    # Calculate inflexion point for the Z-score curves:
+    vec <- vector(length=length(ratioVar))
+    for (i in 1:length(ratioVar)) {
+      sub <- gtab[gtab[,3]==ratioVar[i],]
+      vec[i] <- min(sub[,1][sub[,2]>95])
+    }
+
+    gtab2 <- data.frame("ratio_threshold" = ratioVar, "Min_95_FDP" = vec)
+
+    g <- ggplot(gtab2, aes(x = ratio_threshold, y = Min_95_FDP)) +
+      theme_minimal()  +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+      geom_smooth() +
+      ylab("Minimum FDP value with sensitivity above 95%") +
+      xlab("abs(ratio)") +
+      ggtitle("Evaluation of the impact of the ratio") +
+      theme(plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text=element_text(size=18),
+        plot.margin = unit(c(2,0,0,0), "cm"),
+        legend.title=element_text(size=20))
+
+    plot(g)
+
+  }
+}
+
+```
+ 
+```{r roc_all_files, results='asis'}
+
+cat(text_spec(" \n Combined analysis of all files \n \n ",bold=T,font_size=22,color="#3686D5"))
+
+names(ROClist) = names(ldf)
+
+for (ROCfile in names(ROClist)){
+  ROClist[[ROCfile]]$Source = ROCfile
+}
+
+totalROC = bind_rows(ROClist)
+
+g <- ggplot(totalROC, aes(x = FDP, y = Sensitivity, group = Source, col = Source)) + 
+  geom_hline(yintercept = 95, col = "grey") + 
+  geom_vline(xintercept = 5, col = "grey") + 
+  geom_line(size = 0.8) + 
+  facet_wrap(~ratio_threshold) + 
+  ggtitle("Ratio threshold effect")+
+  theme(plot.title = element_text(size=22),
+        strip.text.x = element_text(size = 20),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text=element_text(size=18),
+        plot.margin = unit(c(2,0,0,0), "cm"),
+        legend.title=element_text(size=20))
+
+plot(g)
+
+g <- ggplot(totalROC, aes(x = FDP, y = Sensitivity, group = Source, col = Source)) + 
+  geom_hline(yintercept = 95, col = "grey") + 
+  geom_vline(xintercept = 5, col = "grey") + 
+  geom_line(size = 0.8) + 
+  facet_wrap(~pval_threshold) + 
+  ggtitle("Pval threshold effect") +
+  theme(plot.title = element_text(size=22),
+        strip.text.x = element_text(size = 20),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text=element_text(size=18),
+        plot.margin = unit(c(2,0,0,0), "cm"),
+        legend.title=element_text(size=20))
+
+plot(g)
+
+g <- ggplot(totalROC, aes(x = factor(pval_threshold, col = Source))) + 
+  theme_minimal()  +
+  stat_summary(aes(x = factor(pval_threshold), y = Sensitivity,col = "Sensitivity", shape = Source),fun.y = mean, fun.ymin = min, fun.ymax = max) +
+  stat_summary(aes(x = factor(pval_threshold), y = FDP, col = "FDP", shape = Source),fun.y = mean, fun.ymin = min, fun.ymax = max) + 
+  scale_colour_manual("",values = c("Sensitivity"="darkblue","FDP"="red")) +
+  ylab("Median Sensitivity in blue, FDP in red") + 
+  xlab("-log10(p-value)") + 
+  ggtitle("Impact of the choice of the p-value") +
+  theme(plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text=element_text(size=18),
+        plot.margin = unit(c(2,0,0,0), "cm"),
+        legend.title=element_text(size=20))
+
+plot(g)
+
+```
+
+
+```{r final_roc_curve_pval, results='asis'}
+
+cat(text_spec("Final ROC curve \n \n ",bold=T,font_size=22,color="#3686D5"))
+
+gtab <- totalROC[totalROC$pval==params$default_pval_threshold,]
+g <- ggplot(gtab, aes(x = FDP, y = Sensitivity, group = Source, col = Source)) + 
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) + 
+  geom_line(size = 0.8) + 
+  ggtitle(paste0("Final ROC curves for all files with pval=",params$default_pval_threshold)) + 
+  scale_color_brewer(palette = "Set1") + 
+  theme_minimal() +
+  theme(plot.title = element_text(size=22),
+        axis.title=element_text(size=30),
+        axis.text=element_text(size=30),
+        legend.text=element_text(size=30),
+        plot.margin = unit(c(2,0,0,0), "cm"),
+        legend.title=element_text(size=30))
+
+s <- svgstring(width=20,height=10)
+plot(g)
+htmltools::HTML(paste0("<div id=\"svgWrapper5\" ",s(),"<a class='no-print' style='float:right' href=\"javascript:saveSvgFromParentDiv('svgWrapper5','Final ROC curves for all files.svg');\" >Save figure</a></div>"))
+invisible(dev.off())
+
+```
+
+
+```{r final_roc_curve_ratio, results='asis'}
+
+cat(text_spec("Final ROC curve \n \n ",bold=T,font_size=22,color="#3686D5"))
+
+gtab <- totalROC[totalROC$ratio==params$default_ratio_threshold,]
+g <- ggplot(gtab, aes(x = FDP, y = Sensitivity, group = Source, col = Source)) + 
+  geom_hline(yintercept = 0) + geom_vline(xintercept = 0) + 
+  geom_line(size = 0.8) + 
+  ggtitle(paste0("Final ROC curves for all files with ratio=",params$default_ratio_threshold)) + 
+  scale_color_brewer(palette = "Set1") + 
+  xlab("Specificity") +
+  theme_minimal() +
+  theme(plot.title = element_text(size=30),
+        axis.title=element_text(size=30),
+        axis.text=element_text(size=30),
+        legend.text=element_text(size=22),
+        plot.margin = unit(c(2,0,0,0), "cm"),
+        legend.title=element_text(size=30))
+
+s <- svgstring(width=20,height=10)
+plot(g)
+htmltools::HTML(paste0("<div id=\"svgWrapper5\" ",s(),"<a class='no-print' style='float:right' href=\"javascript:saveSvgFromParentDiv('svgWrapper5','Final ROC curves for all files.svg');\" >Save figure</a></div>"))
+invisible(dev.off())
+
+```
