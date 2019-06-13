@@ -3,9 +3,16 @@
 # Normalization #
 #################
 
+# This function normalize intensities using the “probabilistic quotient normalization” method (Dieterle et al, 2006).
 normalize <- function(df, reference_sample){
 
-  # Initialize dataframe
+ # Inputs :
+  # df : quantification matrix whom 1rst column contains proteins id
+  # reference_sample : name of the column corresponding to the reference sample
+ # Output :
+  # dataframe containing the ratio values for each sample, and the normalized quantification matrix
+  
+  # Initialize results dataframe
   ratio_names = paste0(colnames(df)[!colnames(df)%in%colnames(df)[1] & !colnames(df)%in%reference_sample],"_ratio_",reference_sample)
   norm_names = paste0(colnames(df)[-1],"_norm")
   normalized_data = data.frame(matrix(vector(),
@@ -51,7 +58,13 @@ normalize <- function(df, reference_sample){
 # CV #
 ######
 
+# This function compute the median deviation for each sample of the quantification matrix.
 compute_median_deviation <- function(intensity_matrix){
+  
+ # Input :
+  # intensity_matrix : quantification matrix
+ # Output :
+  # matrix containing the median deviation for each intensity of each sample
 
   intensity_matrix$medians = rowMedians(data.matrix(intensity_matrix), na.rm=T)
   for(sample in colnames(intensity_matrix)[-ncol(intensity_matrix)]){
@@ -64,9 +77,14 @@ compute_median_deviation <- function(intensity_matrix){
 
 library(matrixStats)
 
+# This function compute the median deviation for each sample of the quantification matrix. It requires the library "matrixStats".
 compute_cv <- function(intensity_matrix){
 
-  #means = rowMeans(as.matrix(intensity_matrix), na.rm=T)
+ # Input :
+  # intensity_matrix : quantification matrix
+ # Output :
+  # vector containing the CV for each protein
+  
   medians = rowMedians(data.matrix(intensity_matrix), na.rm=T)
   sd = apply(intensity_matrix,1,sd)
   cv = sd/medians * 100
@@ -79,9 +97,15 @@ compute_cv <- function(intensity_matrix){
 # Imputation #
 ##############
 
+# This function impute missing values with background noise using a gaussian model
 impute_background_noise_gaussian <- function(df){
 
-  # Remove MCAR annotations so numeric functions can work
+ # Input :
+  # df : quantification matrix
+ # Output :
+  # quantification matrix with imputed intensities
+  
+  # Remove "MCAR" annotations from the quantification matrix so numeric functions can work
   df_without_string = df
   df_without_string[df_without_string=="MCAR"] <- NA
   df_without_string = data.matrix(df_without_string)
@@ -135,8 +159,14 @@ impute_background_noise_gaussian <- function(df){
 
 }
 
-
+# This function impute missing values with background noise using a percentile.
 impute_background_noise_percentile <- function(df,per){
+  
+ # Input :
+  # df : quantification matrix whom 1rst column contains protein id
+  # per : chosen percentile
+ # Output :
+  # quantification matrix with imputed intensities
 
   for(col in colnames(df)[-1]){
     current_intensities = df[col]
@@ -153,16 +183,27 @@ impute_background_noise_percentile <- function(df,per){
 
 }
 
+# This function is dedicated to MCAR imputation.
 impute_mcar <- function(intensities,identification_type,model,threshold_mcar_obs,threshold_mcar_ms,knn_min_occurrences){
 
+ # Input :
+  # intensities : quantification matrix whom 1rst column contains protein id
+  # identification_type : matrix of identification type whom 1rst column contains protein id
+  # model : imputation model (KNN or none)
+  # threshold_mcar_obs : minimum number of observations in the condition to be a MCAR
+  # threshold_mcar_ms : minimum number of file identified by MS/MS in the condition to be a MCAR
+  # knn_min_occurrences : minimum number of observations in the condition to be used as a nearest neighbour
+ # Output :
+  # quantification matrix with imputed intensities
+  
   intensities_info = intensities
   identification_type_info = identification_type
 
-  # Compute nb of NA
+  # Compute nb of NA by protein
   intensities_info$obs_sum = as.numeric(apply(intensities[-1],1,function(x) sum(!is.na(x))))
   intensities_info$na_sum = as.numeric(apply(intensities[-1],1,function(x) sum(is.na(x))))
 
-  # Compute nb of MS/MS
+  # Compute nb of MS/MS by protein
   identification_type_info$ms_sum = as.numeric(apply(identification_type_info[-1],1,function(x) sum(x=="By MS/MS")))
 
   # Order proteins by median intensity
@@ -180,6 +221,7 @@ impute_mcar <- function(intensities,identification_type,model,threshold_mcar_obs
   mcar = subset(intensities_info,intensities_info$`filtered_data$Id`%in%mcar$Id)
   mcar = subset(mcar,(mcar$obs_sum>=threshold_mcar_obs & mcar$na_sum>0))
 
+  # Impute MCAR
   if(nrow(mcar)>0){
 
     if(model=="none"){
@@ -188,6 +230,7 @@ impute_mcar <- function(intensities,identification_type,model,threshold_mcar_obs
     }else{
       if(model=="knn"){
 
+        # Number of nearest neighbours to select
         k = floor(sqrt(nrow(intensities)))
 
         for(row in 1:nrow(mcar)){
@@ -213,37 +256,33 @@ impute_mcar <- function(intensities,identification_type,model,threshold_mcar_obs
           imputed = aValues
           rand =as.numeric(knn$median,na.rm=T)
 
-          # X = median_protein_to_impute
-          # imputed[is.na(imputed)] <- X
-          #
-          # while(sd(imputed)<sd_knn){
-          #   imputed = aValues
-          #   X = X+d
-          #   imputed[is.na(imputed)] <- X
-          # }
-          #
-          # # Create the gaussian model
-          # if(X==median_protein_to_impute){
-          #   gaussian = rnorm(10000, mean = median_protein_to_impute, sd = 0.05)
-          # }else{
-          #   mean_X = (X + (X-d))/2
-          #   gaussian = rnorm(10000, mean = mean_X, sd = 0.05)
-          # }
-          #
-          # # Impute NA
-          # rand = sample(gaussian,nb_na_to_impute,replace=T)
-          # imputed = aValues
-
+          X = median_protein_to_impute
+          imputed[is.na(imputed)] <- X
+          
+          while(sd(imputed)<sd_knn){
+            imputed = aValues
+            X = X+d
+            imputed[is.na(imputed)] <- X
+          }
+          
+          # Create the gaussian model
+          if(X==median_protein_to_impute){
+            gaussian = rnorm(10000, mean = median_protein_to_impute, sd = 0.05)
+          }else{
+            mean_X = (X + (X-d))/2
+            gaussian = rnorm(10000, mean = mean_X, sd = 0.05)
+          }
+          
+          # Replace NA by values sampled in the gaussian model
+          rand = sample(gaussian,nb_na_to_impute,replace=T)
+          imputed = aValues
 
           imputed[is.na(imputed)] <- rand
 
           mcar[row,2:ncol(intensities)] = imputed
-
         }
-
       }
     }
-
   }
 
   # Replace in the final table
@@ -259,8 +298,17 @@ impute_mcar <- function(intensities,identification_type,model,threshold_mcar_obs
 # Heatmap #
 ###########
 
+# This function create a heatmap with a hierarchical clustering of proteins
 create_heatmap <- function(intensities,imputed,samples_names,group_ids){
 
+ # Input :
+  # intensities : quantification matrix whom 1rst column contains protein id
+  # imputed : boolean matrix whom 1rst column contains protein id
+  # samples_names : list of sample names
+  # group_ids : list of biological conditions
+ # Output :
+  # heatmap plot
+  
   inputProteins = intensities[,3:ncol(intensities)]
   rownames(inputProteins) = make.names(intensities$Label,unique=T)
   distMatrixProteins <- dist(inputProteins)
@@ -299,7 +347,6 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids){
   maxabsRatio <- max(abs(heatmapDF$log_intensity))
 
   # Make plot
-
   hcPlot <- ggplot(data = heatmapDF) +
     geom_raster(mapping = aes(x = x, y = y, fill = log_intensity)) +
     scale_fill_gradientn(colours=c("green","yellow","red")) +
@@ -321,11 +368,8 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids){
   dendrogramDataProteins <- segment(dendrogramProteins)
   dendrogramProteinsPlot <- ggplot() +
     geom_segment(data = dendrogramDataProteins, mapping = aes(x=x, y=y, xend=xend, yend=yend)) +
-    #geom_text(data=label(dendrogramProteins), aes(x=x, y=y, label=label, hjust=0), size=3) +
     coord_flip(clip = 'off') +
     scale_y_reverse(expand = c(0.5, 0)) +
-    #expand_limits(x = c(10, 10)) +
-    #scale_x_continuous(expand = c(0, 0), limits = c(0.5, nrow(intensities) + 0.5)) +
     theme(axis.line = element_blank(),
           axis.ticks = element_blank(),
           axis.text = element_blank(),
@@ -356,8 +400,18 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids){
 # ROC #
 #######
 
+# This function compute the sensibility and the specificity varying ratio and pvalue thresholds
 compute_ROC <- function(statistic_table,n,ratioVar,pvalVar,variants){
 
+ # Input :
+  # statistic_table : table containing results of statistical analysis and whom 1rst column corresponds to protein ids
+  # n : number of tests
+  # ratioVar : ratio thresholds to test
+  # pvalVar : pval thresholds to test
+  # variants : list of ids of expected variants
+ # Output :
+  # heatmap plot
+  
   mat <- matrix(ncol = 4, nrow = (n*n))
   dimnames(mat)[[2]] <- c("FDP", "Sensitivity", "ratio_threshold", "pval_threshold")
   l <- 0
