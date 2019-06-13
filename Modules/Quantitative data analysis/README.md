@@ -10,31 +10,30 @@ This module generates a report of quality and reproducibility of data in quantif
 
 This module, after filtering proteins, normalizing intensities and imputing missing values, executes a differential analysis on quantification matrix. The worklow can be configured thanks to the following parameters :
 
-| Paramètre | Fonction | Valeurs possibles |
+| Parameter | Function | Values |
 | --------- | --------- | --------- |
-| Normalisation | Choisir de normaliser les données ou de sauter cette étape | T / F |
-| Filter.threshold.ms | Nombre minimal d’identifications par MS/MS pour que la protéine soit conservée pour l’analyse | ℕ  |
-| Filter.threshold.obs | Pourcentage minimal d’observations dans au moins une condition pour la protéine soit conservée pour l’analyse. | {0,100} |
-| Imputation.MNAR.model | Choix du modèle pour l’imputation des MNAR | percentile / gaussian |
-| Imputation.MNAR.percentile | Si le modèle “percentile” est choisi pour l’imputation des  MNAR, choix du percentile | {0,1} |
-| Imputation.MCAR.model | Choix du modèle pour l’imputation des MCAR | none / MNAR / knn |
-| Imputation.MCAR.threshold.obs | Nombre d’observations minimal dans la condition pour qu’une valeur manquante soit considérée comme MCAR | {0, nombre de réplicats} |
-| Imputation.MCAR.threshold.MSMS | Nombre d’identification par MS/MS minimal dans la condition pour qu’une valeur manquante soit considérée comme MCAR | {0, nombre de réplicats} |
-| Imputation.knn.min.occurrences | Nombre d’observations minimal dans la condition pour qu’une protéine puisse être utilisée comme un k plus proche voisin | {0, nombre de réplicats} |
-| Test.type | Choix du test statistique à exécuter | t.test / limma / wilcoxon |
-| Test.log | Choisir de transformer les intensités par le log pour réaliser le test statistique ou non | T / F |
-| Test.alternative | Choisir si le test sera unilatéral ou bilatéral | two.sided / unilateral |
-| Test.paired | Choisir si le test sera apparié ou non | T / F |
-| Test.var.equal | En cas de choix du t.test, préciser si les variances sont égales dans le jeu de données. Si oui, un test de Student sera utilisé, sinon le test de Welch sera utilisé. | T / F |
-| Test.adjust.procedure | Choix de la méthode de correction de tests multiples | none / BH / ABH |
-| Test.adjust.FDR | Choix du FDR accepté pour la correction de tests multiples | {0,1} |
-| Ratio | Choix de la métrique pour les ratios du volcano-plot | fc / zscore |
-| Volcano.threshold.pvalue | Seuil de significativité pour la p-valeur | {0,1} |
-| Volcano.threshold.ratio | Seuil de significativité pour le ratio | ℝ |
-| Comparisons | Liste des paires de conditions à comparer | Exemple : 50fmol/25fmol;50fmol/10fmol |
-| Figure.format | Choisir le format des figures du rapport généré | SVG / JPEG |
+| Normalisation | Should intensities be normalized or not ? | T / F |
+| Filter.threshold.ms | Minimum number of file identified by MS/MS to keep the protein for the analysis | ℕ |
+| Filter.threshold.obs | Minimum percentage of observed intensities in one condition at least to keep the protein for the analysis | {0,100} |
+| Imputation.MNAR.model | Which model should be used to impute MNAR ? | percentile / gaussian |
+| Imputation.MNAR.percentile | Which percentile should be used for the "percentile" imputation model ? | {0,1} |
+| Imputation.MCAR.model | Which model should be used to impute MCAR ? | none / MNAR / knn |
+| Imputation.MCAR.threshold.obs | Minimum number of observed intensities in a condition to classify the missing values as MCAR | {0, number of replicates} |
+| Imputation.MCAR.threshold.MSMS | Minimum number of file identified by MS/MS in a condition to classify the missing values as MCAR | {0, number of replicates} |
+| Imputation.knn.min.occurrences |  Minimum number of observed intensities in a condition to use the protein as a k-nearest-neighnour for KNN imputation model | {0, nombre de réplicats} |
+| Test.type | Which statistical test should be used ? | t.test / limma / wilcoxon |
+| Test.log | Should intensities be transformed by log10 before executing the statistical test ? | T / F |
+| Test.alternative | Choose if the statistical test should be unilateral or bilateral | two.sided / unilateral |
+| Test.paired | Choose if the statistical test should be paired or not | T / F |
+| Test.var.equal | If t.test is selected, precise if variance are equal (so a Student t.test will be used) or not (so a Welch t.test will be used)  | T / F |
+| Test.adjust.procedure | Choose the multiple test correction procedure | none / BH / ABH |
+| Test.adjust.FDR | Choose the FDR for multiple test correction | {0,1} |
+| Ratio | Choose the ratio that should be computed between conditions | fc / zscore |
+| Volcano.threshold.pvalue | Significativity threshold for pvalue | {0,1} |
+| Volcano.threshold.ratio | Significativity threshold for ratio | ℝ |
+| Comparisons | List of paired conditions to compare | Exemple : 50fmol/25fmol;50fmol/10fmol |
 
-Here you can see an example of parameters file : .<br/>
+Here you can see an example of parameters file with default values : <br/>
 <br/>
 The experimental design also have to be provided as an input. Here you can see an example of experimental design file : .<br/>
 <br/>
