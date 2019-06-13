@@ -20,7 +20,7 @@ This module, after filtering proteins, normalizing intensities and imputing miss
 | Imputation.MCAR.model | Which model should be used to impute MCAR ? | none / MNAR / knn |
 | Imputation.MCAR.threshold.obs | Minimum number of observed intensities in a condition to classify the missing values as MCAR | {0, number of replicates} |
 | Imputation.MCAR.threshold.MSMS | Minimum number of file identified by MS/MS in a condition to classify the missing values as MCAR | {0, number of replicates} |
-| Imputation.knn.min.occurrences |  Minimum number of observed intensities in a condition to use the protein as a k-nearest-neighnour for KNN imputation model | {0, nombre de réplicats} |
+| Imputation.knn.min.occurrences |  Minimum number of observed intensities in a condition to use the protein as a k-nearest-neighnour for KNN imputation model | {0, number of replicates} |
 | Test.type | Which statistical test should be used ? | t.test / limma / wilcoxon |
 | Test.log | Should intensities be transformed by log10 before executing the statistical test ? | T / F |
 | Test.alternative | Choose if the statistical test should be unilateral or bilateral | two.sided / unilateral |
