@@ -66,13 +66,11 @@ knitr::opts_chunk$set(echo = F,warning=F,message=F,opts.label="kill_prefix",fig.
 ```
 
 ```{r include=FALSE}
-#library("openxlsx")
 library(ggplot2)
 library(scales)
 library(grid)
 library(gridExtra)
 #library(cowplot)
-#library("RColorBrewer")
 library(knitr)
 library(kableExtra)
 library(reshape)
@@ -85,7 +83,6 @@ library(kableExtra)
 
 ```{r file_import}
 
-#input = read.table(params$file_name,sep=",",header=T)
 cytoc_ref = read.table("../../Data/CytoC/Rapport/cytoc_xics_ref.csv",sep=",",header=T)
 cytoc_ref$Source = rep("reference",nrow(cytoc_ref))
 cytoc_ref = cytoc_ref[order(as.Date(cytoc_ref$AcquiredTime)),] #Sort by date
@@ -94,7 +91,6 @@ cytoc_test = read.table("../../Data/CytoC/Rapport/cytoc_xics_test.csv",sep=",",h
 cytoc_test$Source = rep("test",nrow(cytoc_test))
 cytoc_test = cytoc_test[order(as.Date(cytoc_test$AcquiredTime)),] #Sort by date
 
-#layout = length(unique(input$AcquiredTime)) < 40
 ```
 
 <br>
@@ -109,7 +105,7 @@ cytoc_test = cytoc_test[order(as.Date(cytoc_test$AcquiredTime)),] #Sort by date
 # Reference #
 #############
 
-# Extracting ppm
+# Extract ppm
 PPM = substring(cytoc_ref$Annotations, regexpr("delta PPM = ", cytoc_ref$Annotations) + 12)
 cytoc_ref$PPM = as.numeric(PPM)
 
@@ -196,7 +192,7 @@ data = data[order(data$Source),]
 ## Retention time
 <br>
 
-```{r RT, fig.cap="RT-median"}
+```{r RT_plots, fig.cap="RT-median"}
 
 # Boxplots
 gg2 = ggplot(data = data, aes(x = Precursor, y = centered_rt)) + 
@@ -284,7 +280,7 @@ invisible(dev.off())
 
 <br>
 
-```{r fig.caption="Z-score = (RT_obs - median_ref)/sd"}
+```{r}
 
 #df z-score for ploting
 df_z_rt = NULL
