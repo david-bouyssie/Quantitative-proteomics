@@ -31,7 +31,7 @@ This module, after filtering proteins, normalizing intensities and imputing miss
 | Ratio | Choose the ratio that should be computed between conditions | fc / zscore |
 | Volcano.threshold.pvalue | Significativity threshold for pvalue | {0,1} |
 | Volcano.threshold.ratio | Significativity threshold for ratio | ℝ |
-| Comparisons | List of paired conditions to compare | Exemple : 50fmol/25fmol;50fmol/10fmol |
+| Comparisons | List of paired conditions to compare | Exemple : 50fmol-25fmol;50fmol-10fmol |
 
 Here you can see an example of parameters file with default values : <br/>
 <br/>
