@@ -23,7 +23,7 @@ This module, after filtering proteins, normalizing intensities and imputing miss
 | Imputation.knn.min.occurrences |  Minimum number of observed intensities in a condition to use the protein as a k-nearest-neighnour for KNN imputation model | {0, number of replicates} |
 | Test.type | Which statistical test should be used ? | t.test / limma / wilcoxon |
 | Test.log | Should intensities be transformed by log10 before executing the statistical test ? | T / F |
-| Test.alternative | Choose if the statistical test should be unilateral or bilateral | two.sided / unilateral |
+| Test.alternative | Choose if the statistical test should be unilateral or bilateral | two.sided / less / greater |
 | Test.paired | Choose if the statistical test should be paired or not | T / F |
 | Test.var.equal | If t.test is selected, precise if variance are equal (so a Student t.test will be used) or not (so a Welch t.test will be used)  | T / F |
 | Test.adjust.procedure | Choose the multiple test correction procedure | none / BH / ABH |
