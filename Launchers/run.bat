@@ -5,7 +5,7 @@
 
 :: Command line format : Rscript --vanilla run_parsing.R [file to parse] [output] [parser option : Proline/Maxquant/ProteomeDiscoverer] [abundance type option : LFQ/iBAQ/raw_abundance/abundance] [if xlsx file, sheet number]
 :: Example : 
-::Rscript --vanilla run_parsing.R "path_to_file_to_parse/name_of_file_to_parse" "path_to_desired_output_directory/desired_name" Proline abundance 4
+Rscript --vanilla run_parsing.R "path_to_file_to_parse/name_of_file_to_parse" "path_to_desired_output_directory/desired_name" Proline abundance 4
 
 
 :: ###############################
@@ -14,7 +14,7 @@
 
 :: Command line format : Rscript --vanilla run_proteomics_stats.R QC [input (standardized format)] [output] [normalization option: TRUE/FALSE] [delete empty lines : TRUE/FALSE]
 :: Example :
-::Rscript --vanilla run_proteomics_stats.R QC "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt" "../../Example/Reports/QC_example.html" TRUE FALSE
+Rscript --vanilla run_proteomics_stats.R QC "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt" "../../Example/Reports/QC_example.html" TRUE FALSE
 
 
 :: ################################
@@ -23,7 +23,7 @@
 
 :: Command line format : Rscript --vanilla run_proteomics_stats.R DA [input (standardized format)] [report output] [table output] [experimental design file] [parameters file]
 :: Example :
-::Rscript --vanilla run_proteomics_stats.R DA "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt" "../../Example/Reports/DA_example.html" "../../Example/Reports/DA_example.txt" "../../Example/Datasets/QC-DA/designExp.txt" "../../Example/Datasets/QC-DA/Parameters.txt"
+Rscript --vanilla run_proteomics_stats.R DA "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt" "../../Example/Reports/DA_example.html" "../../Example/Reports/DA_example.txt" "../../Example/Datasets/QC-DA/designExp.txt" "../../Example/Datasets/QC-DA/Parameters.txt"
 
 
 :: ##############
@@ -41,4 +41,4 @@ Rscript --vanilla run_ROC.R "../../Example/Datasets/ROC/" "../../Example/Dataset
 
 :: Command line format : Rscript --vanilla run_proteomics_stats.R DA [input] [output folder]
 :: Example :
-::Rscript --vanilla run_cytoc.R "../../Example/Datasets/CytoC/cytoc_xics_test.csv" "../../Example/Reports/CytoC_example.html"
+Rscript --vanilla run_cytoc.R "../../Example/Datasets/CytoC/cytoc_xics_test.csv" "../../Example/Reports/CytoC_example.html"
