@@ -37,8 +37,8 @@ You can see examples in _Example/Datasets/CytoC_.
 ### 2.2. Modules description
 
 The instrumental QC project includes 2 modules (located at _Modules/Instrumental QC_):
-- Descriptive_CytoC.rmd : this module generates a report which shows the evolution of metrics (RT, intensity, PPM) accross the acquired times.
-- Comparative_CytoC.rmd : this module generates a report which evaluates the validity of metrics in a test serie based on observed metrics in a reference serie.
+- Descriptive_CytoC.rmd : this module generates a report which shows the evolution of metrics (RT, intensity, PPM) accross the acquired times (see _Descriptive_report__cytoc_ref.html_).
+- Comparative_CytoC.rmd : this module generates a report which evaluates the validity of metrics in a test serie based on observed metrics in a reference serie (see _Comparative_report__cytoc_ref.html_).
 
 
 ## 3. Quantitative data analysis project
@@ -51,7 +51,7 @@ The QC & DA modules work with a standardized input format that can be obtain fro
 
 #### 3.2.1. QC module
 
-The QC module generates a report providing a global visualization of data quality and reproducibility. The user can set two parameters in the command line:
+The QC module generates a report providing a global visualization of data quality and reproducibility (see _Example/Reports/QC_proteins_set.html_). The user can set two parameters in the command line:
 - "normalization option": should intensities be normalized or not (T/F) ?
 - "delete empty lines" : should proteins with no observed intensities be removed from the dataset (T/F) ?
 
@@ -63,7 +63,10 @@ The DA module allows to process the data (filtering, normalization, missing valu
 
 <br>
 
-This worklow can be configured thanks to the following parameters :
+It takes as inputs the standardized quantification file, but also:
+- The experimental design (see _Example/Datasets/QC-DA/ExpDesign.txt_)
+- A set of parameters stored in a TSV file (see _Example/Datasets/QC-DA/Parameters.txt_)
+<br>Here you can find a description of all parameters and possible values:
 
 | Parameter | Function | Values |
 | --------- | --------- | --------- |
@@ -88,9 +91,6 @@ This worklow can be configured thanks to the following parameters :
 | Volcano.threshold.ratio | Significativity threshold for ratio | ℝ |
 | Comparisons | List of paired conditions to compare | Exemple : 50fmol-25fmol;50fmol-10fmol |
 
-Here you can see an example of parameters file with default values : <br/>
 <br/>
-The experimental design also have to be provided as an input. Here you can see an example of experimental design file : .<br/>
-<br/>
-The module gives as outputs a TSV table summarizing input data, intensities after each step of processing and final results of statistical results. A report containg QC figures for each processing step and figures showing the results of differential analysis is also provided.
+The module gives as outputs a TSV table summarizing input data, intensities after each step of processing and final results of statistical results. A report containg QC figures for each processing step and figures showing the results of differential analysis is also provided (see _Example/Reports/DA_proteins__set.html_).
 <br/>
