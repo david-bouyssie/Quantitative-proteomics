@@ -1,8 +1,8 @@
 
 args <- commandArgs(trailingOnly = TRUE)
-repository = paste0("../",args[1])
-variants = paste0("../",args[2])
-output_file = paste0("../",args[3])
+repository = args[1]
+variants = args[2]
+output_file = args[3]
 nb_tests = as.numeric(args[4])
 min_ratio = as.numeric(args[5])
 max_ratio = as.numeric(args[6])
@@ -14,7 +14,7 @@ default_pval_threshold = as.numeric(args[10])
 Sys.setenv(RSTUDIO_PANDOC="C:/Program Files/RStudio/bin/pandoc")
 
 normalization = args[4]
-rmarkdown::render('Rmd/ROC.Rmd',
+rmarkdown::render('../Modules/Quantitative data analysis/ROC.Rmd',
                   output_file = output_file,
                   params=list(
                     repository = repository,
