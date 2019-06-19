@@ -41,4 +41,4 @@ Rscript --vanilla run_ROC.R "../../Example/Datasets/ROC/" "../../Example/Dataset
 
 :: Command line format : Rscript --vanilla run_proteomics_stats.R DA [input] [output folder]
 :: Example :
-::Rscript --vanilla run_cytoc.R "../../Example/Datasets/CytoC/cytoc_xics_test.csv" "../../Example/Reports"
+::Rscript --vanilla run_cytoc.R "../../Example/Datasets/CytoC/cytoc_xics_test.csv" "../../Example/Reports/CytoC_example.html"
