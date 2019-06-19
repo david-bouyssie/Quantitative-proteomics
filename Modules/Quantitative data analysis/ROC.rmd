@@ -2,7 +2,7 @@
 output:
   html_document
 params:
-  repository: "../../Results/Human_yeast/ROC/imputation/mcar"
+  repository: "../../Results/Human_yeast/ROC/test"
   variants: "../../Results/Human_yeast/ROC/variants.csv"
   default_ratio_threshold: 1
   default_pval_threshold: 0.01
@@ -82,7 +82,7 @@ library(ggplot2)
 library(svglite)
 library(kableExtra)
 
-source("../../Library/quantitativeProteomics.R")
+source("../../../Package/quantitativeProteomics.R")
 ```
 
 ```{r read_files}
@@ -122,7 +122,7 @@ for (file in names(ldf)){
  #######################################
   
   Accession = ldf[[file]]$Accession
-  FC = ldf[[file]][grepl("^log2\\(FC|^zscore",colnames(ldf[[file]]))]
+  FC = ldf[[file]][grepl("log2_fc|log2_zscore",colnames(ldf[[file]]))]
   qval = ldf[[file]][grepl("^qval",colnames(ldf[[file]]))]
   
   if (length(qval)<1){
