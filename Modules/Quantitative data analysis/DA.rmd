@@ -3,7 +3,7 @@
 output:
   html_document
 params:
-  quantif_file: "../../Data/Quanti/Parsed_data/Human_yeast/all_mrf_withsamplename.txt"
+  quantif_file: "D:/Utilisateurs/cludwig/stage/RStudio/Tests/Data/Quanti/Parsed_data/Human_yeast/all_mrf_withsamplename.txt"
   design_exp: "../../Data/Quanti/Parsed_data/Human_yeast/designExp.txt"
   parameters: "../../Data/Quanti/Parsed_data/Human_yeast/Params_da.txt"
   output_table: "..."
@@ -67,7 +67,6 @@ function saveSvgFromParentDiv(divElId, name) {
 </script>
 
 
-
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = F,warning=F,message=F,opts.Label="kill_prefix",fig.dim=c(20,10))
 ```
@@ -88,7 +87,7 @@ library(ggdendro)
 library(tibble)
 library(multtest)
 
-source("../../../Package/quantitativeProteomics.R")
+source("../../Library/quantitativeProteomics.R")
 ```
 
 ```{r file_import, echo=FALSE}
