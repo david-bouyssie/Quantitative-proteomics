@@ -82,7 +82,7 @@ library(ggplot2)
 library(svglite)
 library(kableExtra)
 
-source("../../../Package/quantitativeProteomics.R")
+source("../../Library/quantitativeProteomics.R")
 ```
 
 ```{r read_files}
