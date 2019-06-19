@@ -123,7 +123,6 @@ _Soit nb le nombre de protéines dans le jeu de données. Soit X le vecteur des 
 Pour obtenir un tel résultat, les valeurs manquantes de X sont d’abord remplacées μ (A). Si l’écart-type résultant, noté σres, est supérieur à σexp, alors on ne pourra jamais obtenir un écart-type plus proche de σexp, et les valeurs manquantes sont remplacées par μ dans le tableau de données. En revanche, si σres < σexp, la valeur de remplacement des valeurs manquantes est progressivement augmentée de d=Q3-μ jusqu’à trouver deux valeurs de remplacement dont les σres correspondants encadrent σexp (B). Les valeurs manquantes sont alors remplacées dans le jeu de données par des valeurs tirées aléatoirement dans une distribution gaussienne centrée sur la médiane entre les deux valeurs de remplacement et d’écart-type 0.05 (C)._
 
 <br/>
-<br/>
 
 #### 3.2.3. ROC module
 
