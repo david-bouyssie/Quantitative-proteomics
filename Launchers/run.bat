@@ -32,7 +32,7 @@
 
 :: Command line format : Rscript --vanilla run_proteomics_stats.R DA [input folder] [variant list] [output report] [number of tests] [min ratio] [max ratio] [default ratio] [min pval] [max pval] [default pval]
 :: Example :
-::Rscript --vanilla run_ROC.R "../../Example/Datasets/ROC/" "../../Example/Datasets/ROC/variants/variants.csv" "../../Example/Reports/ROC_example.html" 10 0.5 10 0.58 0 0.05 0.05
+Rscript --vanilla run_ROC.R "../../Example/Datasets/ROC/" "../../Example/Datasets/ROC/variants.csv" "../../Example/Reports/ROC_example.html" 10 0.5 10 0.58 0 0.05 0.05
 
 
 :: ############
