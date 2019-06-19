@@ -10,4 +10,7 @@ The 2nd project is dedicated to quantitative proteomic data analysis from QC to 
 <br/>
 <br/>
 
-All modules can be launched by command line thanks to the R scripts stored in the **"Launchers"** folder. The modules from the quantitative data analysis project make use of the functions implemented in the library stored in the **"Library"** folder. These modules work with a standardized input format that can be obtain from any quantification file thanks to the parsers stored in the **"Parsers"** folder.
+All modules can be launched by command line thanks to the scripts stored in the **"Launchers"** folder. You can find working examples of command lines in the "run.bat" file of this folder (works on Windows only). So, to execute a QC on the quantification file stored at Example/Dataset/QC-DA/Parsed_proteins_set.txt, you can launch the following instruction in a terminal :
+
+
+The modules from the quantitative data analysis project make use of the functions implemented in the library stored in the **"Library"** folder. These modules work with a standardized input format that can be obtain from any quantification file thanks to the parsers stored in the **"Parsers"** folder.
