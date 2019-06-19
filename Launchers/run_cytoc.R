@@ -6,4 +6,6 @@
 args <- commandArgs(trailingOnly = TRUE)
 Sys.setenv(RSTUDIO_PANDOC="C:/Program Files/RStudio/bin/pandoc")
 output_dir <- "results/"
-rmarkdown::render('../Modules/Instrumental QC/Descriptive_cytoc.Rmd',output_dir = args[2],params=list(file_name=args[1]))
+rmarkdown::render('../Modules/Instrumental QC/Descriptive_cytoc.Rmd',
+                  output_file = args[2],
+                  params=list(file_name=args[1]))
