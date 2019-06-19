@@ -3,10 +3,10 @@
 output:
   html_document
 params:
-  quantif_file: "path_to/standardized_quantification_file"
-  design_exp: "path_to/experimental_design_file"
-  parameters: "path_to/parameter_file"
-  output_table: "path_to/desired_output_table"
+  quantif_file: "../../Data/Quanti/Parsed_data/Human_yeast/all_mrf_withsamplename.txt"
+  design_exp: "../../Data/Quanti/Parsed_data/Human_yeast/designExp.txt"
+  parameters: "../../Data/Quanti/Parsed_data/Human_yeast/Params_da.txt"
+  output_table: "..."
 title: "Differential analysis"
 ---
 
@@ -88,7 +88,7 @@ library(ggdendro)
 library(tibble)
 library(multtest)
 
-source("../../Library/quantitativeProteomics.R")
+source("../../../Package/quantitativeProteomics.R")
 ```
 
 ```{r file_import, echo=FALSE}
@@ -486,13 +486,6 @@ if(parameters["Imputation.MCAR.model",] != "MNAR"){
   
   #Parse parameters
   Imputation.knn.min.occurrences = as.numeric(as.character(parameters["Imputation.knn.min.occurrences",]))
-  # if(Imputation.knn.min.occurrences<3){
-  #   warning = paste0(warning,"\n Warning : Imputation.knn.min.occurrences have to be greater or equal to 3, 3 was then used instead of ",Imputation.knn.min.occurrences)
-  #   Imputation.knn.min.occurrences = 3
-  # }else if(Imputation.knn.min.occurrences>length(samples_names)){
-  #   warning = paste0(warning,"\n Warning : Imputation.knn.min.occurrences can't be greater than the number of biological replicates, ",length(samples_names), " was then used instead of ",Imputation.knn.min.occurrences)
-  #   Imputation.knn.min.occurrences = length(samples_names)
-  # }
   Imputation.MCAR.threshold.obs = as.numeric(as.character(parameters["Imputation.MCAR.threshold.obs",]))
   Imputation.MCAR.threshold.MSMS = as.numeric(as.character(parameters["Imputation.MCAR.threshold.MSMS",]))
   
@@ -506,13 +499,7 @@ if(parameters["Imputation.MCAR.model",] != "MNAR"){
                                       Imputation.MCAR.threshold.obs,
                                       Imputation.MCAR.threshold.MSMS,
                                       Imputation.knn.min.occurrences)
-    # 
-    # if(ncol(intensities_current_condition)>3){
-    #   imputed_intensities = impute_mcar(intensities_current_condition,parameters["Imputation.MCAR.model",],Imputation.MCAR.threshold.obs,Imputation.knn.min.occurrences)
-    # }else{
-    #   warning = paste0(warning,"\n Warning: KNN algorithm can't be used for groups with less than 3 replicates")
-    #   imputed_intensities = intensities_current_condition
-    # }
+
   
     colnames(imputed_intensities) = paste0(sub("_mean","",colnames(imputed_intensities)),"_mcar")
     colnames(imputed_intensities)[1] = colnames(filtered_data)[1]
@@ -720,48 +707,6 @@ invisible(dev.off())
 
 ```
 
-<br>
-
-```{r plot_cv_distribution_before_processing_log, results='asis'}
-
-# cv_density_before_processing = ggplot() +
-#     geom_density(data = df_cv_before_processing, mapping = aes(x=log2(value),group=Group,color=Group), na.rm = T) +
-#     ggtitle("CV distribution before normalization")+
-#     xlab("log2(CV)")+
-#     theme(plot.title = element_text(size=22),
-#           axis.title=element_text(size=18),
-#           axis.text=element_text(size=18),
-#           legend.text=element_text(size=16),
-#           legend.title=element_text(size=18))
-# 
-# if(normalization){
-#   
-#   cv_density_after_processing = ggplot() +
-#     geom_density(data = df_cv_after_processing2, mapping = aes(x=log2(value),group=Group,color=Group), na.rm = T) +
-#     ggtitle("CV distribution after normalization")+
-#     xlab("log2(CV)")+
-#     theme(plot.title = element_text(size=22),
-#           axis.title=element_text(size=18),
-#           axis.text=element_text(size=18),
-#           legend.text=element_text(size=16),
-#           legend.title=element_text(size=18))
-#   
-#   s <- svgstring(width=20,height=10)
-#   grid.arrange(arrangeGrob(cv_density_before_processing+ggtitle("CV distribution before normalization")),
-#                arrangeGrob(cv_density_after_processing),
-#                ncol=2,nrow=1)
-#   cat(htmltools::HTML("<div id=\"svgWrapper6\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper6','Log CV distribution.svg');\" >Save figure</a></div>"))
-#   invisible(dev.off())
-#   
-# }else{
-#   s <- svgstring(width=20,height=10)
-#   plot(cv_density_before_processing+ggtitle("Log CV distribution"))
-#   cat(htmltools::HTML("<div id=\"svgWrapper6\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper6','Log CV distribution.svg');\" >Save figure</a></div>"))
-#   invisible(dev.off())
-# }
-
-
-```
 
 <br>
 
@@ -866,24 +811,89 @@ invisible(dev.off())
 
 
 ```{r DA, results='asis'}
-imputed_abundance = imputed_abundance[grepl("_imputed$",names(imputed_abundance))]
 
+# Parameters parsing
 Fold.Change = as.character(parameters["Fold.Change",])
 Volcano.threshold.pvalue = as.numeric(as.character(parameters["Volcano.threshold.pvalue",]))
 Volcano.threshold.fc = as.numeric(strsplit(as.character(parameters["Volcano.threshold.fc",]),";")[[1]])
-comparisons = strsplit(as.character(parameters["Comparisons",]),";")[[1]]
 
+
+##############################################
+# Pvalue computing in case of anova/kruskall #
+##############################################
+
+if(parameters["Test.type",]%in%c("anova","kruskall")){
+  
+  if(parameters["Test.log",]==T){
+    intensity_df = imputed_abundance_log
+  }else{
+    intensity_df = imputed_abundance
+  }
+  
+  # Reshape df of intensities to fit anova/kruskal needs
+  reshape_imputed_abundance = melt(intensity_df,id="Id")
+  reshape_imputed_abundance$variable = sub(".*_","",sub(paste0(pattern,".*"),"",reshape_imputed_abundance$variable))
+  
+  for(id in imputed_abundance$Id){
+    
+    current_protein_intensities = subset(reshape_imputed_abundance,reshape_imputed_abundance$Id==id)
+    
+    if(parameters["Test.type",]=="anova"){
+      # ANOVA
+      anova = aov(current_protein_intensities$value~current_protein_intensities$variable)
+      pval = summary(anova)[[1]][[1,"Pr(>F)"]]
+      # Tukey
+      res <- t(TukeyHSD(x=anova, 'current_protein_intensities$variable', conf.level=1-Volcano.threshold.pvalue)[[1]])[4,]
+      
+      if(!exists('pvalue_table')){
+        pvalue_table = data.frame(matrix(c(id,pval,res),nrow=1))
+        colnames(pvalue_table) = c("Id","global_pval",names(res))
+      }else{
+        add = data.frame(matrix(c(id,pval,res),nrow=1))
+        colnames(add) = c("Id","global_pval",names(res))
+        pvalue_table = rbind(pvalue_table,add)
+      }
+      
+ 
+    }else{
+      if(parameters["Test.type",]=="kruskall"){
+        # KRUSKAL
+        kruskal = kruskal.test(reshape_imputed_abundance$value~as.factor(reshape_imputed_abundance$variable))
+        pval = kruskal$p.value
+        # Wilcoxon pairwise
+        res = pairwise.wilcox.test(reshape_imputed_abundance$value,reshape_imputed_abundance$variable,p.adjust.method="none")
+      }
+    }
+    
+  }
+  
+}
+
+
+########################
+# Pairwised statistics #
+########################
+
+# Which condition should be compared ?
+comparisons_to_display = strsplit(as.character(parameters["Comparisons",]),";")[[1]]
+if(exists('pvalue_table')){
+  comparisons_to_do = colnames(pvalue_table)[3:ncol(pvalue_table)]
+}else{
+  comparisons_to_do = comparisons_to_display
+}
+
+# Intialize dataframes
+statDF = data.frame(filtered_data$Id,filtered_data$Accession,filtered_data$Label)
+colnames(statDF) = c("Id","Accession","Label")
 final_data = filtered_data
 
-for (comparison in comparisons){
+# Statistic computing for each couple of condition
+for (comparison in comparisons_to_do){
 
-  cat(text_spec(comparison, color="#3686D5", bold=T, font_size=18 ))
+  ########################## Data extraction ##########################
   
-  statDF = data.frame(filtered_data$Accession,filtered_data$Label)
-  colnames(statDF) = c("Accession","Label")
-
   # Extract data for the couple of condition
-  couple = strsplit(comparison,"/")[[1]]
+  couple = strsplit(comparison,"-")[[1]]
   A_name = couple[1]
   B_name = couple[2]
   A = cbind(filtered_data$Accession,filtered_data$Label,imputed_abundance[grepl(A_name,colnames(imputed_abundance))])
@@ -892,227 +902,251 @@ for (comparison in comparisons){
   # Extract max intensity for each protein
   totIntensities = merge.data.frame(A,B,by=c("filtered_data$Accession","filtered_data$Label"))
   colnames(totIntensities)[1] = "Accession"
-  totIntensities$mean_intensity = apply(totIntensities[,3:ncol(totIntensities)],1,function(x) mean(x, na.rm=T))
+  totIntensities[paste0("mean_intensity_",comparison)] = apply(totIntensities[,3:ncol(totIntensities)],1,function(x) mean(x, na.rm=T))
   
-  ##############
-  # Compute FC #
-  ##############
+  ########################## Compute FC ########################## 
   
   if(as.logical(parameters["Test.paired",])){
     paired_ratios = data.matrix(totIntensities[grepl(A_name,names(totIntensities))])/data.matrix(totIntensities[grepl(B_name,names(totIntensities))])
     log_paired_ratios = log2(paired_ratios)
-    totIntensities$fc = 2^(rowMeans(log_paired_ratios))
+    totIntensities[paste0("fc_",comparison)] = 2^(rowMeans(log_paired_ratios))
   }else{
-    totIntensities$mean_A = rowMeans(log2(data.matrix(totIntensities[grepl(A_name,names(totIntensities))])),na.rm = TRUE)
-    totIntensities$mean_B = rowMeans(log2(data.matrix(totIntensities[grepl(B_name,names(totIntensities))])),na.rm = TRUE)
-    totIntensities$fc = 2^(totIntensities$mean_A-totIntensities$mean_B)
+    totIntensities[paste0("mean_intensity_",A_name)] = rowMeans(log2(data.matrix(totIntensities[grepl(A_name,names(totIntensities))])),na.rm = TRUE)
+    totIntensities[paste0("mean_intensity_",B_name)] = rowMeans(log2(data.matrix(totIntensities[grepl(B_name,names(totIntensities))])),na.rm = TRUE)
+    totIntensities[paste0("fc_",comparison)] = 2^(totIntensities[paste0("mean_intensity_",A_name)]-totIntensities[paste0("mean_intensity_",B_name)])
   }
   
-  statDF = merge.data.frame(statDF,totIntensities[,c("Accession","mean_intensity","fc")],by="Accession")
+  statDF = merge.data.frame(statDF,totIntensities[,c("Accession",paste0("mean_intensity_",comparison),paste0("fc_",comparison))],by="Accession")
 
   if(Fold.Change=="zscore"){
-    statDF$zscore <- scale(log2(statDF$fc),center = TRUE, scale = TRUE)
+    statDF$zscore <- scale(log2(statDF[paste0("fc_",comparison)]),center = TRUE, scale = TRUE)
   }
 
-  ###################
-  # Compute pvalues #
-  ###################
-
-  ## Test.log ?
-  if(parameters["Test.log",]==T){
-    A = cbind(filtered_data$Accession,filtered_data$Label,filtered_data[grepl(paste0(A_name,".*_imputed_log$"),colnames(filtered_data))])
-    B = cbind(filtered_data$Accession,filtered_data$Label,filtered_data[grepl(paste0(B_name,".*_imputed_log$"),colnames(filtered_data))])
-    if(parameters["Test.var.equal",]==F){
-      cat(text_spec("\n"))
-      cat(text_spec("Warning : intensities should not be transformed by log with a Welch test (variance not equal)",italic=T,font_size="12px"))
+  ########################## Compute pvalues ##########################
+  
+  # ANOVA/KRUSKALL
+  if(exists('pvalue_table')){
+    statDF = merge.data.frame(statDF,pvalue_table[grep(paste0("Id|",comparison),colnames(pvalue_table))],by="Id")
+    colnames(statDF)[ncol(statDF)] = paste0("pval_",colnames(statDF)[ncol(statDF)])
+  }else{# T.TEST/WILCOXON/LIMMA
+    
+    ## Extract log intensities if required
+    if(parameters["Test.log",]==T){
+      A = cbind(filtered_data$Accession,filtered_data$Label,filtered_data[grepl(paste0(A_name,".*_imputed_log$"),colnames(filtered_data))])
+      B = cbind(filtered_data$Accession,filtered_data$Label,filtered_data[grepl(paste0(B_name,".*_imputed_log$"),colnames(filtered_data))])
+      if(parameters["Test.var.equal",]==F){
+        cat(text_spec("\n"))
+        cat(text_spec("Warning : intensities should not be transformed by log with a Welch test (variance not equal)",italic=T,font_size="12px"))
+      }
     }
-  }
-
-  ## Test
-  if(parameters["Test.type",]=="limma"){
-
-    # Limma test
-    if(as.logical(parameters["Test.paired",])){
-      paired = c(seq(1,ncol(A)-2),seq(1,ncol(B)-2))
-      design <- model.matrix(~paired+factor(c(rep(1,length(A)-2), rep(2,length(B)-2))))
-      colnames(design) <- c("Intercept","paired", "B-A")
+    
+    ## Do the statistical test
+    if(parameters["Test.type",]=="limma"){
+  
+      # Limma test
+      if(as.logical(parameters["Test.paired",])){
+        paired = c(seq(1,ncol(A)-2),seq(1,ncol(B)-2))
+        design <- model.matrix(~paired+factor(c(rep(1,length(A)-2), rep(2,length(B)-2))))
+        colnames(design) <- c("Intercept","paired", "B-A")
+      }else{
+        design <- model.matrix(~factor(c(rep(1,length(A)-2), rep(2,length(B)-2))))
+        colnames(design) <- c("Intercept", "B-A")
+      }
+    
+      data_limma<- cbind(A[,3:ncol(A)],B[,3:ncol(B)])
+      rownames(data_limma)=filtered_data$Accession
+  
+      fit <- lmFit(data_limma, design)
+      fit <- eBayes(fit)
+  
+      alllimma<-topTable(fit, coef=2,adjust.method="BH",p.value=1,"P")
+  
+      # Extract pvalues & q values
+      alllimma$Accession = row.names(alllimma)
+      statDF = merge.data.frame(statDF,alllimma[grep("Accession|P.Value",colnames(alllimma))],by="Accession")
+      colnames(statDF)[ncol(statDF)] = paste0("pval_",comparison)
+      #statDF[paste0("pval_",comparison)][match(rownames(alllimma),statDF$Accession)]<- alllimma$P.Value
+  
     }else{
-      design <- model.matrix(~factor(c(rep(1,length(A)-2), rep(2,length(B)-2))))
-      colnames(design) <- c("Intercept", "B-A")
+      
+      statDF[paste0("pval_",comparison)] <- rep("", nrow(statDF))
+      
+      for(prot in 1:nrow(A)){
+        
+        if(parameters["Test.type",]=="t.test"){
+          pval = t.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
+                      alternative=as.character(parameters["Test.alternative",]),
+                      paired=as.logical(parameters["Test.paired",]),
+                      var.equal=as.logical(parameters["Test.var.equal",]))$p.value
+        }else if(parameters["Test.type",]=="wilcoxon"){
+           pval = wilcox.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
+                      alternative=as.character(parameters["Test.alternative",]),
+                      paired=as.logical(parameters["Test.paired",]))
+        }
+        statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession),]<- pval
+      }
+      
     }
-  
-    data_limma<- cbind(A[,3:ncol(A)],B[,3:ncol(B)])
-    rownames(data_limma)=filtered_data$Accession
-
-    fit <- lmFit(data_limma, design)
-    fit <- eBayes(fit)
-
-    alllimma<-topTable(fit, coef=2,adjust.method="BH",p.value=1,"P")
-
-    # Extract pvalues & q values
-    statDF$pval <- rep("", nrow(statDF))
-    statDF$pval[match(rownames(alllimma),statDF$Accession)]<- alllimma$P.Value
-    statDF$qval <- rep("", nrow(statDF))
-    statDF$qval[match(rownames(alllimma),statDF$Accession)]<- alllimma$adj.P.Val
-
-  }else if(parameters["Test.type",]=="t.test"){
-
-    statDF$pval <- rep("", nrow(statDF))
-
-    for(prot in 1:nrow(A)){
-      pval = t.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
-                    alternative=as.character(parameters["Test.alternative",]),
-                    paired=as.logical(parameters["Test.paired",]),
-                    var.equal=as.logical(parameters["Test.var.equal",]))$p.value
-      statDF$pval[match(A[prot,1],statDF$Accession)]<- pval
-    }
-
-  }else if(params$test=="wilcoxon"){
-    pval = wilcox.test(as.numeric(A[prot,-1]),as.numeric(B[prot,-1]),
-                    alternative=as.character(parameters["Test.alternative",]),
-                    paired=as.logical(parameters["Test.paired",]))
-    statDF$pval[match(A[prot,1],statDF$Accession)]<- pval
+    
   }
   
-  # FDR correction
-  if(parameters["Test.adjust.procedure",]!="none"){
+  ########################## Multiple testing correction ##########################
+
+   if(parameters["Test.adjust.procedure",]!="none"){
     value="qval"
-    procedure_results = mt.rawp2adjp(as.numeric(statDF$pval), proc=as.character(parameters["Test.adjust.procedure",]), alpha=parameters["Test.adjust.FDR",])
+    procedure_results = mt.rawp2adjp(as.numeric(unlist(statDF[paste0("pval_",comparison)])), proc=as.character(parameters["Test.adjust.procedure",]), alpha=parameters["Test.adjust.FDR",])
     qval = data.frame(procedure_results$adjp,procedure_results$index)[order(procedure_results$index),2]
   }else{
     value="pval"
     qval = rep(NA,nrow(statDF))
   }
-  statDF$qval = qval
-  statDF[,3:ncol(statDF)]=sapply(statDF[,3:ncol(statDF)], as.numeric)
+  statDF[paste0("qval_",comparison)] = qval
 
-  ########################
-  # Significant proteins #
-  ########################
+  ########################## Significant proteins ##########################
   
-  statDF$significant<-rep(F, nrow(statDF))
-  statDF$significant[(statDF[value]<=Volcano.threshold.pvalue) & (abs(log2(statDF[Fold.Change]))>Volcano.threshold.fc)] <- T
+  statDF[grepl("mean|fc|pval|qval",colnames(statDF))]=sapply(statDF[grepl("mean|fc|pval|qval",colnames(statDF))], as.numeric)
   
-  ###########
-  # MA Plot #
-  ###########
+  statDF[paste0("significant_",comparison)]<-rep(F, nrow(statDF))
+  statDF[paste0("significant_",comparison)][(statDF[paste0(value,"_",comparison)]<=Volcano.threshold.pvalue)
+                                            & (abs(log2(statDF[paste0(Fold.Change,"_",comparison)]))>=Volcano.threshold.fc)] <- T
   
-  MA = ggplot(statDF, aes(x=log10(mean_intensity), y=log2(abs(fc)))) +
-    geom_point() +
-    ggtitle("MA plot")+
-    xlab("log maximum intensity")+
-    ylab(paste0('log2(abs(',Fold.Change,'))')) +
-    theme(legend.position = "none",
-      plot.title = element_text(size=22),
-      axis.title=element_text(size=24),
-      axis.text=element_text(size=22),
-      legend.text=element_text(size=16),
-      plot.margin = unit(c(2,0,2,0), "cm"),
-      legend.title=element_text(size=18))
+
+  ########################## Results displaying ##########################
   
-  s <- svgstring(width=20,height=10)
-  plot(MA)
-  cat(htmltools::HTML(paste0("<div id=\"svgWrapper12bis\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12bis','MA plot.svg');\" >Save figure</a></div>")))
-  invisible(dev.off())
-  
-  cat(text_spec("\n"))
+  if(comparison%in%comparisons_to_display){
+    current_statDF = statDF[grepl(paste0("Accession|Label|",comparison),colnames(statDF))]
+    colnames(current_statDF) = c("Accession","Label","mean_intensity","fc","pval","qval","significant")
     
-
-  ################
-  # Volcano Plot #
-  ################
-
-  if(value=="qval" & Fold.Change=="fc"){
-    Volcano = ggplot(statDF, aes(x=log2(fc), y=-log10(as.numeric(qval))))
-  }else if(value=="pval" & Fold.Change=="fc"){
-    Volcano = ggplot(statDF, aes(x=log2(fc), y=-log10(as.numeric(pval))))
-  }else if(value=="qval" & Fold.Change=="zscore"){
-    Volcano = ggplot(statDF, aes(x=zscore, y=-log10(as.numeric(qval))))
-  }else{
-    Volcano = ggplot(statDF, aes(x=zscore, y=-log10(as.numeric(pval))))
-  }
-
-  Volcano = Volcano +
-    geom_point(aes(colour=significant),size=3) +
-    geom_hline(yintercept=-log10(Volcano.threshold.pvalue),linetype="dashed")+
-    geom_vline(xintercept=Volcano.threshold.fc,linetype="dashed")+
-    geom_vline(xintercept=-Volcano.threshold.fc,linetype="dashed")+
-    scale_colour_manual(values = c("black", "tomato1"))+
-    geom_text(aes(label=ifelse(statDF$significant==T,as.character(Label),'')),hjust=1,vjust=-1, size=6)+
-    ggtitle("")+
-    xlab(paste0('log2(',Fold.Change,')'))+
-    ylab(paste0('-log10(',value,')'))+
-    theme(legend.position = "none",
-      plot.title = element_text(size=22),
-      axis.title=element_text(size=18),
-      axis.text=element_text(size=18),
-      legend.text=element_text(size=16),
-      plot.margin = unit(c(2,0,2,0), "cm"),
-      legend.title=element_text(size=18))
-
-  s <- svgstring(width=20,height=10)
-  plot(Volcano)
-  cat(htmltools::HTML(paste0("<div id=\"svgWrapper13\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper13','Volcano.svg');\" >Save figure</a></div>")))
-  invisible(dev.off())
-  
-  cat(text_spec("\n"))
-
-  ###########
-  # Heatmap #
-  ###########
-
-  if(length(statDF$significant[statDF$significant==T])>1){
+    cat(text_spec(comparison, color="#3686D5", bold=T, font_size=18 ))
     
-      # Extract data for significant proteins
-      significant_proteins = subset(statDF,statDF$significant==T)
-      significant_proteins_data = subset(filtered_data,filtered_data$Accession%in%significant_proteins$Accession)
-      significant_proteins_intensities = significant_proteins_data[grepl(paste0("((",A_name,"|",B_name,").*imputed_log$|Accession$|Label$)"),names(filtered_data))]
-      colnames(significant_proteins_intensities) = c("Accession","Label",sub(paste0(pattern,"_imputed.*"),"",colnames(significant_proteins_intensities)[3:ncol(significant_proteins_intensities)]))
-      
-      samples_names_comparison = colnames(significant_proteins_intensities)[3:ncol(significant_proteins_intensities)]
-      group_ids_comparison = c(A_name,B_name)
-      
-      raw_intensities_significant_proteins = subset(filtered_data,filtered_data$Accession%in%significant_proteins_intensities$Accession)[c("Accession","Label",paste0(samples_names_comparison,"_mean"))]
-      imputed = cbind.data.frame(raw_intensities_significant_proteins[,1],is.na(raw_intensities_significant_proteins [,-c(1,2)]))
-      colnames(imputed)[1] = "Id"
-      
-      heatmap_plot = create_heatmap(significant_proteins_intensities, imputed, samples_names_comparison, group_ids_comparison)
+    # MA plot
     
-      s <- svgstring(width=20,height=10)
-      plot(heatmap_plot)
-      cat(htmltools::HTML("<div id=\"svgWrapper14\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper14','Heatmap.svg');\" >Save figure</a></div>"))
-      invisible(dev.off())
+    MA = ggplot(current_statDF, aes(x=log10(mean_intensity), y=log2(abs(fc)))) +
+      geom_point() +
+      ggtitle("MA plot")+
+      xlab("log maximum intensity")+
+      ylab(paste0('log2(abs(',Fold.Change,'))')) +
+      theme(legend.position = "none",
+        plot.title = element_text(size=22),
+        axis.title=element_text(size=24),
+        axis.text=element_text(size=22),
+        legend.text=element_text(size=16),
+        plot.margin = unit(c(2,0,2,0), "cm"),
+        legend.title=element_text(size=18))
+    
+    s <- svgstring(width=20,height=10)
+    plot(MA)
+    cat(htmltools::HTML(paste0("<div id=\"svgWrapper12bis\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12bis','MA plot.svg');\" >Save figure</a></div>")))
+    invisible(dev.off())
     
     cat(text_spec("\n"))
-    
-    #################
-    # Summary table #
-    ################
-    
-    map = merge.data.frame(raw_intensities_significant_proteins,statDF,by=c("Accession","Label"))
-    significant_proteins_table = map[ , -which(names(map) %in% c("mean_intensity","significant"))]
+      
+    # Volcano Plot 
   
-   cat(knitr::knit_print(DT::datatable(significant_proteins_table,
-                                  rownames=FALSE,
-                                  extensions = 'Buttons',
-                                  options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
-                    DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt')))
+    if(value=="qval" & Fold.Change=="fc"){
+      Volcano = ggplot(current_statDF, aes(x=log2(fc), y=-log10(as.numeric(qval))))
+    }else if(value=="pval" & Fold.Change=="fc"){
+      Volcano = ggplot(current_statDF, aes(x=log2(fc), y=-log10(as.numeric(current_statDF$pval))))
+    }else if(value=="qval" & Fold.Change=="zscore"){
+      Volcano = ggplot(current_statDF, aes(x=zscore, y=-log10(as.numeric(qval))))
+    }else{
+      Volcano = ggplot(current_statDF, aes(x=zscore, y=-log10(as.numeric(pval))))
+    }
   
+    Volcano = Volcano +
+      geom_point(aes(colour=current_statDF$significant),size=3) +
+      geom_hline(yintercept=-log10(Volcano.threshold.pvalue),linetype="dashed")+
+      geom_vline(xintercept=Volcano.threshold.fc,linetype="dashed")+
+      geom_vline(xintercept=-Volcano.threshold.fc,linetype="dashed")+
+      scale_colour_manual(values = c("black", "tomato1"))+
+      geom_text(aes(label=ifelse(current_statDF$significant==T,as.character(current_statDF$Label),'')),hjust=1,vjust=-1, size=6)+
+      ggtitle("")+
+      xlab(paste0('log2(',Fold.Change,')'))+
+      ylab(paste0('-log10(',value,')'))+
+      theme(legend.position = "none",
+        plot.title = element_text(size=22),
+        axis.title=element_text(size=18),
+        axis.text=element_text(size=18),
+        legend.text=element_text(size=16),
+        plot.margin = unit(c(2,0,2,0), "cm"),
+        legend.title=element_text(size=18))
+  
+    s <- svgstring(width=20,height=10)
+    plot(Volcano)
+    cat(htmltools::HTML(paste0("<div id=\"svgWrapper13\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper13','Volcano.svg');\" >Save figure</a></div>")))
+    invisible(dev.off())
+    
+    cat(text_spec("\n"))
+  
+  
+    # Heatmap
+  
+    if(length(current_statDF$significant[current_statDF$significant==T])>1){
+      
+        # Extract data for significant proteins
+        significant_proteins = subset(current_statDF,current_statDF$significant==T)
+        significant_proteins_data = subset(filtered_data,filtered_data$Accession%in%significant_proteins$Accession)
+        significant_proteins_intensities = significant_proteins_data[grepl(paste0("((",A_name,"|",B_name,").*imputed_log$|Accession$|Label$)"),names(filtered_data))]
+        colnames(significant_proteins_intensities) = c("Accession","Label",sub(paste0(pattern,"_imputed.*"),"",colnames(significant_proteins_intensities)[3:ncol(significant_proteins_intensities)]))
+        
+        samples_names_comparison = colnames(significant_proteins_intensities)[3:ncol(significant_proteins_intensities)]
+        group_ids_comparison = c(A_name,B_name)
+        
+        raw_intensities_significant_proteins = subset(filtered_data,filtered_data$Accession%in%significant_proteins_intensities$Accession)[c("Accession","Label",paste0(samples_names_comparison,"_mean"))]
+        imputed = cbind.data.frame(raw_intensities_significant_proteins[,1],is.na(raw_intensities_significant_proteins [,-c(1,2)]))
+        colnames(imputed)[1] = "Id"
+        
+        heatmap_plot = create_heatmap(significant_proteins_intensities, imputed, samples_names_comparison, group_ids_comparison)
+      
+        s <- svgstring(width=20,height=10)
+        plot(heatmap_plot)
+        cat(htmltools::HTML("<div id=\"svgWrapper14\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper14','Heatmap.svg');\" >Save figure</a></div>"))
+        invisible(dev.off())
+      
+      cat(text_spec("\n"))
+      
+  
+      # Summary table 
+      
+      map = merge.data.frame(raw_intensities_significant_proteins,current_statDF,by=c("Accession","Label"))
+      significant_proteins_table = map[ , -which(names(map) %in% c("mean_intensity","significant"))]
+    
+      # cat(knitr::knit_print(DT::datatable(significant_proteins_table,
+      #                               rownames=FALSE,
+      #                               extensions = 'Buttons',
+      #                               options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
+      #                 DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt')))
+    
+    }
   }
+  
   
   ###############################
   # Add results to global table #
   ###############################
-  
-  if(value=="pval"){
-    statistics = cbind(as.character(statDF$Accession),statDF$fc,log2(statDF$fc),statDF$pval,-log10(statDF$pval),statDF$significant)
-    colnames(statistics) = c("Accession",paste0("FC_",comparison),paste0("log2(FC_",comparison,")"),paste0("pval_",comparison),paste0("-log10(pval_",comparison,")"),paste0(comparison,"_significant"))
-  }else{
-    statistics = cbind(as.character(statDF$Accession),statDF$fc,log2(statDF$fc),statDF$pval,-log10(statDF$pval),statDF$qval,-log10(statDF$qval),statDF$significant)
-    colnames(statistics) = c("Accession",paste0("FC_",comparison),paste0("log2(FC_",comparison,")"),paste0("pval_",comparison),paste0("-log10(pval_",comparison,")"),paste0("qval_",comparison),paste0("-log10(qval_",comparison,")"),paste0(comparison,"_significant"))
-  }
 
-  final_data = merge(final_data,statistics,by="Accession")
+  current_statDF = statDF[grepl(paste0("Accession|Label|",comparison),colnames(statDF))]
+  
+  #assign(paste0("log10_pval_",comparison),-log10(current_statDF[paste0("pval_",comparison)]))
+  #log10_pval = -log10(current_statDF[paste0("pval_",comparison)])
+  current_statDF = add_column(current_statDF, !! paste0("log10_pval_",comparison), .after = paste0("pval_",comparison))
+  current_statDF[paste0("\"","log10_pval_",comparison,"\"")] = -log10(current_statDF[paste0("pval_",comparison)])
+  
+  #assign(paste0("log10_qval_",comparison),-log10(current_statDF[paste0("qval_",comparison)]))
+  current_statDF = add_column(current_statDF, !! paste0("log10_qval_",comparison), .after = paste0("qval_",comparison))
+  current_statDF[paste0("\"","log10_qval_",comparison,"\"")] = -log10(current_statDF[paste0("qval_",comparison)])
+  
+  # log = -log10(current_statDF[paste0("qval_",comparison)])
+  # current_statDF = add_column(current_statDF, log, .after = paste0("qval_",comparison))
+
+  #assign(paste0("log2_fc_",comparison),log2(current_statDF[paste0("fc_",comparison)]))
+  current_statDF = add_column(current_statDF, !! paste0("log2_fc_",comparison), .after = paste0("fc_",comparison)) 
+  current_statDF[paste0("\"","log2_fc_",comparison,"\"")] = log2(current_statDF[paste0("fc_",comparison)])
+  
+  # log2 = log2(current_statDF[paste0("fc_",comparison)])
+  # current_statDF = add_column(current_statDF, log2, .after = paste0("fc_",comparison))
+
+  final_data = merge(final_data,current_statDF,by=c("Accession","Label"))
   
 }
 
@@ -1126,10 +1160,9 @@ knitr::knit_print(DT::datatable(matrix(),
 ```
 
 
+
 ```{r save_data}
 
-# output_name = tail(strsplit(params$quantif_file,"/")[[1]],n=1)
-# output_name = paste0("DA_",output_name)
-write.table(final_data,output_table,row.names=FALSE,sep="\t")
+data.table::fwrite(final_data, output_table, row.names = F, sep = "\t")
 
 ```
