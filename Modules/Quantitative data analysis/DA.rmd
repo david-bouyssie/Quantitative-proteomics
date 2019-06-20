@@ -4,8 +4,8 @@ output:
   html_document
 params:
   quantif_file: "D:/Utilisateurs/cludwig/stage/RStudio/Tests/Data/Quanti/Parsed_data/Human_yeast/all_mrf_withsamplename.txt"
-  design_exp: "../../Data/Quanti/Parsed_data/Human_yeast/designExp.txt"
-  parameters: "../../Data/Quanti/Parsed_data/Human_yeast/Params_da.txt"
+  design_exp: "D:/Utilisateurs/cludwig/stage/RStudio/Tests/Data/Quanti/Parsed_data/Human_yeast/designExp.txt"
+  parameters: "D:/Utilisateurs/cludwig/stage/RStudio/Tests/Data/Quanti/Parsed_data/Human_yeast/Params_da.txt"
   output_table: "..."
 title: "Differential analysis"
 ---
@@ -1110,11 +1110,11 @@ for (comparison in comparisons_to_do){
       map = merge.data.frame(raw_intensities_significant_proteins,current_statDF,by=c("Accession","Label"))
       significant_proteins_table = map[ , -which(names(map) %in% c("mean_intensity","significant"))]
     
-      # cat(knitr::knit_print(DT::datatable(significant_proteins_table,
-      #                               rownames=FALSE,
-      #                               extensions = 'Buttons',
-      #                               options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
-      #                 DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt')))
+      cat(knitr::knit_print(DT::datatable(significant_proteins_table,
+                                    rownames=FALSE,
+                                    extensions = 'Buttons',
+                                    options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
+                      DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt')))
     
     }
   }
@@ -1126,24 +1126,16 @@ for (comparison in comparisons_to_do){
 
   current_statDF = statDF[grepl(paste0("Accession|Label|",comparison),colnames(statDF))]
   
-  #assign(paste0("log10_pval_",comparison),-log10(current_statDF[paste0("pval_",comparison)]))
-  #log10_pval = -log10(current_statDF[paste0("pval_",comparison)])
   current_statDF = add_column(current_statDF, !! paste0("log10_pval_",comparison), .after = paste0("pval_",comparison))
   current_statDF[paste0("\"","log10_pval_",comparison,"\"")] = -log10(current_statDF[paste0("pval_",comparison)])
   
-  #assign(paste0("log10_qval_",comparison),-log10(current_statDF[paste0("qval_",comparison)]))
   current_statDF = add_column(current_statDF, !! paste0("log10_qval_",comparison), .after = paste0("qval_",comparison))
   current_statDF[paste0("\"","log10_qval_",comparison,"\"")] = -log10(current_statDF[paste0("qval_",comparison)])
-  
-  # log = -log10(current_statDF[paste0("qval_",comparison)])
-  # current_statDF = add_column(current_statDF, log, .after = paste0("qval_",comparison))
 
-  #assign(paste0("log2_fc_",comparison),log2(current_statDF[paste0("fc_",comparison)]))
   current_statDF = add_column(current_statDF, !! paste0("log2_fc_",comparison), .after = paste0("fc_",comparison)) 
   current_statDF[paste0("\"","log2_fc_",comparison,"\"")] = log2(current_statDF[paste0("fc_",comparison)])
   
-  # log2 = log2(current_statDF[paste0("fc_",comparison)])
-  # current_statDF = add_column(current_statDF, log2, .after = paste0("fc_",comparison))
+  colnames(current_statDF) = gsub("\"","",colnames(current_statDF))
 
   final_data = merge(final_data,current_statDF,by=c("Accession","Label"))
   
