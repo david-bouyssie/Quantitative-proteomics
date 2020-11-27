@@ -1,14 +1,12 @@
 
 ---
+title: Quality control of `r basename(params$quantif_file)`
 output:
   html_document
 params:
-  quantif_file : path_to_/standardized_quantification_file
-  normalization : TRUE/FALSE
-  keep_empty_rows : TRUE/FALSE
-title:  | 
-  | Quality control of
-  | `r gsub(".*/","",params$quantif_file)`
+  quantif_file: path_to/standardized_quantification_file
+  normalization: TRUE/FALSE
+  keep_empty_rows: TRUE/FALSE
 ---
 
 <style type="text/css">
@@ -71,7 +69,14 @@ function saveSvgFromParentDiv(divElId, name) {
 </script>
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, dev = "svglite", fig.ext = ".svg")
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  dev = "svglite",
+  fig.ext = ".svg"
+  #root.dir = './'
+)
 ```
 
 
@@ -95,6 +100,8 @@ library(data.table)
 library(knitr)
 library(kableExtra)
 library(svglite)
+
+#message(params$quantif_file)
 
 source("../../Library/quantitativeProteomics.R")
 ```
