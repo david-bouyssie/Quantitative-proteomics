@@ -1,7 +1,10 @@
 
 ---
 output:
-  html_document
+  html_document:
+    pandoc_args: [
+      "+RTS","-K1024m","-RTS"
+    ]
 params:
   quantif_file: "D:/Utilisateurs/cludwig/stage/RStudio/Tests/Data/Quanti/Parsed_data/Human_yeast/all_mrf_withsamplename.txt"
   design_exp: "D:/Utilisateurs/cludwig/stage/RStudio/Tests/Data/Quanti/Parsed_data/Human_yeast/designExp.txt"
@@ -259,6 +262,10 @@ nbProteins = nrow(filtered_data)
 filtered_raw_abundance = filtered_data[c("Id",as.character(expDesign$File))]
 mean_abundance_repbio = filtered_data[,grepl("_mean|Id$",names(filtered_data))]
 
+if (nrow(mean_abundance_repbio) == 0) {
+  stop("Can't continue since the number of rows after applied filters is zero. Please check 'Filter.threshold' parameters (try to set lower values).")
+}
+
 ```
 
 
@@ -376,16 +383,20 @@ na_distribution = data.frame(median=numeric(),sums_na=numeric())
 na_percentage = data.frame(Group=character(),na_percentage=character(),na_count=character())
 for(Group in group_ids){
   current_group_intensities = mean_abundance_repbio[paste0(get(as.character(Group)),"_mean")]
+  current_group_intensities_nrows = nrow(current_group_intensities)
   
-  na_count = sum(is.na(current_group_intensities))
-  NA_percentage = na_count/(nrow(current_group_intensities)*ncol(current_group_intensities))*100
-  na_percentage = rbind(na_percentage,data.frame(Group,NA_percentage,na_count))
-  
-  current_group_intensities$median = rowMedians(as.matrix(current_group_intensities),na.rm = T)
-  #medians = c(medians,median)
-  current_group_intensities$sum_na = as.factor(apply(current_group_intensities[-ncol(current_group_intensities)],1,function(x) sum(is.na(x))))
-  #sums_na = c(sums_na,sum_na)
-  na_distribution = rbind(na_distribution,current_group_intensities[,(ncol(current_group_intensities)-1):ncol(current_group_intensities)])
+  if (current_group_intensities_nrows > 0 ) {
+    na_count = sum(is.na(current_group_intensities))
+    NA_percentage = na_count/(current_group_intensities_nrows*ncol(current_group_intensities))*100
+    na_percentage = rbind(na_percentage,data.frame(Group,NA_percentage,na_count))
+
+    current_group_intensities$median = rowMedians(as.matrix(current_group_intensities),na.rm = T)
+    #medians = c(medians,median)
+    current_group_intensities$sum_na = as.factor(apply(current_group_intensities[-ncol(current_group_intensities)],1,function(x) sum(is.na(x))))
+    #sums_na = c(sums_na,sum_na)
+    na_distribution = rbind(na_distribution,current_group_intensities[,(ncol(current_group_intensities)-1):ncol(current_group_intensities)])
+  }
+
 }
 
 na_percentage = rbind(na_percentage, data.frame(Group="All groups",
@@ -910,9 +921,18 @@ for (comparison in comparisons_to_do){
     log_paired_ratios = log2(paired_ratios)
     totIntensities[paste0("fc_",comparison)] = 2^(rowMeans(log_paired_ratios))
   }else{
-    totIntensities[paste0("mean_intensity_",A_name)] = rowMeans(log2(data.matrix(totIntensities[grepl(A_name,names(totIntensities))])),na.rm = TRUE)
-    totIntensities[paste0("mean_intensity_",B_name)] = rowMeans(log2(data.matrix(totIntensities[grepl(B_name,names(totIntensities))])),na.rm = TRUE)
-    totIntensities[paste0("fc_",comparison)] = 2^(totIntensities[paste0("mean_intensity_",A_name)]-totIntensities[paste0("mean_intensity_",B_name)])
+    ### Modified by DBO ###
+    #totIntensities[paste0("mean_intensity_",A_name)] = rowMeans(log2(data.matrix(totIntensities[grepl(A_name,names(totIntensities))])),na.rm = TRUE)
+    #totIntensities[paste0("mean_intensity_",B_name)] = rowMeans(log2(data.matrix(totIntensities[grepl(B_name,names(totIntensities))])),na.rm = TRUE)
+    #totIntensities[paste0("fc_",comparison)] = 2^(totIntensities[paste0("mean_intensity_",A_name)]-totIntensities[paste0("mean_intensity_",B_name)])
+    
+      #message(names(totIntensities)) ### Added by DBO ###
+      #message(grepl(paste0(A_name,"_mean_imputed"),names(totIntensities))) ### Added by DBO ###
+      #message(grepl(paste0(B_name,"_mean_imputed"),names(totIntensities))) ### Added by DBO ###
+
+    totIntensities[paste0("mean_intensity_",A_name)] = rowMeans(data.matrix(totIntensities[grepl(paste0(A_name,"_mean_imputed"),names(totIntensities))]),na.rm = TRUE)
+    totIntensities[paste0("mean_intensity_",B_name)] = rowMeans(data.matrix(totIntensities[grepl(paste0(B_name,"_mean_imputed"),names(totIntensities))]),na.rm = TRUE)
+    totIntensities[paste0("fc_",comparison)] = totIntensities[paste0("mean_intensity_",A_name)] / totIntensities[paste0("mean_intensity_",B_name)]
   }
   
   statDF = merge.data.frame(statDF,totIntensities[,c("Accession",paste0("mean_intensity_",comparison),paste0("fc_",comparison))],by="Accession")
