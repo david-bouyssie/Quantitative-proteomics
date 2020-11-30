@@ -295,7 +295,7 @@ diagramm <- ggplot(diagrammDF, aes(x="", y=value, fill=group)) +
 
 s <- svgstring(width=20,height=10)
 plot(diagramm)
-htmltools::HTML("<div id=\"svgWrapper1\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper1','Proteins filtered.svg');\" >Save figure</a></div>")
+htmltools::HTML("<div id=\"svgWrapper1\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper1','Proteins filtered.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
 ```
@@ -331,7 +331,7 @@ if (normalization){
   
   s <- svgstring(width=20,height=10)
     plot(density1)
-    cat(htmltools::HTML("<div id=\"svgWrapper2\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper2','Intensity distribution before normalization.svg');\" >Save figure</a></div>"))
+    cat(htmltools::HTML("<div id=\"svgWrapper2\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper2','Intensity distribution before normalization.svg');\" >Save figure</a></div>"))
     invisible(dev.off())
 
   cat(text_spec("\n"))  
@@ -354,7 +354,7 @@ if (normalization){
   
     s <- svgstring(width=20,height=10)
     plot(density2)
-    cat(htmltools::HTML("<div id=\"svgWrapper3\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper3','Intensity distribution after normalization.svg');\" >Save figure</a></div>"))
+    cat(htmltools::HTML("<div id=\"svgWrapper3\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper3','Intensity distribution after normalization.svg');\" >Save figure</a></div>"))
     invisible(dev.off())
   
   cat(text_spec(paste0("\n Normalization method : each intensity is expressed relatively to a reference intensity, as a ratio of intensities. Intensities of the sample with the lowest number of missing values (",reference_sample,") are used as reference intensities. Intensities are then centered by substracting the median of the ratios for each sample."),italic=T,font_size="12px"))
@@ -445,7 +445,7 @@ boxplot <- ggplot(na_distribution) +
 
 s <- svgstring()
 boxplot
-htmltools::HTML("<div id=\"svgWrapper9\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper9','Median intensity / # NA.svg');\" >Save figure</a></div>")
+htmltools::HTML("<div id=\"svgWrapper9\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper9','Median intensity / # NA.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
 colour = unique(ggplot_build(boxplot)$data[[1]]$colour)
@@ -455,23 +455,23 @@ colour = unique(ggplot_build(boxplot)$data[[1]]$colour)
 <div class = "col-md-6">
 
 ```{r densityPlot_na_distribution}
-na_distribution$sum_na = as.factor(na_distribution$sum_na)
+# na_distribution$sum_na = as.factor(na_distribution$sum_na)
 
-density <- ggplot() +
-    geom_density(data = na_distribution, mapping = aes(x=log10(median),group=sum_na,colour=sum_na), na.rm = T) +
-    scale_color_manual(values=colour) +
-    ggtitle("Median intensity / # NA")+
-    xlab("Intensity") +
-    theme(plot.title = element_text(size=22),
-          axis.title=element_text(size=22),
-          axis.text=element_text(size=20),
-          legend.text=element_text(size=16),
-          legend.title=element_text(size=18))
+# density <- ggplot() +
+    # geom_density(data = na_distribution, mapping = aes(x=log10(median),group=sum_na,colour=sum_na), na.rm = T) +
+    # scale_color_manual(values=colour) +
+    # ggtitle("Median intensity / # NA")+
+    # xlab("Intensity") +
+    # theme(plot.title = element_text(size=22),
+          # axis.title=element_text(size=22),
+          # axis.text=element_text(size=20),
+          # legend.text=element_text(size=16),
+          # legend.title=element_text(size=18))
 
-s <- svgstring()
-density
-htmltools::HTML("<div id=\"svgWrapper10\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper10','Median intensity / # NA.svg');\" >Save figure</a></div>")
-invisible(dev.off())
+# s <- svgstring()
+# density
+# htmltools::HTML("<div id=\"svgWrapper10\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper10','Median intensity / # NA.svg');\" >Save figure</a></div>")
+# invisible(dev.off())
 ```
 
 </div>
@@ -574,7 +574,7 @@ histogram <- ggplot() +
 
 s <- svgstring(width=20,height=10)
 histogram
-htmltools::HTML("<div id=\"svgWrapper11\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper11','Log intensities distribution with imputed values.svg');\" >Save figure</a></div>")
+htmltools::HTML("<div id=\"svgWrapper11\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper11','Log intensities distribution with imputed values.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
 if(exists("gaussian_parameters")){
@@ -590,19 +590,25 @@ if(exists("gaussian_parameters")){
 </div>
 <br>
 
-```{r compute_cv_distribution, results='asis'}
+```{r compute_cv_distribution, results='asis', message=F}
 
 df_median_deviation_before_processing = seq(1,nrow(filtered_data))
 df_median_deviation_after_processing = seq(1,nrow(filtered_data))
 df_cv_before_processing = seq(1,nrow(filtered_data))
 df_cv_after_processing = seq(1,nrow(filtered_data))
 
+#message(paste0("ncol filtered_data",ncol(filtered_data)))
+
 for (group in group_ids){
   
   # Before processing
   intensities = filtered_data[grep(paste0(group,"_mean$"),names(filtered_data),value=T)]
+  
+  #message(paste0("ncol intensities",ncol(intensities)))
 
   intensities_median_deviation = compute_median_deviation(intensities)
+  #message(paste0("ncol",ncol(intensities_median_deviation)))
+  
   colnames(intensities_median_deviation) = rep(group,ncol(intensities_median_deviation))
   df_median_deviation_before_processing = cbind(df_median_deviation_before_processing,intensities_median_deviation)
 
@@ -661,7 +667,7 @@ s <- svgstring(width=20,height=10)
 grid.arrange(arrangeGrob(median_deviation_density_before_processing),
             arrangeGrob(median_deviation_density_after_processing),
             ncol=2,nrow=1)
-htmltools::HTML("<div id=\"svgWrapper4\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper4','Median deviation.svg');\" >Save figure</a></div>")
+htmltools::HTML("<div id=\"svgWrapper4\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper4','Median deviation.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
 ```
@@ -712,7 +718,7 @@ s <- svgstring(width=20,height=10)
 grid.arrange(arrangeGrob(cv_density_before_processing),
                arrangeGrob(cv_density_after_processing),
                ncol=2,nrow=1)
-htmltools::HTML("<div id=\"svgWrapper5\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper5','CV distribution.svg');\" >Save figure</a></div>")
+htmltools::HTML("<div id=\"svgWrapper5\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper5','CV distribution.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
 ```
@@ -743,7 +749,7 @@ cv_density_after_processing = ggplot() +
 
 s <- svgstring()
 cv_density_after_processing
-htmltools::HTML("<div id=\"svgWrapper7\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper7','CV distribution.svg');\" >Save figure</a></div>")
+htmltools::HTML("<div id=\"svgWrapper7\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper7','CV distribution.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
 ```
@@ -779,7 +785,7 @@ barplot <- ggplot(data = df_cv_after_processing2) +
 
 s <- svgstring()
 barplot
-htmltools::HTML("<div id=\"svgWrapper8\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper8','Extreme biological errors (boxplot's outliers).svg');\" >Save figure</a></div>")
+htmltools::HTML("<div id=\"svgWrapper8\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper8','Extreme biological errors (boxplot's outliers).svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
 ```
@@ -807,7 +813,7 @@ heatmap_plot = create_heatmap(df_log_intensities_heatmap,imputed,samples_names, 
 s <- svgstring(width=20,height=10)
 grid.newpage()
 grid.draw(heatmap_plot)
-htmltools::HTML("<div id=\"svgWrapper12\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12','Global heatmap.svg');\" >Save figure</a></div>")
+htmltools::HTML("<div id=\"svgWrapper12\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12','Global heatmap.svg');\" >Save figure</a></div>")
 invisible(dev.off())
 
 ```
@@ -1055,7 +1061,7 @@ for (comparison in comparisons_to_do){
     
     s <- svgstring(width=20,height=10)
     plot(MA)
-    cat(htmltools::HTML(paste0("<div id=\"svgWrapper12bis\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12bis','MA plot.svg');\" >Save figure</a></div>")))
+    cat(htmltools::HTML(paste0("<div id=\"svgWrapper12bis\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper12bis','MA plot.svg');\" >Save figure</a></div>")))
     invisible(dev.off())
     
     cat(text_spec("\n"))
@@ -1092,7 +1098,7 @@ for (comparison in comparisons_to_do){
   
     s <- svgstring(width=20,height=10)
     plot(Volcano)
-    cat(htmltools::HTML(paste0("<div id=\"svgWrapper13\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper13','Volcano.svg');\" >Save figure</a></div>")))
+    cat(htmltools::HTML(paste0("<div id=\"svgWrapper13\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper13','Volcano.svg');\" >Save figure</a></div>")))
     invisible(dev.off())
     
     cat(text_spec("\n"))
@@ -1119,7 +1125,7 @@ for (comparison in comparisons_to_do){
       
         s <- svgstring(width=20,height=10)
         plot(heatmap_plot)
-        cat(htmltools::HTML("<div id=\"svgWrapper14\" ",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper14','Heatmap.svg');\" >Save figure</a></div>"))
+        cat(htmltools::HTML("<div id=\"svgWrapper14\" >",s(),"<a class='no-print' href=\"javascript:saveSvgFromParentDiv('svgWrapper14','Heatmap.svg');\" >Save figure</a></div>"))
         invisible(dev.off())
       
       cat(text_spec("\n"))

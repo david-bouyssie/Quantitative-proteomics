@@ -44,6 +44,10 @@ for(sample in samples){
 colnames(identification_types) = paste0("Identification_type_",samples)
 
 specific_peptides = proteinGroupsInput[grepl("specific_peptide_matches",names(proteinGroupsInput))]
+if(length(specific_peptides)==0){
+  specific_peptides = proteinGroupsInput[grepl("specific_spectral_count",names(proteinGroupsInput))]
+}
+
 if(length(specific_peptides)>0){
   colnames(specific_peptides)="Specific_peptides"
 }
