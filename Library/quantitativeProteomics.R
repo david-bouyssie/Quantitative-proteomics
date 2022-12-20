@@ -288,7 +288,7 @@ impute_mcar <- function(intensities,identification_type,model,threshold_mcar_obs
   # Replace in the final table
   intensities = subset(intensities, !intensities[,1]%in%mcar[,1])
   intensities = rbind(intensities,mcar[,1:(ncol(mcar)-4)])
-  intensities[intensities==NaN] <- NA
+  intensities[is.nan(intensities)] <- NA
 
   return(intensities)
 }
