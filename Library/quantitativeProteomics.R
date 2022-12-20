@@ -288,7 +288,7 @@ impute_mcar <- function(intensities,identification_type,model,threshold_mcar_obs
   # Replace in the final table
   intensities = subset(intensities, !intensities[,1]%in%mcar[,1])
   intensities = rbind(intensities,mcar[,1:(ncol(mcar)-4)])
-  intensities[intensities==NaN] <- NA
+  intensities[is.nan(intensities)] <- NA
 
   return(intensities)
 }
@@ -334,7 +334,7 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids){
   for (group in group_ids){
     orderedSamples = c(orderedSamples,sort(grep(paste0("_",group),samples_names,value=T)))
   }
-  heatmapDF$orderedSamples <- factor(heatmapDF$Sample, levels = orderedSamples)
+  heatmapDF$orderedSamples <- factor(heatmapDF$Sample, levels = unique(orderedSamples))
   heatmapDF$x <- as.numeric(heatmapDF$orderedSamples)
 
   # Order proteins according to clustering results
