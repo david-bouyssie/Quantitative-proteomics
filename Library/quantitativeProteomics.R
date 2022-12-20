@@ -328,14 +328,7 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids){
 
   heatmapDF=subset(heatmapDF,heatmapDF$imputed==F)
 
-  # Order sample by group
-  orderedSamples = c()
-  group_ids = sort(group_ids)
-  for (group in group_ids){
-    orderedSamples = c(orderedSamples,sort(grep(paste0("_",group),samples_names,value=T)))
-  }
-  heatmapDF$orderedSamples <- factor(heatmapDF$Sample, levels = unique(orderedSamples))
-  heatmapDF$x <- as.numeric(heatmapDF$orderedSamples)
+  heatmapDF$x <- as.numeric(heatmapDF$Sample)
 
   # Order proteins according to clustering results
   heatmapDF$orderedProteins <- factor(heatmapDF$proteinRank, levels = hClustProteins$order)
@@ -352,7 +345,7 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids){
     scale_fill_gradientn(colours=c("green","yellow","red")) +
     #scale_fill_scico(palette = "berlin") +
     ggtitle("")+
-    scale_x_continuous(name = "", breaks = 1:length(orderedSamples), labels = orderedSamples, expand = c(0, 0)) +
+    scale_x_continuous(name = "", breaks = 1:length(samples_names), labels = samples_names, expand = c(0, 0)) +
     scale_y_continuous(name = "", breaks = unique(heatmapDF$y), labels = unique(heatmapDF$Gene_name), expand = c(0, 0), position = "right") +
     theme(#axis.text.y = element_blank(),
           axis.title.y = element_blank(),
