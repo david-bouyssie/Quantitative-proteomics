@@ -334,7 +334,7 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids){
   for (group in group_ids){
     orderedSamples = c(orderedSamples,sort(grep(paste0("_",group),samples_names,value=T)))
   }
-  heatmapDF$orderedSamples <- factor(heatmapDF$Sample, levels = orderedSamples)
+  heatmapDF$orderedSamples <- factor(heatmapDF$Sample, levels = unique(orderedSamples))
   heatmapDF$x <- as.numeric(heatmapDF$orderedSamples)
 
   # Order proteins according to clustering results
