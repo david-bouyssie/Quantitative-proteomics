@@ -1,8 +1,7 @@
 .libPaths(
   c(
     .libPaths(),
-    "./my_project/renv/library/R-3.6/x86_64-w64-mingw32",
-    "./my_project/library"
+    "./Quantitative-proteomics/renv/library/R-4.2/x86_64-w64-mingw32"
   )
 )
 
@@ -18,38 +17,40 @@ library(stringr)
 args <- commandArgs(trailingOnly = TRUE)
 analysis = args[1]
 quantif_file = normalizePath(args[2])
-output_file = file.path(normalizePath(dirname(args[3])), basename(args[3]))
-print(output_file)
 
 if (analysis == "QC") {
 
-  normalization = args[4]
-  keep_empty_rows = args[5]
-  
+  output_file = file.path(normalizePath(dirname(args[3])), basename(args[3]))
+  parameters = normalizePath(args[4])
+  exp_design = normalizePath(args[5])
+
   rmarkdown::render(
-    './my_project/Quantitative-proteomics/Modules/Quantitative data analysis/QC.Rmd',
+    './Quantitative-proteomics/Modules/Quantitative data analysis/QC.Rmd',
     output_file = output_file,
     params = list(
       quantif_file = quantif_file,
-      normalization = normalization,
-      keep_empty_rows = keep_empty_rows
+      design_exp = exp_design,
+      parameters = parameters 
     )
   )
 
 } else if (analysis=="DA") {
 
-  output_table = file.path(normalizePath(dirname(args[4])), basename(args[4]))
-  design_exp = normalizePath(args[5])
-  parameters = normalizePath(args[6])
+  output_dir = normalizePath(args[3])
+  exp_design = normalizePath(args[4])
+  parameters = normalizePath(args[5])
+  output_file = file.path(output_dir, "DA.html")
   
   rmarkdown::render(
-    './my_project/Quantitative-proteomics/Modules/Quantitative data analysis/DA.Rmd',
-    output_file = output_file,
+    './Quantitative-proteomics/Modules/Quantitative data analysis/DA.Rmd',
+    output_file = output_file ,
     params = list(
-      quantif_file = quantif_file,
+      quant_df = quantif_file,
       parameters = parameters,
-      design_exp = design_exp,
-      output_table = output_table
+      design_exp = exp_design,
+      output_dir = output_dir,
+      proline_source_file = "none",
+      proline_sheet = 4
     )
   )
 

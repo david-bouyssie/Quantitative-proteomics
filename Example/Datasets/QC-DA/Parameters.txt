@@ -1,7 +1,9 @@
 Parameters
 Normalization=T
+Proteins.for.normalization=
 Filter.threshold.ms=2
 Filter.threshold.obs=0.5
+No.imputed.values=F
 Imputation.MNAR.model=gaussian
 Imputation.MNAR.percentile=1
 Imputation.MCAR.model=MNAR
@@ -18,5 +20,9 @@ Test.adjust.procedure=BH
 Fold.Change=fc
 Volcano.threshold.pvalue=0.05
 Volcano.threshold.fc=0.58
+Volcano.color.style=signifigance
+Volcano.manual.accession=
+Volcano.no.labeling=F
 Comparisons=50fmol/25fmol;50fmol/500amol
 Figure.format=PNG
+Color.by.group=T

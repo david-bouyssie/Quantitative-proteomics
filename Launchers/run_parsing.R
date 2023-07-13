@@ -1,8 +1,7 @@
 .libPaths(
   c(
     .libPaths(),
-    "./my_project/renv/library/R-3.6/x86_64-w64-mingw32",
-    "./my_project/library"
+    "./Quantitative-proteomics/renv/library/R-4.2/x86_64-w64-mingw32"
   )
 )
 
@@ -19,4 +18,5 @@ source = args[3]
 intensities_type = args[4]
 sheet = as.numeric(args[5])
 
-source(paste0("./my_project/Quantitative-proteomics/Parsers/parse_",source,".R"))
+source(paste0("./Quantitative-proteomics/Parsers/parse_",source,".R"))
+#source(paste0("./Parsers/parse_",source,".R"))

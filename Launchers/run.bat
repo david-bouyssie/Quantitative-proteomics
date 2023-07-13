@@ -12,19 +12,17 @@ Rscript --vanilla run_parsing.R "path_to_file_to_parse/name_of_file_to_parse" "p
 :: # Quantitative data QC module #
 :: ###############################
 
-:: Command line format : Rscript --vanilla run_proteomics_stats.R QC [input (standardized format)] [output] [normalization option: TRUE/FALSE] [delete empty lines : TRUE/FALSE]
+:: Command line format : Rscript --vanilla run_proteomics_stats.R QC [input (standardized format)] [output] [parameters] [experimental design]
 :: Example :
-Rscript --vanilla run_proteomics_stats.R QC "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt" "../../Example/Reports/QC_example.html" TRUE FALSE
-
+Rscript --vanilla run_proteomics_stats.R QC "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt" "../../Example/Datasets/QC-DA/Reports/QC_output_example.html" "../../Example/Datasets/QC-DA/QC_parameters.txt" "../../Example/Datasets/QC-DA/exp_design.txt"
 
 :: ################################
 :: # Differential analysis module #
 :: ################################
 
-:: Command line format : Rscript --vanilla run_proteomics_stats.R DA [input (standardized format)] [report output] [table output] [experimental design file] [parameters file]
+:: Command line format : Rscript --vanilla run_proteomics_stats.R DA [input (standardized format)] [output dir] [experimental design file] [parameters file]
 :: Example :
-Rscript --vanilla run_proteomics_stats.R DA "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt" "../../Example/Reports/DA_example.html" "../../Example/Reports/DA_example.txt" "../../Example/Datasets/QC-DA/designExp.txt" "../../Example/Datasets/QC-DA/Parameters.txt"
-
+Rscript --vanilla run_proteomics_stats.R DA "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt" "../../Example/Reports" "../../Example/Datasets/QC-DA/exp_design.txt" "../../Example/Datasets/QC-DA/Parameters.txt"
 
 :: ##############
 :: # ROC module #

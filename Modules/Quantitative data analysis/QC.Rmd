@@ -188,7 +188,6 @@ createPngOrSvg <- function(plot_data, image_name, height = 600, length = 600) {
 ##Importing raw data file given as a parameter and parses the names of the samples included##
 
 data <- read.csv(params$quantif_file, check.names = F, sep="\t")
-write.csv(data, "QC_data.csv", row.names = F)
 if(file.exists(params$design_exp)){
   expDesign <- read.csv(params$design_exp, header = T, sep="\t")
   
@@ -257,8 +256,6 @@ if(keep_empty_rows==FALSE){
 if(coloring_by_group && file.exists(params$design_exp)){
   
   color_group <- TRUE
-  
-  write("here", "here")
 
   kable(expDesign,format="html",col.names = NULL,booktabs = T, caption = "Experimental design") %>%
           kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
