@@ -9,7 +9,7 @@ params:
   quant_df: "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt"
   parameters: "../../Example/Datasets/QC-DA/Parameters.txt"
   design_exp: "../../Example/Datasets/QC-DA/designExp.txt"
-  output_dir: "D:/dev/donald/datasets/Anne/Th2 project/"
+  output_dir: "../../Example/Reports/"
   proline_source_file: "none"
   proline_sheet: 4
 title: "Differential analysis"
@@ -155,6 +155,7 @@ library(base64enc)
 library(htmltools)
 library(RColorBrewer)
 library(gtable)
+library(dplyr)
 
 source("../../Library/quantitativeProteomics.R")
 # source("D:/dev/donald/R/Quantitative-proteomics/Library/Heatmap_functions.R")
@@ -234,7 +235,7 @@ coloring_by_group <- as.logical(parameters["Color.by.group",])
 Vol_colors <- as.character(parameters["Volcano.color.style",])
 
 Normalization_list <- as.numeric(strsplit(as.character(parameters["Proteins.for.normalization",]),";")[[1]])
-Vol_labels <- strsplit(as.character(parameters["Volcano.manuel.accession",]),";")[[1]]
+Vol_labels <- strsplit(as.character(parameters["Volcano.manual.accession",]),";")[[1]]
 Vol_no_lab <- as.logical(parameters["Volcano.no.labeling",])
 
 ```
@@ -1750,7 +1751,7 @@ knitr::knit_print(DT::datatable(matrix(),
 ```{r save_data}
 hm <- grep(".*_imputed_log$",colnames(output_t))
 
-if(length(params$proline_source_file) == 0){
+if(params$proline_source_file == "none"){
   data.table::fwrite(output_t, params$output_table, row.names = F, sep = "\t")
 }else{
 
