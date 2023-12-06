@@ -55,8 +55,14 @@ The QC & DA modules work with a standardized input format that can be obtain fro
 #### 3.2.1. QC module
 
 The QC module generates a report providing a global visualization of data quality and reproducibility (see _Example/Reports/QC_proteins_set.html_). The user can set two parameters in the command line:
-- "normalization option": should intensities be normalized or not (T/F) ?
-- "delete empty lines" : should proteins with no observed intensities be removed from the dataset (T/F) ?
+
+| Parameter | Function | Values |
+| --------- | --------- | --------- |
+| Normalization | Should intensities be normalized or not ? | T / F |
+| keep_empty_rows | Should empty rows be kept in the dataset ? | T / F |
+| format_svg | Choose SVG or PNG format for figure images | SVG / PNG |
+| coloring_by_group | Should figures be colored by group/condition? (WARNING : need to have Experimental Design to use this function) | T / F |
+
 <br/>
 
 #### 3.2.2. DA module
@@ -75,6 +81,7 @@ Here you can find a description of all parameters and possible values:
 | Parameter | Function | Values |
 | --------- | --------- | --------- |
 | Normalisation | Should intensities be normalized or not ? | T / F |
+| Proteins.for.normalization | List of protein IDs of interest for the data to be normalized to | Example : 1556122;1552942;1551169;1550971;1556987 |
 | Filter.threshold.ms | Minimum number of file identified by MS/MS to keep the protein for the analysis | ℕ |
 | Filter.threshold.obs | Minimum percentage of observed intensities in one condition at least to keep the protein for the analysis | {0,100} |
 | Imputation.MNAR.model | Which model should be used to impute MNAR ? | percentile / gaussian |
@@ -88,12 +95,18 @@ Here you can find a description of all parameters and possible values:
 | Test.alternative | Choose if the statistical test should be unilateral or bilateral | two.sided / less / greater |
 | Test.paired | Choose if the statistical test should be paired or not | T / F |
 | Test.var.equal | If t.test is selected, precise if variance are equal (so a Student t.test will be used) or not (so a Welch t.test will be used)  | T / F |
-| Test.adjust.procedure | Choose the multiple test correction procedure | none / BH / ABH |
 | Test.adjust.FDR | Choose the FDR for multiple test correction | {0,1} |
-| Ratio | Choose the ratio that should be computed between conditions | fc / zscore |
+| Test.adjust.procedure | Choose the multiple test correction procedure | none / BH / ABH |
+| Fold.Change | Choose the ratio that should be computed between conditions | fc / zscore |
 | Volcano.threshold.pvalue | Significativity threshold for pvalue | {0,1} |
-| Volcano.threshold.ratio | Significativity threshold for ratio | ℝ |
-| Comparisons | List of paired conditions to compare | Exemple : 50fmol-25fmol;50fmol-10fmol |
+| Volcano.threshold.fc | Significativity threshold for ratio | ℝ |
+| Volcano.coloring.style | Choose coloring based on signifigance or intensity (heatmap or monochrome) | signifigance / intensity / monochrome |
+| Volcano.manual.accession | List of protein accession codes for manual labeling | Example : Q9JHU4;A2ASS6;Q8VDD5;Q9QXS1 |
+| Volcano.no.labeling | Choose to have no labels on volcano plot | T / F |
+| Comparisons | List of paired conditions to compare | Exemple : 50fmol/25fmol;50fmol/10fmol |
+| Figure.format | Choose figure images to be in SVG or PNG format | SVG / PNG |
+| No.imputed.values | Choose to have no imputation of missing values | T / F |
+| Color.by.group | Choose whether to have random coloring, or coloring by condition | T / F |
 
 <br/>
 The module gives as outputs a TSV table summarizing input data, intensities after each step of processing and final results of statistical results. A report containg QC figures for each processing step and figures showing the results of differential analysis is also provided (see _Example/Reports/DA_proteins__set.html_).
