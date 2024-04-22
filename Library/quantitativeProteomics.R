@@ -5,11 +5,11 @@
 
 # This function normalize intensities using the “probabilistic quotient normalization” method (Dieterle et al, 2006).
 normalize <- function(df, reference_sample, method = "pqn"){
-
- # Inputs :
+  
+  # Inputs :
   # df : quantification matrix whom 1rst column contains proteins id
   # reference_sample : name of the column corresponding to the reference sample
- # Output :
+  # Output :
   # dataframe containing the ratio values for each sample, and the normalized quantification matrix
   
   # Initialize results dataframe
@@ -20,7 +20,7 @@ normalize <- function(df, reference_sample, method = "pqn"){
                                       (length(ratio_names)+length(norm_names)+1),
                                       dimnames = list(c(), c("Id",ratio_names,norm_names) )),
                                check.names=FALSE)
-
+  
   # Compute ratios
   normalized_data$Id = df[,1]
   reference_intensities = as.numeric(as.vector(unlist(df[as.character(reference_sample)])))
@@ -29,7 +29,7 @@ normalize <- function(df, reference_sample, method = "pqn"){
       normalized_data[paste0(sample,"_ratio_",reference_sample)]<-as.numeric(as.vector(unlist(df[as.character(sample)])))/reference_intensities
     }
   }
-
+  
   if (method == "pqn"){
     # Compute median of ratios
     median_ratios=c()
@@ -72,9 +72,9 @@ normalize <- function(df, reference_sample, method = "pqn"){
       }
     }
   }
-
+  
   return(normalized_data)
-
+  
 }
 
 ###################
@@ -175,36 +175,36 @@ new_normalization <- function(sub_df, raw_abundance, reference_sample){
 # This function compute the median deviation for each sample of the quantification matrix.
 compute_median_deviation <- function(intensity_matrix){
   
- # Input :
+  # Input :
   # intensity_matrix : quantification matrix
- # Output :
+  # Output :
   # matrix containing the median deviation for each intensity of each sample
-
+  
   intensity_matrix$medians = rowMedians(data.matrix(intensity_matrix), na.rm=T)
   for(sample in colnames(intensity_matrix)[-ncol(intensity_matrix)]){
     intensity_matrix[sample]=(as.numeric(intensity_matrix[[sample]])-intensity_matrix$medians)/intensity_matrix$medians
   }
-
+  
   return(intensity_matrix[,-which(names(intensity_matrix)=="medians")])
-
+  
 }
 
 library(matrixStats)
 
 # This function compute the median deviation for each sample of the quantification matrix. It requires the library "matrixStats".
 compute_cv <- function(intensity_matrix){
-
- # Input :
+  
+  # Input :
   # intensity_matrix : quantification matrix
- # Output :
+  # Output :
   # vector containing the CV for each protein
   
   medians = rowMedians(data.matrix(intensity_matrix), na.rm=T)
   sd = apply(intensity_matrix,1,sd)
   cv = sd/medians * 100
-
+  
   return(cv)
-
+  
 }
 
 ##############
@@ -213,45 +213,45 @@ compute_cv <- function(intensity_matrix){
 if(TRUE){
   # This function impute missing values with background noise using a gaussian model
   impute_background_noise_gaussian <- function(df){
-  
-   # Input :
+    
+    # Input :
     # df : quantification matrix
-   # Output :
+    # Output :
     # quantification matrix with imputed intensities
     
     # Remove "MCAR" annotations from the quantification matrix so numeric functions can work
     df_without_string = df
     df_without_string[df_without_string=="MCAR"] <- NA
     df_without_string = data.matrix(df_without_string)
-  
+    
     # Compute 1rst percentile (-> mean of the gaussian model)
     percentile = 0.01
     m = as.numeric(quantile(df_without_string[,-1],percentile, na.rm = T))
-  
+    
     # Compute sd between 1rst and 2nd percentile (-> sd of the gaussian model)
     min = m
     max = as.numeric(quantile(df_without_string[,-1],0.02, na.rm = T))
     intensities = as.numeric(unlist(df_without_string[,-1]))
     sd_exp = sd(intensities[intensities<=max & intensities>=min & !is.na(intensities)])
-  
+    
     # Create a gaussian distribution with the computed parameters
     n = sum(is.na(df))
     gaussian <- rnorm(2*n,m,sd_exp)
-  
+    
     # Pull missing values in gaussian distribution
     imputed_values = c()
     if(length(gaussian)<30){
-  
+      
       q1 = quantile(gaussian)[2]
       q3 = quantile(gaussian)[4]
       interval = gaussian[gaussian>q1 & gaussian<q3]
       imputed_values = c(sample(interval,n,replace=T))
-  
+      
     }else{
-  
+      
       gaussian = gaussian[gaussian>0]
       gaussian = sort(gaussian)
-  
+      
       ## Compute proportion of NA to pull in each interval
       interval_size = (max(gaussian)-min(gaussian))/21
       i=min(gaussian)
@@ -262,26 +262,26 @@ if(TRUE){
         i = i+interval_size
       }
     }
-  
+    
     #Replace missing values in data
     df[is.na(df)] <- sample(imputed_values,length(df[is.na(df)]),replace=F)
     colnames(df)[2:ncol(df)] = paste0(colnames(df)[2:ncol(df)],"_imputed")
-  
+    
     results = list(m,sd_exp,df)
-  
+    
     return(results)
-  
+    
   }
   
   # This function impute missing values with background noise using a percentile.
   impute_background_noise_percentile <- function(df,per){
     
-   # Input :
+    # Input :
     # df : quantification matrix whom 1rst column contains protein id
     # per : chosen percentile
-   # Output :
+    # Output :
     # quantification matrix with imputed intensities
-  
+    
     for(col in colnames(df)[-1]){
       current_intensities = df[col]
       df_without_string = current_intensities
@@ -291,10 +291,10 @@ if(TRUE){
       current_intensities[is.na(current_intensities)] <- percentile
       df[col] = current_intensities
     }
-  
+    
     colnames(df)[2:ncol(df)] = paste0(colnames(df)[2:ncol(df)],"_imputed")
     return(df)
-  
+    
   }
   
   ########## MCAR Imputation ################
@@ -347,7 +347,7 @@ if(TRUE){
     
     # Impute MCAR
     if(nrow(mcar)>0){
-
+      
       if(model=="none"){
         mcar[is.na(mcar)] <- "MCAR"
         
@@ -432,20 +432,26 @@ if(TRUE){
 
 # This function create a heatmap with a hierarchical clustering of proteins
 create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
-
- # Input :
+  
+  # Input :
   # intensities : quantification matrix whom 1rst column contains protein id
   # imputed : boolean matrix whom 1rst column contains protein id
   # samples_names : list of sample names
   # group_ids : list of biological conditions
- # Output :
+  # Output :
   # heatmap plot
   
   inputProteins = intensities[,3:ncol(intensities)]
   rownames(inputProteins) = make.names(intensities$Label,unique=T)
+  ## As an alternative 
+  library(dplyr)
+  inputProteins <- intensities %>% remove_rownames() %>%
+    column_to_rownames(var="Label") %>% select(where(is.numeric))
+  
+  
   distMatrixProteins <- dist(inputProteins)
   hClustProteins <- hclust(distMatrixProteins)
-
+  
   # Create data frame
   proteinRank = c()
   for (i in 1:(ncol(inputProteins))){
@@ -453,19 +459,39 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
   }
   proteinId = rep(intensities[,1],ncol(inputProteins))
   gene_name = rep(make.names(intensities[,2],unique=T),ncol(inputProteins))
-  intensitiesDF = melt(inputProteins)
-  imputed = melt(imputed,id.vars = 1)
-  heatmapDF = cbind(proteinId,gene_name,intensitiesDF,proteinRank,imputed$value)
+  
+  inputProteins$Labels <- rownames(inputProteins)
+  
+  intensitiesDF = melt(inputProteins) ###No variables exist to melt the data because all variables were converted to rownames above
+  
+  #colnames(new_inputProteins)[1] <- "Labels"
+  #intensitiesDF_new <- melt(new_inputProteins)
+  
+  melt_imputed = melt(imputed,id.vars = 1)
+  ## Instead of cbind, use data.frame: WHY? -> #https://stackoverflow.com/questions/11151339/r-numeric-vector-becoming-non-numeric-after-cbind-of-dates
+  heatmapDF = data.frame(proteinId,gene_name,as.character(intensitiesDF$variable),intensitiesDF$value,proteinRank,melt_imputed$value)
   colnames(heatmapDF) = c("Id","Gene_name","Sample","log_intensity","proteinRank","imputed")
-
-  heatmapDF=subset(heatmapDF,heatmapDF$imputed==F)
-
-  heatmapDF$x <- as.numeric(heatmapDF$Sample)
-
+  
+  heatmapDF=subset(heatmapDF,heatmapDF[,"imputed"]==FALSE)
+  
+  # Order sample by group
+  orderedSamples = c()
+  group_ids = sort(group_ids)
+  for (group in group_ids){
+    orderedSamples = c(orderedSamples,sort(grep(paste0("_",group),samples_names_comparison,value=T)))
+  }
+  #heatmapDF[,"orderedSamples"] <- factor(heatmapDF[,'Sample'], levels = unique(orderedSamples))
+  
+  orderedSamples <- factor(heatmapDF[,'Sample'], levels = unique(orderedSamples))
+  heatmapDF <- heatmapDF %>% bind_cols(as.data.frame(orderedSamples))
+  heatmapDF$x <- as.numeric(heatmapDF$orderedSamples)
+  
   # Order proteins according to clustering results
-  heatmapDF$orderedProteins <- factor(heatmapDF$proteinRank, levels = hClustProteins$order)
+  orderedProteins <- factor(heatmapDF$proteinRank, levels = hClustProteins$order)
+  heatmapDF <- heatmapDF %>% bind_cols(as.data.frame(orderedProteins))
+  
   heatmapDF$y <- as.numeric(heatmapDF$orderedProteins)
-
+  
   # Adjust colors
   minRatio <- min(heatmapDF$log_intensity)
   maxRatio <- max(heatmapDF$log_intensity)
@@ -474,26 +500,26 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
   # Transforming Heatmap DataFrame
   # heatmapDF <- t(heatmapDF)
   # write.csv(heatmapDF, "heatmapDF")
-
+  
   # Make plot
   hcPlot <- ggplot(data = heatmapDF) +
     geom_raster(mapping = aes(x = x, y = y, fill = log_intensity)) +
     scale_fill_gradientn(colours=c("green","yellow","red")) +
     #scale_fill_scico(palette = "berlin") +
     ggtitle("")+
-    scale_x_continuous(name = "", breaks = 1:length(samples_names), labels = samples_names, expand = c(0, 0)) +
+    scale_x_continuous(name = "", breaks = 1:length(orderedSamples), labels = orderedSamples, expand = c(0, 0)) +
     scale_y_continuous(name = "", breaks = unique(heatmapDF$y), labels = unique(heatmapDF$Gene_name), expand = c(0, 0), position = "right") +
     labs(title = htitle) +
     theme(#axis.text.y = element_blank(),
-          axis.title.y = element_blank(),
-          axis.ticks.y = element_blank(),
-          plot.title=element_text(size=30),
-          axis.title=element_text(size=25),
-          # axis.text.x=element_text(size=24),
-          axis.text.x=element_text(size = 24, angle = 90),
-          legend.text=element_text(size=16),
-          legend.title=element_text(size=18))
-
+      axis.title.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      plot.title=element_text(size=30),
+      axis.title=element_text(size=25),
+      # axis.text.x=element_text(size=24),
+      axis.text.x=element_text(size = 24, angle = 90),
+      legend.text=element_text(size=16),
+      legend.title=element_text(size=18))
+  
   dendrogramProteins <- dendro_data(hClustProteins, type="rectangle")
   dendrogramDataProteins <- segment(dendrogramProteins)
   dendrogramProteinsPlot <- ggplot() +
@@ -507,26 +533,28 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
           panel.background = element_blank(),
           panel.grid = element_blank(),
           panel.border = element_blank())
-
+  
   # Make grobs from plots
   matrixGrob <- ggplotGrob(hcPlot)
   dendroProteinGrob <- ggplotGrob(dendrogramProteinsPlot)
-  dendroProteinGrob <- gtable_add_cols(dendroProteinGrob, unit(rep(1, ncol(matrixGrob) - ncol(dendroProteinGrob)), "null"), pos = -1)
-
+  #dendroProteinGrob <- gtable_add_cols(dendroProteinGrob, unit(rep(1, ncol(matrixGrob) - (ncol(dendroProteinGrob))+1), "null"), pos = -1)
+  
+  
+  result <- dendrogramProteinsPlot + plot_spacer() + hcPlot + plot_layout(widths = c(4, -1.1 ,4.5),guides = "collect")
   # Assemble
-  bottomGrob <- cbind(dendroProteinGrob[, 5], matrixGrob[, 5:ncol(matrixGrob)], size = "last")
-  bottomGrob <- cbind(matrixGrob[, 1:4], bottomGrob, size = "last")
-
-  result <- rbind(bottomGrob[7:nrow(bottomGrob), ], size = "last")
-  result <- rbind(bottomGrob[1:6, ], result, size = "last")
+  #bottomGrob <- cbind(dendroProteinGrob[, 5], matrixGrob[, 5:ncol(matrixGrob)], size = "last")
+  #bottomGrob <- cbind(matrixGrob[, 1:4], bottomGrob, size = "last")
+  
+  #result <- rbind(bottomGrob[7:nrow(bottomGrob), ], size = "last")
+  #result <- rbind(bottomGrob[1:6, ], result, size = "last")
   # result <- rbind(bottomGrob, size = "last")
   # result <- rbind(dendroProteinGrob[7, ], matrixGrob[7:nrow(matrixGrob), ], size = "last")
   # result <- rbind(matrixGrob[1:6, ], result, size = "last")
-
+  
   # Adjust sizes
   result$heights[7] <- unit(0.2, "null")
   result$widths[5] <- unit(0.2, "null")
-
+  
   return(result)
 }
 
@@ -621,14 +649,14 @@ create_heatmap_2 <- function(intensities,imputed,samples_names,group_ids){
 
 # This function compute the sensibility and the specificity varying ratio and pvalue thresholds
 compute_ROC <- function(statistic_table,n,ratioVar,pvalVar,variants){
-
- # Input :
+  
+  # Input :
   # statistic_table : table containing results of statistical analysis and whom 1rst column corresponds to protein ids
   # n : number of tests
   # ratioVar : ratio thresholds to test
   # pvalVar : pval thresholds to test
   # variants : list of ids of expected variants
- # Output :
+  # Output :
   # heatmap plot
   
   mat <- matrix(ncol = 4, nrow = (n*n))
@@ -638,12 +666,12 @@ compute_ROC <- function(statistic_table,n,ratioVar,pvalVar,variants){
     Z <- ratioVar[i]
     for (j in 1:n) {
       p <- pvalVar[j]
-
+      
       FP <- nrow(statistic_table[(abs(statistic_table$ratio) >= Z) & (statistic_table$pval <= p) & !(statistic_data$Accession %in% variants),])
       TP <- nrow(statistic_table[(abs(statistic_table$ratio) >= Z) & (statistic_table$pval <= p) & (statistic_data$Accession %in% variants),])
       TN <- nrow(statistic_table[((abs(statistic_table$ratio) < Z) | (statistic_table$pval > p)) & !(statistic_data$Accession %in% variants),])
       FN <- nrow(statistic_table[((abs(statistic_table$ratio) < Z) | (statistic_table$pval > p)) & (statistic_data$Accession %in% variants),])
-
+      
       speci <- (FP/(FP+TP))*100
       sensi <- (TP/(TP+FN))*100
       mat[j+l,] <- c(speci, sensi, Z, p)
@@ -652,5 +680,5 @@ compute_ROC <- function(statistic_table,n,ratioVar,pvalVar,variants){
   }
   gtab <- as.data.frame(mat)
   return(gtab)
-
+  
 }

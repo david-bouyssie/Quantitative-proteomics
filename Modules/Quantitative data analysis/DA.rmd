@@ -6,9 +6,9 @@ output:
       "+RTS","-K1024m","-RTS"
     ]
 params:
-  quant_df: "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt"
+  quant_df: "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt""
   parameters: "../../Example/Datasets/QC-DA/Parameters.txt"
-  design_exp: "../../Example/Datasets/QC-DA/designExp.txt"
+  design_exp: "../../exp_design.txt"
   output_dir: "../../Example/Reports/"
   proline_source_file: "none"
   proline_sheet: 4
@@ -156,6 +156,7 @@ library(htmltools)
 library(RColorBrewer)
 library(gtable)
 library(dplyr)
+library(patchwork)
 
 source("../../Library/quantitativeProteomics.R")
 # source("D:/dev/donald/R/Quantitative-proteomics/Library/Heatmap_functions.R")
@@ -1420,6 +1421,7 @@ for (comparison in comparisons_to_do){
       
       statDF[paste0("pval_",comparison)] <- rep("", nrow(statDF))
       
+      
       for(prot in 1:nrow(A)){
         
         if(parameters["Test.type",]=="t.test"){
@@ -1427,12 +1429,15 @@ for (comparison in comparisons_to_do){
                       alternative=as.character(parameters["Test.alternative",]),
                       paired=as.logical(parameters["Test.paired",]),
                       var.equal=as.logical(parameters["Test.var.equal",]))$p.value
+          
         }else if(parameters["Test.type",]=="wilcoxon"){
            pval = wilcox.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
                       alternative=as.character(parameters["Test.alternative",]),
                       paired=as.logical(parameters["Test.paired",]))
         }
-        statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession),]<- pval
+        
+        statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession,nomatch =0),]<- pval
+        
       }
       
     }
@@ -1443,7 +1448,8 @@ for (comparison in comparisons_to_do){
   
   if(parameters["Test.adjust.procedure",]!="none"){
     value="qval"
-    procedure_results = mt.rawp2adjp(as.numeric(unlist(statDF[paste0("pval_",comparison)])), proc=as.character(parameters["Test.adjust.procedure",]), alpha=parameters["Test.adjust.FDR",])
+    procedure_results = mt.rawp2adjp(as.numeric(unlist(statDF[paste0("pval_",comparison)])),
+                                     proc=as.character(parameters["Test.adjust.procedure",]), alpha=parameters["Test.adjust.FDR",])
     qval = data.frame(procedure_results$adjp,procedure_results$index)[order(procedure_results$index),2]
   }else{
     value="pval"
@@ -1674,14 +1680,16 @@ for (comparison in comparisons_to_do){
           }
         }
       }
+      
+
       # write.csv(significant_proteins_table, "sig_prot_tab.txt")
     
-      cat(knitr::knit_print(DT::datatable(significant_proteins_table,
+        cat(knitr::knit_print(DT::datatable(significant_proteins_table,
                                     rownames=FALSE,
                                     extensions = 'Buttons',
                                     options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
                       DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt', rowHeight = '30px')))
-    
+
     }
   }
   
@@ -1752,7 +1760,7 @@ knitr::knit_print(DT::datatable(matrix(),
 hm <- grep(".*_imputed_log$",colnames(output_t))
 
 if(params$proline_source_file == "none"){
-  data.table::fwrite(output_t, params$output_table, row.names = F, sep = "\t")
+  data.table::fwrite(output_t,paste0(params$output_dir,"output_table.tsv"), row.names = F, sep = "\t")
 }else{
 
   existing_file <- loadWorkbook(params$proline_source_file)
