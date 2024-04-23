@@ -156,6 +156,7 @@ library(htmltools)
 library(RColorBrewer)
 library(gtable)
 library(dplyr)
+library(patchwork)
 
 source("../../Library/quantitativeProteomics.R")
 # source("D:/dev/donald/R/Quantitative-proteomics/Library/Heatmap_functions.R")
@@ -1432,7 +1433,7 @@ for (comparison in comparisons_to_do){
                       alternative=as.character(parameters["Test.alternative",]),
                       paired=as.logical(parameters["Test.paired",]))
         }
-        statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession),]<- pval
+        statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession,nomatch =0),]<- pval
       }
       
     }
@@ -1752,7 +1753,8 @@ knitr::knit_print(DT::datatable(matrix(),
 hm <- grep(".*_imputed_log$",colnames(output_t))
 
 if(params$proline_source_file == "none"){
-  data.table::fwrite(output_t, params$output_table, row.names = F, sep = "\t")
+  data.table::fwrite(output_t,paste0(params$output_dir,"output_table.tsv"), row.names = F, sep = "\t")
+  #data.table::fwrite(output_t, params$output_table, row.names = F, sep = "\t")
 }else{
 
   existing_file <- loadWorkbook(params$proline_source_file)
