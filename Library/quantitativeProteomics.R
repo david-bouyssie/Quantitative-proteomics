@@ -441,8 +441,14 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
  # Output :
   # heatmap plot
   
-  inputProteins = intensities[,3:ncol(intensities)]
-  rownames(inputProteins) = make.names(intensities$Label,unique=T)
+  #inputProteins = intensities[,3:ncol(intensities)]
+  #rownames(inputProteins) = make.names(intensities$Label,unique=T)
+  
+  ## As an alternative 
+  library(dplyr)
+  inputProteins <- intensities %>% remove_rownames() %>%
+    column_to_rownames(var="Label") %>% select(where(is.numeric))
+  
   distMatrixProteins <- dist(inputProteins)
   hClustProteins <- hclust(distMatrixProteins)
 
@@ -453,12 +459,16 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
   }
   proteinId = rep(intensities[,1],ncol(inputProteins))
   gene_name = rep(make.names(intensities[,2],unique=T),ncol(inputProteins))
-  intensitiesDF = melt(inputProteins)
+  
+  inputProteins$Labels <- rownames(inputProteins)
+  intensitiesDF = melt(inputProteins) ###No variables exist to melt the data because all variables were converted to rownames above
+  
   imputed = melt(imputed,id.vars = 1)
-  heatmapDF = cbind(proteinId,gene_name,intensitiesDF,proteinRank,imputed$value)
+  ## Instead of cbind, use data.frame: WHY? -> #https://stackoverflow.com/questions/11151339/r-numeric-vector-becoming-non-numeric-after-cbind-of-dates
+  heatmapDF = data.frame(proteinId,gene_name,as.character(intensitiesDF$variable),intensitiesDF$value,proteinRank,imputed$value)
   colnames(heatmapDF) = c("Id","Gene_name","Sample","log_intensity","proteinRank","imputed")
 
-  heatmapDF=subset(heatmapDF,heatmapDF$imputed==F)
+  heatmapDF=subset(heatmapDF,heatmapDF[,"imputed"]==FALSE)
 
   # Order sample by group
   orderedSamples = c()
@@ -466,11 +476,16 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
   for (group in group_ids){
     orderedSamples = c(orderedSamples,sort(grep(paste0("_",group),samples_names,value=T)))
   }
-  heatmapDF$orderedSamples <- factor(heatmapDF$Sample, levels = unique(orderedSamples))
+  #heatmapDF$orderedSamples <- factor(heatmapDF$Sample, levels = unique(orderedSamples))
+  orderedSamples <- factor(heatmapDF[,'Sample'], levels = unique(orderedSamples))
+  heatmapDF <- heatmapDF %>% bind_cols(as.data.frame(orderedSamples))
   heatmapDF$x <- as.numeric(heatmapDF$orderedSamples)
 
   # Order proteins according to clustering results
-  heatmapDF$orderedProteins <- factor(heatmapDF$proteinRank, levels = hClustProteins$order)
+  orderedProteins <- factor(heatmapDF$proteinRank, levels = hClustProteins$order)
+  #heatmapDF$orderedProteins <- factor(heatmapDF$proteinRank, levels = hClustProteins$order)
+  heatmapDF <- heatmapDF %>% bind_cols(as.data.frame(orderedProteins))
+  
   heatmapDF$y <- as.numeric(heatmapDF$orderedProteins)
 
   # Adjust colors
@@ -518,14 +533,14 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
   # Make grobs from plots
   matrixGrob <- ggplotGrob(hcPlot)
   dendroProteinGrob <- ggplotGrob(dendrogramProteinsPlot)
-  dendroProteinGrob <- gtable_add_cols(dendroProteinGrob, unit(rep(1, ncol(matrixGrob) - ncol(dendroProteinGrob)), "null"), pos = -1)
-
+  #dendroProteinGrob <- gtable_add_cols(dendroProteinGrob, unit(rep(1, ncol(matrixGrob) - ncol(dendroProteinGrob)), "null"), pos = -1)
+  result <- dendrogramProteinsPlot + plot_spacer() + hcPlot + plot_layout(widths = c(4, -1.1 ,4.5),guides = "collect")
   # Assemble
-  bottomGrob <- cbind(dendroProteinGrob[, 5], matrixGrob[, 5:ncol(matrixGrob)], size = "last")
-  bottomGrob <- cbind(matrixGrob[, 1:4], bottomGrob, size = "last")
+  #bottomGrob <- cbind(dendroProteinGrob[, 5], matrixGrob[, 5:ncol(matrixGrob)], size = "last")
+  #bottomGrob <- cbind(matrixGrob[, 1:4], bottomGrob, size = "last")
 
-  result <- rbind(bottomGrob[7:nrow(bottomGrob), ], size = "last")
-  result <- rbind(bottomGrob[1:6, ], result, size = "last")
+  #result <- rbind(bottomGrob[7:nrow(bottomGrob), ], size = "last")
+  #result <- rbind(bottomGrob[1:6, ], result, size = "last")
   # result <- rbind(bottomGrob, size = "last")
   # result <- rbind(dendroProteinGrob[7, ], matrixGrob[7:nrow(matrixGrob), ], size = "last")
   # result <- rbind(matrixGrob[1:6, ], result, size = "last")
