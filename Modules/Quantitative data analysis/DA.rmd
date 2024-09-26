@@ -6,10 +6,10 @@ output:
       "+RTS","-K1024m","-RTS"
     ]
 params:
-  quant_df: "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt"
-  parameters: "../../Example/Datasets/QC-DA/Parameters.txt"
-  design_exp: "../../Example/Datasets/QC-DA/designExp.txt"
-  output_dir: "../../Example/Reports/"
+  quant_df: "../../../QE240723_TEvsCt_240916_2024-09-17_1706/QE240723_TEvsCt_240916_2024-09-17_1706.tsv"
+  parameters: "../../../QE240723_TEvsCt_240916_2024-09-17_1706/stats_parameters.txt"
+  design_exp: "../../../QE240723_TEvsCt_240916_2024-09-17_1706/QE240723_TEvsCt_240916_2024-09-17_1706_exp_design.txt"
+  output_dir: "../../../QE240723_TEvsCt_240916_2024-09-17_1706/my_modification"
   proline_source_file: "none"
   proline_sheet: 4
 title: "Differential analysis"
@@ -157,7 +157,7 @@ library(RColorBrewer)
 library(gtable)
 library(dplyr)
 library(patchwork)
-
+library(DT)
 source("../../Library/quantitativeProteomics.R")
 # source("D:/dev/donald/R/Quantitative-proteomics/Library/Heatmap_functions.R")
 
@@ -210,7 +210,10 @@ createPngOrSvgForGrid <- function(plot_data1, plot_data2, image_name) {
 ```{r file_import, echo=FALSE}
 ##Importing data from 3 parameter files (Raw data, Experimental Design, Parameters) and parsing of data file##
 
-data <- read.csv(params$quant_df, check.names = F, sep="\t")
+data<- read.csv(params$quant_df, check.names = F, sep="\t")
+#library(tidyr)
+#data <- data %>% select(!Gene_name) %>% separate(Accession,into = c("Gene_name","tmp"),sep = "\\.",remove = F) %>% select(!tmp)
+
 og_Acc <- data[grepl("Accession",colnames(data))]
 Label = ifelse(is.na(data$Gene_name),as.character(data$Accession),as.character(data$Gene_name))
 data = add_column(data, Label, .after = "Gene_name")
@@ -394,6 +397,9 @@ for(group in group_ids){
       mean_abundance_repbio = cbind(mean_abundance_repbio,mean)
       
       id_type = apply(data[samples_identification_type],1,function(x) ifelse("By MS/MS"%in%x,"By MS/MS","By matching"))
+      
+      #id_type2 = data %>% mutate(samples_identification_type=ifelse("By MS/MS"%in%samples_identification_type ,"By MS/MS","By matching"))
+      
       mean_identification_type_repbio = cbind(mean_identification_type_repbio,id_type)
       
     }else{
@@ -858,11 +864,12 @@ filtered_data <- as.data.frame(global_filtering[[1]])
 global_mean_abundance_repbio <- mean_abundance_repbio
 mean_abundance_repbio <- as.data.frame(global_filtering[[2]])
 filtered_raw_abundance <- as.data.frame(global_filtering[[3]])
-
+#filtered_raw_abundance <-raw_abundance
 global_imputed_abundance <- imputed_abundance
 imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% filtered_data$Id, ]
+#imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% data$Id, ]
 global_imputed_abundance_log <- imputed_abundance_log
-imputed_abundance_log <- global_imputed_abundance_log[global_imputed_abundance_log$Id %in% filtered_data$Id, ]
+imputed_abundance_log <- global_imputed_abundance_log[global_imputed_abundance_log$Id %in% data$Id, ]
 
 kable(global_filtering[[4]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
             kable_styling(bootstrap_options="condensed",full_width = F,position = "center") %>%
@@ -888,18 +895,18 @@ if (format_svg) {
 ```{r compute_cv_distribution, results='asis', message=F}
 ##Data parsing for 'Median deviation' and 'CV' before and after line graphs from the filtered_data file##
 
-df_median_deviation_before_processing = seq(1,nrow(filtered_data))
-df_median_deviation_after_processing = seq(1,nrow(filtered_data))
+df_median_deviation_before_processing = seq(1,nrow(filtered_data)) #data
+df_median_deviation_after_processing = seq(1,nrow(filtered_data)) #data
 
-df_cv_before_processing = seq(1,nrow(filtered_data))
-df_cv_after_processing = seq(1,nrow(filtered_data))
+df_cv_before_processing = seq(1,nrow(filtered_data)) #data
+df_cv_after_processing = seq(1,nrow(filtered_data)) #data
 
 
 
 for (group in group_ids){
   
   # Before processing
-  intensities = filtered_data[grep(paste0(group,"_mean$"),names(filtered_data),value=T)]
+  intensities = filtered_data[grep(paste0(group,"_mean$"),names(filtered_data),value=T)] #data
   
   #message(paste0("ncol intensities",ncol(intensities)))
 
@@ -912,7 +919,7 @@ for (group in group_ids){
   df_cv_before_processing = cbind(df_cv_before_processing,compute_cv(intensities))
 
   # After processing
-  intensities = filtered_data[grepl(paste0(group,".*_imputed$"),names(filtered_data))]
+  intensities = filtered_data[grepl(paste0(group,".*_imputed$"),names(filtered_data))] #data
   # intensities = filtered_data[grepl(".*_imputed$",names(filtered_data))]
 
   intensities_median_deviation = compute_median_deviation(intensities)
@@ -1260,6 +1267,7 @@ if(parameters["Test.type",]%in%c("anova","kruskall")){
 ########################
 # Pairwised statistics #
 ########################
+#comparisons_to_display <- "C2_CRK/C3_LRR"
 
 # Which condition should be compared ?
 comparisons_to_display = strsplit(as.character(parameters["Comparisons",]),";")[[1]]
@@ -1269,10 +1277,13 @@ comparisons_to_display = strsplit(as.character(parameters["Comparisons",]),";")[
   comparisons_to_do = comparisons_to_display
 # }
 
-# Intialize dataframes
-statDF = data.frame(filtered_data$Id,filtered_data$Accession,filtered_data$Label)
+# Intialize dataframes 
+statDF = data.frame(filtered_data$Id,filtered_data$Accession,filtered_data$Label) #data
 colnames(statDF) = c("Id","Accession","Label")
-final_data = filtered_data
+ ## STAT_DF before using mapping with previous comparisons
+precv_statDF <- statDF
+  
+final_data = filtered_data #data
 
 output_t <- cbind(data[, 1:4], data$Specific_peptides)
 colnames(output_t) <- c("Id", "Accession", "Gene_name", "Labels", "Specific_peptides")
@@ -1294,8 +1305,9 @@ for (comparison in comparisons_to_do){
   
   ## Conditional Filtering ##
   
-  filtering_data <- cbind(data[, 1:4], data$Specific_peptides)
-  colnames(filtering_data) <- c("Id", "Accession", "Gene_name", "Label", "Specific_peptides")
+  #filtering_data <- cbind(data[, 1:4], data$Specific_peptides) # <-
+  filtering_data <- cbind(data[, 1:4], data$Specific_peptides) # <-
+  colnames(filtering_data) <- c("Id", "Accession", "Gene_name", "Label", "Specific_peptides") # 
   
   # Identification_types <- data[grepl("Identification_type_", colnames(data))]
   # Identification_types <- Identification_types[grepl(paste0(A_name, "|", B_name), colnames(Identification_types))]
@@ -1304,8 +1316,10 @@ for (comparison in comparisons_to_do){
   for(group in couple){
     
     sub = subset(expDesign,expDesign$Condition==group)
+    sel_global_mean_abundance_repbio <- global_mean_abundance_repbio %>% select(Id,contains(group))
     
-    filtering_data <- cbind(filtering_data, global_mean_abundance_repbio[grepl(group, colnames(global_mean_abundance_repbio))])
+    filtering_data <- filtering_data %>% left_join(sel_global_mean_abundance_repbio,by="Id")
+      #cbind(filtering_data, global_mean_abundance_repbio[grepl(group, colnames(global_mean_abundance_repbio))])
     
     for(file in expDesign[expDesign$Condition == group,]$File){
       filtering_data <- cbind(filtering_data, data[grepl(paste0("^", file, "$"), colnames(data))])
@@ -1363,7 +1377,7 @@ for (comparison in comparisons_to_do){
     totIntensities[paste0("fc_",comparison)] = totIntensities[paste0("mean_intensity_",A_name)] / totIntensities[paste0("mean_intensity_",B_name)]
   }
   
-  statDF = merge.data.frame(statDF,totIntensities[,c("Accession",paste0("mean_intensity_",comparison),paste0("fc_",comparison))],by="Accession")
+  statDF = merge.data.frame(precv_statDF,totIntensities[,c("Accession",paste0("mean_intensity_",comparison),paste0("fc_",comparison))],by="Accession")
   if(Fold.Change=="zscore"){
     statDF$zscore <- scale(log2(statDF[paste0("fc_",comparison)]),center = TRUE, scale = TRUE)
   }
@@ -1404,8 +1418,21 @@ for (comparison in comparisons_to_do){
       }
     
       data_limma<- cbind(A[,3:ncol(A)],B[,3:ncol(B)])
-      rownames(data_limma)=filtered_data$Accession
-  
+      ##### TO Get Rid of this error: "Error in `.rowNamesDF<-`(x, value = value) : \n duplicate 'row.names' are not allowed
+      if(sum(isUnique(filtered_data$Accession)) == length(filtered_data$Accession)){
+        rownames(data_limma)=filtered_data$Accession
+
+      }else{
+        unique_rownames <- filtered_data %>%
+          mutate(rowname = ifelse(duplicated(Accession) | duplicated(Accession, fromLast = TRUE),
+                            paste(Accession, Id, sep = "_"),
+                            Accession)) %>%
+          remove_rownames() %>%
+          column_to_rownames(var = "rowname")
+        
+        row.names(data_limma) <- row.names(unique_rownames)
+        }
+    
       fit <- lmFit(data_limma, design)
       fit <- eBayes(fit)
   
@@ -1460,6 +1487,9 @@ for (comparison in comparisons_to_do){
   statDF[paste0("significant_",comparison)][(statDF[paste0(value,"_",comparison)]<=Volcano.threshold.pvalue)
                                             & (abs(log2(statDF[paste0(Fold.Change,"_",comparison)]))>=Volcano.threshold.fc)] <- T
   
+  #current_statDF = statDF[grepl(paste0("Accession|Label|",comparison),colnames(statDF))]
+   #assign(paste0("curr_statDF_",comparison),current_statDF)
+  
   ########################## Results displaying ##########################
   if(comparison%in%comparisons_to_display){
     
@@ -1498,6 +1528,11 @@ for (comparison in comparisons_to_do){
       col_list <- c('green4', 'yellow3', 'red3')
       pnt_sz <- 1.5
     
+      
+    ##Framing of MA plot using ggplot##
+  
+     
+    top_50_pval = current_statDF %>% filter(significant==TRUE) %>% slice_min(pval, n = 50)
     ##Framing of MA plot using ggplot##
   
     MA = ggplot(current_statDF, aes(x=log10(mean_intensity), y=log2(fc))) +
@@ -1505,17 +1540,20 @@ for (comparison in comparisons_to_do){
       {if(col_sig) geom_point(aes(color=significant, alpha = current_statDF$pval),size=ifelse(current_statDF$significant, 2, 1.5))}+
       {if(!col_sig) geom_point(aes(color=-log10(pval), alpha = .7),size=pnt_sz)}+
       {if(monochrome && !col_sig) scale_color_gradient(low = 'lightblue', high = 'blue4')}+
-      {if(!monochrome && !col_sig) scale_color_gradientn(colors = rev(col_list), values = c(0, .5, 1))}+
+      {if(!monochrome && !col_sig) scale_color_gradientn(colors = col_list, values = c(0, .5, 1))}+ #colors= rev(col_list)
       {if(col_sig) scale_color_manual(values = sig_list)}+
-      {if(!lblng_mnl) ggrepel::geom_text_repel(aes(label=ifelse(current_statDF$significant==T,as.character(current_statDF$Label),'')),
+      {if(!lblng_mnl) ggrepel::geom_text_repel(data = top_50_pval,aes(label=as.character(top_50_pval$Label)),
                                               hjust=1,vjust=-1, size=3, box.padding = .15,max.overlaps = 10)}+
+      #{if(!lblng_mnl) ggrepel::geom_text_repel(aes(label=ifelse(current_statDF$significant==T,as.character(current_statDF$Label),'')),
+                                              #hjust=1,vjust=-1, size=3, box.padding = .15,max.overlaps = 10)}+
       {if(lblng_mnl) ggrepel::geom_text_repel(aes(label = ifelse(current_statDF$Accession %in% prtn_lbl_lst, as.character(current_statDF$Label),'')), 
                                               hjust=1,vjust=-1, size=3, box.padding = .15, max.overlaps = 10000)}+
+      {if(!lblng_mnl) labs(subtitle = "Top 50 significant hits were labeled.")} +
       geom_hline(yintercept=Volcano.threshold.fc,linetype="dashed") +
       geom_hline(yintercept=-Volcano.threshold.fc,linetype="dashed") +
       # scale_colour_manual(values = c("black", "tomato1"))+
       ggtitle("MA plot")+
-      xlab("log maximum intensity")+
+      xlab("log 10(Intensity)")+ # "log maximum intensity"
       ylab(paste0('log2(',Fold.Change,')')) +
       theme(legend.position = "right",
         plot.title = element_text(size=22),
@@ -1542,8 +1580,6 @@ for (comparison in comparisons_to_do){
       Volcano.threshold.pvalue <- max(significant_df$pval)
     }
     
-  
-    
     cstat_noNA <- current_statDF[complete.cases(current_statDF$fc, current_statDF$pval),]
     
     if(col_sig){
@@ -1569,8 +1605,9 @@ for (comparison in comparisons_to_do){
       {if(lblng_mnl) ggrepel::geom_text_repel(aes(label = ifelse(cstat_noNA$Accession %in% prtn_lbl_lst, as.character(cstat_noNA$Label),'')), 
                                               hjust=1,vjust=-1, size=3, box.padding = .15, max.overlaps = 10000)}+
       ggtitle("")+
-      xlab(paste0('log2(fc)'))+
+      xlab(paste0("log2(FC)"))+ 
       ylab(paste0('-log10(pval)'))+
+      labs(color='log10(Intensity)') +
       theme(plot.title = element_text(size=22),
             axis.title=element_text(size=18),
             axis.text=element_text(size=18),
@@ -1632,7 +1669,9 @@ for (comparison in comparisons_to_do){
         raw_intensities_significant_proteins = subset(filtered_data,filtered_data$Accession%in%significant_proteins_intensities$Accession)[c("Accession","Label",paste0(samples_names_comparison,"_mean"))]
   
         
-        imputed = cbind.data.frame(raw_intensities_significant_proteins[,1],is.na(raw_intensities_significant_proteins [,-c(1,2)]))
+        imputed = cbind.data.frame(raw_intensities_significant_proteins[,1:2],is.na(raw_intensities_significant_proteins [,-c(1,2)])) # Second column was selected 
+                                                                                                                                       #additionally to remove duplicates in the
+                                                                                                                                       #heatmap function
         colnames(imputed)[1] = "Id"
         
         ##Framing 'Heatmap' plot##
@@ -1678,13 +1717,14 @@ for (comparison in comparisons_to_do){
       # write.csv(significant_proteins_table, "sig_prot_tab.txt")
     
       cat(knitr::knit_print(DT::datatable(significant_proteins_table,
-                                    rownames=FALSE,
-                                    extensions = 'Buttons',
-                                    options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
-                      DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt', rowHeight = '30px')))
-    
+      rownames=FALSE,
+      extensions = 'Buttons',
+      options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
+      DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt', rowHeight = '30px')))
+      
     }
   }
+  
   
   
   ###############################
@@ -1703,7 +1743,8 @@ for (comparison in comparisons_to_do){
   current_statDF[paste0("\"","log2_fc_",comparison,"\"")] = log2(current_statDF[paste0("fc_",comparison)])
   
   colnames(current_statDF) = gsub("\"","",colnames(current_statDF))
-  
+  ##################
+ 
   # write.csv(statDF, "statDF.csv", row.names = F)
   
   # final_data = merge(final_data,current_statDF,by=c("Accession","Label"))
@@ -1815,7 +1856,7 @@ if(params$proline_source_file == "none"){
   }
 
   # Save the modified Excel file
-  exit_address <- paste0(as.character(params$output_dir), "DA_output_table.xlsx")
+  exit_address <- paste0(as.character(params$output_dir), "aft_rmv_global_filt_DA_output_table.xlsx")
   # exit_address <- paste0("D:/dev/donald/R/Quantitative-proteomics/Modules/Quantitative data analysis/DA", "_output_table.xlsx")
   saveWorkbook(wb = existing_file, file = as.character(exit_address), overwrite = TRUE)
 }
