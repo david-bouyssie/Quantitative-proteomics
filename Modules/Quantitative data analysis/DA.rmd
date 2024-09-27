@@ -6,10 +6,10 @@ output:
       "+RTS","-K1024m","-RTS"
     ]
 params:
-  quant_df: "../../../QE240723_TEvsCt_240916_2024-09-17_1706/QE240723_TEvsCt_240916_2024-09-17_1706.tsv"
-  parameters: "../../../QE240723_TEvsCt_240916_2024-09-17_1706/stats_parameters.txt"
-  design_exp: "../../../QE240723_TEvsCt_240916_2024-09-17_1706/QE240723_TEvsCt_240916_2024-09-17_1706_exp_design.txt"
-  output_dir: "../../../QE240723_TEvsCt_240916_2024-09-17_1706/my_modification"
+  quant_df: "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt"
+  parameters: "../../Example/Datasets/QC-DA/Parameters.txt"
+  design_exp: "../../Example/Datasets/QC-DA/designExp.txt"
+  output_dir: "../../Example/Reports/"
   proline_source_file: "none"
   proline_sheet: 4
 title: "Differential analysis"
