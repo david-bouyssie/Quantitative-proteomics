@@ -1856,7 +1856,7 @@ if(params$proline_source_file == "none"){
   }
 
   # Save the modified Excel file
-  exit_address <- paste0(as.character(params$output_dir), "aft_rmv_global_filt_DA_output_table.xlsx")
+  exit_address <- paste0(as.character(params$output_dir), "DA_output_table.xlsx")
   # exit_address <- paste0("D:/dev/donald/R/Quantitative-proteomics/Modules/Quantitative data analysis/DA", "_output_table.xlsx")
   saveWorkbook(wb = existing_file, file = as.character(exit_address), overwrite = TRUE)
 }
