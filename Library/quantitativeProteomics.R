@@ -432,7 +432,7 @@ if(TRUE){
 
 # This function create a heatmap with a hierarchical clustering of proteins
 create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
-
+  library(tidyr)
  # Input :
   # intensities : quantification matrix whom 1rst column contains protein id
   # imputed : boolean matrix whom 1rst column contains protein id
@@ -441,13 +441,8 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
  # Output :
   # heatmap plot
   
-  #inputProteins = intensities[,3:ncol(intensities)]
-  #rownames(inputProteins) = make.names(intensities$Label,unique=T)
-  
-  ## As an alternative 
-  library(dplyr)
-  inputProteins <- intensities %>% remove_rownames() %>%
-    column_to_rownames(var="Label") %>% select(where(is.numeric))
+  inputProteins = intensities[,3:ncol(intensities)]
+  rownames(inputProteins) = make.names(intensities$Label,unique=T)
   
   distMatrixProteins <- dist(inputProteins)
   hClustProteins <- hclust(distMatrixProteins)
@@ -460,14 +455,23 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
   proteinId = rep(intensities[,1],ncol(inputProteins))
   gene_name = rep(make.names(intensities[,2],unique=T),ncol(inputProteins))
   
-  inputProteins$Labels <- rownames(inputProteins)
-  intensitiesDF = melt(inputProteins) ###No variables exist to melt the data because all variables were converted to rownames above
+  #inputProteins$Labels <- rownames(inputProteins)
+  intensitiesDF = melt(cbind(intensities$Label,inputProteins)) ###No variables exist to melt the data because all variables were converted to rownames above
   
-  imputed = melt(imputed,id.vars = 1)
+  pivot_long_intensitiesDF = inputProteins %>%
+    rownames_to_column("Label") %>% 
+    pivot_longer(cols=!contains("Label"),
+                 names_to="condition",values_to="intensity")
+                                                                                           
+  #melt_imputed = melt(imputed,id.vars = 1) # Number of rows do not match with intensitiesDF
+  pivot_long_imputed <- imputed %>% pivot_longer(cols=contains("mean"),names_to="condition",
+                                                 values_to="is_imputed")
+  
   ## Instead of cbind, use data.frame: WHY? -> #https://stackoverflow.com/questions/11151339/r-numeric-vector-becoming-non-numeric-after-cbind-of-dates
-  heatmapDF = data.frame(proteinId,gene_name,as.character(intensitiesDF$variable),intensitiesDF$value,proteinRank,imputed$value)
+  heatmapDF = data.frame(proteinId,gene_name,as.character(pivot_long_intensitiesDF$condition),
+                         pivot_long_intensitiesDF$intensity,proteinRank,pivot_long_imputed$is_imputed)
   colnames(heatmapDF) = c("Id","Gene_name","Sample","log_intensity","proteinRank","imputed")
-
+  
   heatmapDF=subset(heatmapDF,heatmapDF[,"imputed"]==FALSE)
 
   # Order sample by group
