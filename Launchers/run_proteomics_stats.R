@@ -43,6 +43,7 @@ if (analysis == "QC") {
   
   rmarkdown::render(
     './Quantitative-proteomics/Modules/Quantitative data analysis/DA.Rmd',
+    
     output_file = output_file ,
     params = list(
       quant_df = quantif_file,

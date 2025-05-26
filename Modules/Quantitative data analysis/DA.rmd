@@ -158,6 +158,7 @@ library(gtable)
 library(dplyr)
 library(patchwork)
 library(DT)
+library(tidyr)
 source("../../Library/quantitativeProteomics.R")
 # source("D:/dev/donald/R/Quantitative-proteomics/Library/Heatmap_functions.R")
 
@@ -211,12 +212,21 @@ createPngOrSvgForGrid <- function(plot_data1, plot_data2, image_name) {
 ##Importing data from 3 parameter files (Raw data, Experimental Design, Parameters) and parsing of data file##
 
 data<- read.csv(params$quant_df, check.names = F, sep="\t")
-#library(tidyr)
-#data <- data %>% select(!Gene_name) %>% separate(Accession,into = c("Gene_name","tmp"),sep = "\\.",remove = F) %>% select(!tmp)
 
 og_Acc <- data[grepl("Accession",colnames(data))]
-Label = ifelse(is.na(data$Gene_name),as.character(data$Accession),as.character(data$Gene_name))
-data = add_column(data, Label, .after = "Gene_name")
+#Label = ifelse(is.na(data$Gene_name),as.character(data$Accession),as.character(data$Gene_name))
+#data = add_column(data, Label, .after = "Gene_name")
+
+data <- data %>% mutate(Label=Gene_name) %>%
+  relocate(Label,.after = "Gene_name") %>%
+  mutate(Label=if_else(is.na(Label),paste0(Accession),Label)) %>% #if gene_name is NA, use Accession
+  group_by(Label) %>% 
+   mutate(Label = case_when(
+    n() > 1 ~ paste0(Label, "_", Accession),  # Modify only duplicated labels
+    TRUE ~ Label  # Keep unique labels as they are
+  )) %>%
+  ungroup()
+
 
 filtering_cpy <- data
 
