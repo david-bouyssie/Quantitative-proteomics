@@ -1,7 +1,7 @@
 .libPaths(
   c(
     .libPaths(),
-    "./Quantitative-proteomics/renv/library/R-4.2/x86_64-w64-mingw32"
+    "./renv/library/R-4.2/x86_64-w64-mingw32"
   )
 )
 
