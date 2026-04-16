@@ -22,7 +22,7 @@ normalize <- function(df, reference_sample, method = "pqn"){
                                check.names=FALSE)
 
   # Compute ratios
-  normalized_data$Id = df[,1]
+  normalized_data$Id = df[[1]]
   reference_intensities = as.numeric(as.vector(unlist(df[as.character(reference_sample)])))
   for (sample in colnames(df)[-1]){
     if(sample!=reference_sample){
@@ -126,7 +126,7 @@ normdf <- function(raw_abundance, reference_sample){
                              check.names=FALSE)
   
   # Compute ratios
-  normalized_df$Id = raw_abundance[,1]
+  normalized_df$Id = raw_abundance[[1]]
   reference_intensities = as.numeric(as.vector(unlist(raw_abundance[as.character(reference_sample)])))
   for (sample in colnames(raw_abundance)[-1]){
     if(sample!=reference_sample){
