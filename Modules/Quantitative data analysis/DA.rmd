@@ -1,18 +1,21 @@
 
 ---
-output:
-  html_document:
-    pandoc_args: [
-      "+RTS","-K1024m","-RTS"
-    ]
+title: "Differential analysis"
 params:
   quant_df: "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt"
   parameters: "../../Example/Datasets/QC-DA/Parameters.txt"
   design_exp: "../../Example/Datasets/QC-DA/designExp.txt"
   output_dir: "../../Example/Reports/"
+  origin_file: ""
   proline_source_file: "none"
   proline_sheet: 4
-title: "Differential analysis"
+output:
+  html_document:
+    pandoc_args:
+    - +RTS
+    - "-K1024m"
+    - "-RTS"
+  pdf_document: default
 ---
 
 <style type="text/css">
@@ -267,7 +270,7 @@ Vol_no_lab <- as.logical(parameters["Volcano.no.labeling",])
 ```{r date, results='asis'}
 ##Parsing to create a data frame in html formatting##
 
-kable(data.frame(c("File","Number of rows", "Date"),c(params$quant_df,nrow(data),format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
+kable(data.frame(c("R-Analysis Version", "File", "Number of rows", "Origin File", "Date"),c(2.11,params$quant_df,nrow(data),params$origin_file,format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
           kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
           column_spec(1, bold = T)
 ```
@@ -329,6 +332,8 @@ if (normalization){
   }else{
     normalized_abundance = normalize(raw_abundance,reference_sample)
   }
+  
+  
   data = merge.data.frame(data,normalized_abundance,by="Id")
   normalized_abundance = normalized_abundance[,grepl("_norm",colnames(normalized_abundance))]
   
@@ -550,7 +555,7 @@ if (normalization){
   
   normalized_abundance = data[c("Id",paste0(as.character(expDesign$File),"_norm"))]
   # Plots
-  df_raw_intensity = melt(raw_abundance[-1])
+  df_raw_intensity = reshape2::melt(raw_abundance[-1])
   colnames(df_raw_intensity) = c("Sample","Intensity")
   df_raw_intensity$Sample = sub("Intensity_","",df_raw_intensity$Sample)
 
@@ -579,8 +584,8 @@ if (normalization){
   ##Framing of 'Intensity distribution after normalization' line graph##
 
   cat(text_spec("\n"))  
-    
-  df_norm_intensity = melt(normalized_abundance[-1])
+  
+  df_norm_intensity = reshape2::melt(normalized_abundance[-1])
   colnames(df_norm_intensity) = c("Sample","Intensity")
   df_norm_intensity$Sample = sub("Intensity_","", df_norm_intensity$Sample)
   df_norm_intensity$Sample = sub("_norm","", df_norm_intensity$Sample)
@@ -631,7 +636,7 @@ if (normalization){
 ##na_percentage - Stores the percentage and count of missing values per group and for the entire data group##
 ##na_distribution - Stores the median and count of missing values in each row in a group##
 
-na_distribution = data.frame(median=numeric(),sums_na=numeric())
+na_distribution = data.frame(median=numeric(),sum_na=numeric())
 # medians = c()
 # sums_na = c()
 na_percentage = data.frame(Group=character(),na_percentage=character(),na_count=character())
@@ -798,15 +803,22 @@ imputed_abundance[imputed_abundance=="MCAR"] <- NA
 
 data = merge.data.frame(data,imputed_abundance,by="Id")
 
-imputed_abundance_log = imputed_abundance
-imputed_abundance_log[,2:ncol(imputed_abundance_log)] = log10(data.matrix(imputed_abundance_log[,2:ncol(imputed_abundance_log)]))
-colnames(imputed_abundance_log)[2:ncol(imputed_abundance_log)] = paste0(colnames(imputed_abundance)[2:ncol(imputed_abundance_log)],"_log")
+#imputed_abundance_log = imputed_abundance
+#imputed_abundance_log[,2:ncol(imputed_abundance_log)] = log10(data.matrix(imputed_abundance_log[,2:ncol(imputed_abundance_log)]))
+#colnames(imputed_abundance_log)[2:ncol(imputed_abundance_log)] = paste0(colnames(imputed_abundance)[2:ncol(imputed_abundance_log)],"_log")
+
+# Keep ID column, log transform the rest
+imputed_abundance_log = data.frame(
+  Id = imputed_abundance[,1],
+  log10(imputed_abundance[,2:ncol(imputed_abundance)])
+)
+colnames(imputed_abundance_log)[2:ncol(imputed_abundance_log)] = paste0(colnames(imputed_abundance)[2:ncol(imputed_abundance)],"_log")
 
 data = merge.data.frame(data,imputed_abundance_log,by="Id")
 
 # Make a data frame of values to plot
 imputed_abundance_log = data[grepl("_log$|Id$",colnames(data))]
-imputationDF = melt(imputed_abundance_log[,-1])
+imputationDF = reshape2::melt(imputed_abundance_log[,-1])
 colnames(imputationDF) = c("Sample","log_abundance")
 
 if(no_imputation){
@@ -818,12 +830,12 @@ if(no_imputation){
   
   # Make a data frame of values to plot
   abundance_log = data[grepl("_noimpute_log$|Id$",colnames(data))]
-  abundanceDF = melt(abundance_log[,-1])
+  abundanceDF = reshape2::melt(abundance_log[,-1])
   colnames(abundanceDF) = c("Sample","log_abundance")
 }
 
 ## imputed?
-imputed = melt(is.na(mean_abundance_repbio[,-1]))
+imputed = reshape2::melt(is.na(mean_abundance_repbio[,-1]))
 imputationDF = cbind(imputationDF,imputed$value)
 colnames(imputationDF) = c("Sample","Intensity","Is_imputed")
 
@@ -866,7 +878,7 @@ if(exists("gaussian_parameters")){
 
 
 ```{r global_filtering}
-##Parsing of data input file to seperate by specific peptides##
+##Parsing of data input file to separate by specific peptides##
 
 global_filtering <- filter_dataset(data, group_ids)
 
@@ -953,7 +965,7 @@ cat(text_spec("Median deviation", color="#3686D5", bold=T, font_size=18 ))
 ```{r plot_median_deviation, results='asis'}
 ##Creating the data frame for the 'Median deviation before processing' line graph##
 
-df_median_deviation_before_processing = melt(df_median_deviation_before_processing[,-1])
+df_median_deviation_before_processing = reshape2::melt(df_median_deviation_before_processing[,-1])
 colnames(df_median_deviation_before_processing) = c("Group","value")
 df_median_deviation_before_processing$Group = sub("\\..*","",df_median_deviation_before_processing$Group)
 
@@ -971,7 +983,7 @@ median_deviation_density_before_processing = ggplot() +
 
 ##Creating the data frame for 'Median deviation after processing' line graph##
 
-df_median_deviation_after_processing = melt(df_median_deviation_after_processing[,-1])
+df_median_deviation_after_processing = reshape2::melt(df_median_deviation_after_processing[,-1])
 colnames(df_median_deviation_after_processing) = c("Group","value")
 df_median_deviation_after_processing$Group = sub("\\..*","",df_median_deviation_after_processing$Group)
 
@@ -1012,7 +1024,7 @@ cat(text_spec("\n CV distribution", color="#3686D5", bold=T, font_size=18 ))
 
 df_cv_before_processing = df_cv_before_processing[,-1]
 colnames(df_cv_before_processing) = group_ids
-df_cv_before_processing = melt(df_cv_before_processing)
+df_cv_before_processing = reshape2::melt(df_cv_before_processing)
 colnames(df_cv_before_processing) = c("num","Group","value")
 
 ##Framing 'Truncated CV distribution before processing' line graph using ggplot##
@@ -1032,7 +1044,7 @@ cv_density_before_processing = ggplot() +
 
 df_cv_after_processing = df_cv_after_processing[,-1]
 colnames(df_cv_after_processing) = group_ids
-df_cv_after_processing2 = melt(df_cv_after_processing)
+df_cv_after_processing2 = reshape2::melt(df_cv_after_processing)
 colnames(df_cv_after_processing2) = c("num","Group","value")
 
 ##Framing 'Truncated CV distribution after processing' line graph using ggplots##
@@ -1232,7 +1244,7 @@ if(parameters["Test.type",]%in%c("anova","kruskall")){
   
   
   # Reshape df of intensities to fit anova/kruskal needs
-  reshape_abundance = melt(intensity_df,id="Id")
+  reshape_abundance = reshape2::melt(intensity_df,id="Id")
   # reshape_abundance$variable = sub(".*_","",sub(paste0(pattern,".*"),"",reshape_abundance$variable))
   for(cond in unique(expDesign$Condition)){
     reshape_abundance$variable = sub(paste0(".*", cond, "$"), cond , sub(paste0(pattern,".*"),"",reshape_abundance$variable))
@@ -1726,11 +1738,26 @@ for (comparison in comparisons_to_do){
       }
       # write.csv(significant_proteins_table, "sig_prot_tab.txt")
     
-      cat(knitr::knit_print(DT::datatable(significant_proteins_table,
-      rownames=FALSE,
+      #cat(knitr::knit_print(DT::datatable(significant_proteins_table,
+      #rownames=FALSE,
+      #extensions = 'Buttons',
+      #options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
+      #DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt', rowHeight = '30px')))
+      
+      DT::datatable(significant_proteins_table,
+      rownames = FALSE,
       extensions = 'Buttons',
-      options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
-      DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt', rowHeight = '30px')))
+      options = list(
+        dom = 'Bfrtip',
+        buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+        scrollX = TRUE
+      )
+    ) %>%
+      DT::formatStyle(
+        columns = colnames(significant_proteins_table),
+        fontSize = '8pt',
+        rowHeight = '30px'
+      )
       
     }
   }
@@ -1760,13 +1787,38 @@ for (comparison in comparisons_to_do){
   # final_data = merge(final_data,current_statDF,by=c("Accession","Label"))
   
   new_name <- paste0("Label (", comparison, ")")
-  # output_t <- merge(output_t, significant_proteins_intensities[, -2], by = "Accession")
-  if(no_imputation){
-    output_t <- merge(output_t, filtered_data[grepl(paste0("((",A_name,"|",B_name,").*_noimpute_log$|Accession$|Label$)"),names(filtered_data))][, -2], by = "Accession", all = T)
-  }else{
-    output_t <- merge(output_t, filtered_data[grepl(paste0("((",A_name,"|",B_name,").*_imputed_log$|Accession$|Label$)"),names(filtered_data))][, -2], by = "Accession", all = T)
+
+  #if(no_imputation){
+  #  output_t <- merge(output_t, filtered_data[grepl(paste0("((",A_name,"|",B_name,").*_noimpute_log$|Accession$|Label$)"),names(filtered_data))][, -2], by = "Accession", all = T)
+  #}else{
+  #  output_t <- merge(output_t, filtered_data[grepl(paste0("((",A_name,"|",B_name,").*_imputed_log$|Accession$|Label$)"),names(filtered_data))][, -2], by = "Accession", all = T)
+  #}
+  #output_t <- merge(output_t, current_statDF, by="Accession", all = T)
+  if (no_imputation) {
+    to_add <- filtered_data[
+      grepl(paste0("((", A_name, "|", B_name, ").*_noimpute_log$|Accession$|Label$)"), names(filtered_data))
+    ][, -2]
+  } else {
+    to_add <- filtered_data[
+      grepl(paste0("((", A_name, "|", B_name, ").*_imputed_log$|Accession$|Label$)"), names(filtered_data))
+    ][, -2]
   }
-  output_t <- merge(output_t, current_statDF, by="Accession", all = T)
+  
+  
+  # keep only columns not already in output_t, except Accession which is the key
+  non_key_cols <- setdiff(names(to_add), "Accession")
+
+  names(to_add)[names(to_add) %in% non_key_cols] <- paste0(non_key_cols, "_", comparison)
+  
+  to_add <- to_add[, c("Accession", setdiff(names(to_add), c("Accession", names(output_t)))), drop = FALSE]
+  
+  output_t <- merge(output_t, to_add, by = "Accession", all = TRUE)
+  
+  # same idea for current_statDF
+  stat_to_add <- current_statDF[, c("Accession", setdiff(names(current_statDF), c("Accession", names(output_t)))), drop = FALSE]
+  
+  output_t <- merge(output_t, stat_to_add, by = "Accession", all = TRUE)
+  
   output_t$PresentInBoth <- !is.na(output_t$Label)
   
 
@@ -1792,23 +1844,61 @@ output_t <- output_t[indices, ]
 ```
 
 ```{r include=FALSE}
-# You need this code to conduct the magic dependences attaching...
-knitr::knit_print(DT::datatable(matrix(),
-                                extensions = 'Buttons',
-                                options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE)))
+# You need this code to conduct the magic dependencies attaching...
+DT::datatable(matrix(),
+              extensions = 'Buttons',
+              options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))
 ```
 
+
+```{r preparing_metadata, include=FALSE}
+
+analysis_metadata <- data.frame(
+  Field = c("R-Analysis Version", "File", "Number of rows", "Origin File", "Date"),
+  Value = c(
+    2.11,
+    params$quant_df,
+    nrow(data),
+    params$origin_file,
+    format(Sys.time(), "%y-%m-%d %H:%M:%S")
+  ),
+  stringsAsFactors = FALSE
+)
+```
 
 
 ```{r save_data}
 hm <- grep(".*_imputed_log$",colnames(output_t))
 
 if(params$proline_source_file == "none"){
-  data.table::fwrite(output_t,paste0(params$output_dir,"output_table.tsv"), row.names = F, sep = "\t")
+  data.table::fwrite(output_t,paste0(params$output_dir,"/output_table.tsv"), row.names = F, sep = "\t")
   #data.table::fwrite(output_t, params$output_table, row.names = F, sep = "\t")
 }else{
 
-  existing_file <- loadWorkbook(params$proline_source_file)
+  # existing_file <- loadWorkbook(params$proline_source_file)
+  
+  source_file <- params$proline_source_file
+  ext <- tolower(tools::file_ext(source_file))
+  
+  if (ext %in% c("xlsx", "xlsm")) {
+    existing_file <- openxlsx::loadWorkbook(source_file)
+  } else if (ext %in% c("txt", "tsv")) {
+    
+    # 1. Read the tab-separated file
+    df <- read.delim(source_file, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
+    
+    # 2. Create a new workbook
+    existing_file <- openxlsx::createWorkbook()
+    
+    # 3. Add a worksheet (name can be anything meaningful)
+    openxlsx::addWorksheet(existing_file, "Parsed_proteins_set")
+    
+    # 4. Write the data into it
+    openxlsx::writeData(existing_file, "Parsed_proteins_set", df)
+    
+  } else {
+    stop("Unsupported file type: ", source_file)
+  }
 
   ## Saving Parameters Sheet - Create new worksheet
   addWorksheet(existing_file, "R_Params")
@@ -1864,9 +1954,27 @@ if(params$proline_source_file == "none"){
 
   setColWidths(existing_file, worksheet_name, (cdc[indice_list[index] + 1]):(cdc[indice_list[index + 1]]), widths = 4)
   }
+  
+  #Metadata Sheet
+
+  addWorksheet(existing_file, "R_Metadata")
+  
+  writeData(existing_file, "R_Metadata", analysis_metadata, colNames = FALSE)
+  
+  metadata_style <- createStyle(fgFill = "lightblue")
+  addStyle(
+    existing_file,
+    "R_Metadata",
+    metadata_style,
+    cols = 1:2,
+    rows = 1:nrow(analysis_metadata),
+    gridExpand = TRUE
+  )
+  
+  setColWidths(existing_file, "R_Metadata", cols = 1:2, widths = 35)
 
   # Save the modified Excel file
-  exit_address <- paste0(as.character(params$output_dir), "DA_output_table.xlsx")
+  exit_address <- paste0(as.character(params$output_dir), "/DA_output_table.xlsx")
   # exit_address <- paste0("D:/dev/donald/R/Quantitative-proteomics/Modules/Quantitative data analysis/DA", "_output_table.xlsx")
   saveWorkbook(wb = existing_file, file = as.character(exit_address), overwrite = TRUE)
 }

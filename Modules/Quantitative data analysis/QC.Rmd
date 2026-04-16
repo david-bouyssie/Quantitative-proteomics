@@ -7,6 +7,7 @@ params:
   quantif_file: "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt"
   design_exp: ""
   parameters: ""
+  origin_file: ""
 ---
 
 <style type="text/css">
@@ -162,25 +163,37 @@ if(dir.exists("temp") == FALSE){
   dir.create("temp")
 }
 
-createPngOrSvg <- function(plot_data, image_name, height = 600, length = 600) {
+createPngOrSvg <- function(plot_data, image_name, height = 600, length = 600, grob=FALSE) {
+
   if (format_svg) {
     s <- svgstring()
-    plot(plot_data)
+    if (grob) {
+      print(plot_data)
+    } else {
+      plot(plot_data)
+    }
     invisible(dev.off())
-  
     return(paste0("<div id='svgWrapper'>", s(),"<a class='no-print' href='javascript:void(0);' onclick=\"javascript:saveSvgFromParentDiv2(this,'",image_name,".svg');\" >Save figure</a></div>"))
+
   } else {
     png_file <- paste0("./temp/",image_name, ".png")
     png(filename = png_file, width = length, height = height, type = "cairo")
-    plot(plot_data)
+    if (grob) {
+      print(plot_data)
+    } else {
+      plot(plot_data)
+    }
+
     invisible(dev.off())
-    
     png_binary <- readBin(png_file, what = "raw", n = file.info(png_file)$size)
     png_base64 <- base64encode(png_binary)
-    
-     return(paste0("<div id='pngWrapper'><img src='data:image/png;base64,",png_base64,"' ><a  href='javascript:void(0);' onclick=\"javascript:savePngFromParentDiv(this, '",image_name,".png');\" >Save figure</a></div>"))
+
+    return(paste0("<div id='pngWrapper'><img src='data:image/png;base64,",png_base64,"' ><a href='javascript:void(0);' onclick=\"javascript:savePngFromParentDiv(this, '",image_name,".png');\" >Save figure</a></div>"))
+
   }
 }
+
+
 ```
 
 
@@ -236,6 +249,15 @@ keep_empty_rows = as.logical(parameters["keep_empty_rows",])
 format_svg = as.logical(parameters["format_svg",])
 coloring_by_group = as.logical(parameters["coloring_by_group",])
 
+```
+
+
+```{r date, results='asis'}
+##Parsing to create a data frame in html formatting##
+
+kable(data.frame(c("R-Analysis Version", "File", "Origin File", "Date"),c(2.11,params$quantif_file,params$origin_file,format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
+          kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
+          column_spec(1, bold = T)
 ```
 
 
@@ -348,7 +370,7 @@ for (sample in sample_names){
 # Data parsing to a data frame with a single column containing all the values to plot, and sample in an other column
 log_abundance = data[,grepl("_log",names(data))]
 colnames(log_abundance) = sample_names
-logIntensitiesDF = melt(log_abundance)
+logIntensitiesDF = reshape2::melt(log_abundance)
 colnames(logIntensitiesDF) = c("sample","log_intensity")
 
 
@@ -478,10 +500,14 @@ htmltools::HTML(createPngOrSvg(M_intensity_comparison,"Median Intensity Across R
 ##Else, a heatplot of correlated coefficients is framed##
 
 if (length(sample_names)<16 & nrow(data)<5000){
-  correlogram = ggpairs(log_abundance,title="Sample correlation",upper=list(continuous=wrap("cor",size=2.5)))
+  correlogram = ggpairs(log_abundance,title="Sample correlation",upper=list(continuous=wrap("cor",size=3)),lower=list(continuous=wrap("points",size=0.15))) +
+    theme(axis.text = element_text(size = 6),
+        strip.text = element_text(size = 6),
+        plot.title = element_text(size = 22))
 }else{
   cormat <- round(cor(log_abundance,use = "complete.obs"),2)
-  cormat = melt(cormat)
+  #cormat = melt(cormat)
+  cormat <- reshape2::melt(cormat)
   colnames(cormat) = c("Samples1","Samples2","Coefficient")
   correlogram = ggplot(data = cormat, aes(x=Samples1, y=Samples2, fill=Coefficient)) + 
     geom_tile() +
@@ -499,7 +525,7 @@ if (length(sample_names)<16 & nrow(data)<5000){
 
 ##Plotting and printing the 'sample correlation' plot into html (.svg or .png dependent on set parameters) with download link##
 
-htmltools::HTML(createPngOrSvg(correlogram,"Sample_correlation"))
+htmltools::HTML(createPngOrSvg(correlogram,"Sample_correlation", grob=TRUE))
 
 ```
 </div>
@@ -587,6 +613,7 @@ if (Normalization){
   intensities_to_normalize = cbind(data$Id,raw_abundance)
   colnames(intensities_to_normalize)[1] = "Id"
   normalized_abundance = normalize(intensities_to_normalize,reference_sample)
+  
   data = cbind(data,normalized_abundance[,-1])
   
   pattern = "_norm"
@@ -654,7 +681,7 @@ if (Normalization){
 
   # Plot
   normalized_abundance = normalized_abundance[grepl("_norm",names(normalized_abundance))]
-  normDF = melt(normalized_abundance)
+  normDF = reshape2::melt(normalized_abundance)
   colnames(normDF) = c("sample","intensity")
   normDF$sample = sub("_norm","",normDF$sample)
   
@@ -815,16 +842,29 @@ if(exists('normalized_abundance') && is.data.frame(get('normalized_abundance')))
 imputed_samples = impute_background_noise_gaussian(data_to_impute)[[3]]
 data = cbind(data,imputed_samples)
 
-imputed_samples_log = imputed_samples
-imputed_samples_log[,1:ncol(imputed_samples_log)] = log10(imputed_samples_log)
+#####imputed_samples_log = imputed_samples
+
+#####imputed_samples_log[,1:ncol(imputed_samples_log)] = log10(imputed_samples_log)
+imputed_samples_log <- imputed_samples
+imputed_samples_log[imputed_samples_log == 0] <- 1e-8
+imputed_samples_log <- log10(imputed_samples_log)
+
 colnames(imputed_samples_log)[1:ncol(imputed_samples_log)] = paste0(colnames(imputed_samples_log)[1:ncol(imputed_samples_log)],"_log")
 data = cbind(data,imputed_samples_log)
 
 # Make a data frame of values to plot
-imputed_abundance = data[,grepl("_imputed_log",names(data))]
-imputedIntensityDF = melt(imputed_abundance)
+imputed_abundance = data[,grepl("_imputed_log",names(data)), drop = FALSE]
+imputedIntensityDF = reshape2::melt(imputed_abundance)
 colnames(imputedIntensityDF) = c("sample","log10_intensity")
 imputedIntensityDF$sample = sub("_imputed_log","",imputedIntensityDF$sample)
+
+# Build NA mask from raw_abundance for the SAME sample columns (and same order)
+raw_mat <- raw_abundance[, sample_names, drop = FALSE]         # exclude Id
+na_mask <- is.na(raw_mat)
+
+# Melt mask and attach (same ordering if columns align)
+imputedFlagDF <- reshape2::melt(na_mask)
+imputedIntensityDF$imputed <- imputedFlagDF$value
 
 ## imputed?
 imputed = c()
@@ -832,7 +872,7 @@ for (sample_name in sample_names){
   imputed = c(imputed,is.na(raw_abundance))
 }
 ## final dataframe
-imputedIntensityDF <- data.frame(imputedIntensityDF,imputed)
+#imputedIntensityDF <- data.frame(imputedIntensityDF,imputed)
 
 
 ##Framing 'Log intensities distribution with imputed values' histogram using ggplot##
@@ -870,6 +910,7 @@ cat(text_spec("\n Missing values are imputed with the gaussian model implemented
 
 pcaInput <- imputed_abundance
 colnames(pcaInput) = sub("_imputed_log","",colnames(pcaInput))
+
 pca=dudi.pca(pcaInput,scale = FALSE, scannf = FALSE, nf = 2)
 
 z_pca=dudi.pca(pcaInput,scale = TRUE, scannf = FALSE, nf = 2)
@@ -881,16 +922,23 @@ z_pca=dudi.pca(pcaInput,scale = TRUE, scannf = FALSE, nf = 2)
 ```{r echo=FALSE, warning=FALSE}
 ##Creating data frame for 'Samples projection' pcq plot##
 
-pc1 <- pca$co[,1]
-pc2 <- pca$co[,2]
+pca_df <- data.frame(
+  sample = sample_names,
+  pc1 = pca$co[,1],
+  pc2 <- pca$co[,2]
+)
+
 contribution1 <- round(100 * pca$eig[1] / sum(pca$eig))
 contribution2 <- round(100 * pca$eig[2] / sum(pca$eig))
 
 ##Framing 'Samples projection' pcq plot using ggplot##
 
-pcaPlot <- ggplot() +
-    geom_point(mapping = aes(x = pc1, y = pc2)) +
-    geom_label_repel(aes(x = pc1, y = pc2, label = sample_names, col=sample_names, color = sample),size=5) +
+pcaPlot <- ggplot(pca_df, aes(x = pc1, y = pc2)) +
+    geom_point() +
+    ggrepel::geom_label_repel(aes(label = sample, color = sample),size=3,
+    max.overlaps = Inf,
+    box.padding = 0.5,
+    point.padding = 0.3) +
     geom_hline(yintercept=0, linetype=2) +
     geom_vline(xintercept=0,linetype=2) +
     xlab(paste0("PC1 [", contribution1, "%]")) +
@@ -913,16 +961,24 @@ pcaPlot <- ggplot() +
 ```{r echo=FALSE, warning=FALSE}
 # Z-scored
   
-pc1 <- z_pca$co[,1]
-pc2 <- z_pca$co[,2]
+z_pca_df <- data.frame(
+  sample = sample_names,
+  pc1 = z_pca$co[,1],
+  pc2 <- z_pca$co[,2]
+)
+
+#pc1 <- z_pca$co[,1]
+#pc2 <- z_pca$co[,2]
 contribution1 <- round(100 * z_pca$eig[1] / sum(z_pca$eig))
 contribution2 <- round(100 * z_pca$eig[2] / sum(z_pca$eig))
 
 ##Framing 'Samples projection' pcq plot using ggplot##
 
-pcaPlot <- ggplot() +
-    geom_point(mapping = aes(x = pc1, y = pc2)) +
-    geom_label_repel(aes(x = pc1, y = pc2, label = sample_names, col=sample_names, color = sample),size=5) +
+pcaPlot <- ggplot(z_pca_df, aes(x = pc1, y = pc2)) +
+    geom_point() +
+    geom_label_repel(aes(label = sample, color = sample),size=3, max.overlaps = Inf,
+    box.padding = 0.5,
+    point.padding = 0.3) +
     geom_hline(yintercept=0, linetype=2) +
     geom_vline(xintercept=0,linetype=2) +
     xlab(paste0("PC1 [", contribution1, "%]")) +
@@ -1135,7 +1191,7 @@ for (i in 1:length(sample_names)){
   proteinRank = c(proteinRank,1:nProteins)
 }
 # write.csv(imputed_abundance, "imputed_abundance.csv")
-heatmapDF = melt(imputed_abundance)
+heatmapDF = reshape2::melt(imputed_abundance)
 heatmapDF$variable = sub(paste0(pattern,"_imputed_log"),"",heatmapDF$variable)
 heatmapDF = cbind(heatmapDF,proteinRank,imputed)
 colnames(heatmapDF) = c("sample","log_intensity","proteinRank","imputed")
@@ -1144,6 +1200,8 @@ heatmapDF=subset(heatmapDF,heatmapDF$imputed==F)
 
 # Order samples according to clustering results
 orderedSamples <- sample_names[hClustSamples$order]
+orderedSamples <- orderedSamples[!is.na(orderedSamples)]
+orderedSamples <- sort(orderedSamples, decreasing = FALSE)
 heatmapDF$orderedSamples <- factor(heatmapDF$sample, levels = orderedSamples)
 heatmapDF$x <- as.numeric(heatmapDF$orderedSamples)
 
@@ -1211,7 +1269,12 @@ dendrogramSamplesPlot <- ggplot() +
           panel.border = element_blank())
 dendroSampleGrob <- ggplotGrob(dendrogramSamplesPlot)
 
-dendroSampleGrob <- gtable_add_cols(dendroSampleGrob, unit(rep(1, ncol(matrixGrob) - ncol(dendroSampleGrob)), "null"), pos = -1)
+diff_cols <- ncol(matrixGrob) - ncol(dendroSampleGrob)
+
+if (diff_cols > 0) {
+  dendroSampleGrob <- gtable_add_cols(dendroSampleGrob, unit(rep(1, ncol(matrixGrob) - ncol(dendroSampleGrob)), "null"), pos = -1)
+}
+
 # result <- rbind(dendroSampleGrob[7, ], matrixGrob[7:nrow(matrixGrob), ], size = "last")
 # result <- rbind(matrixGrob[1:6, ], result, size = "last")
 result <- cbind(dendroSampleGrob[, 5], matrixGrob[, 5:ncol(matrixGrob)], size = "last")
@@ -1225,7 +1288,7 @@ result$widths[5] <- unit(0.2, "null")
 # write.csv(heatmapDF, "heatmapDF_Z.csv")
 
 imputed_abundance_Z <- t(scale(t(imputed_abundance)))
-heatmapDF_Z = melt(imputed_abundance_Z)
+heatmapDF_Z = reshape2::melt(imputed_abundance_Z)
 heatmapDF_Z <- heatmapDF_Z[-1]
 colnames(heatmapDF_Z)[1] <- "variable"
 
@@ -1237,6 +1300,8 @@ heatmapDF_Z=subset(heatmapDF_Z,heatmapDF_Z$imputed==F)
 
 # Order samples according to clustering results
 orderedSamples <- sample_names[hClustSamples$order]
+orderedSamples <- orderedSamples[!is.na(orderedSamples)]
+orderedSamples <- sort(orderedSamples, decreasing = FALSE)
 heatmapDF_Z$orderedSamples <- factor(heatmapDF_Z$sample, levels = orderedSamples)
 heatmapDF_Z$x <- as.numeric(heatmapDF_Z$orderedSamples)
 
@@ -1305,7 +1370,12 @@ dendroSampleGrob_scored <- ggplotGrob(dendrogramSamplesPlot_scored)
 #   dendroProteinGrob <- ggplotGrob(dendrogramProteinsPlot)
 # }
 
-dendroSampleGrob_scored <- gtable_add_cols(dendroSampleGrob_scored, unit(rep(1, ncol(matrixGrob_scored) - ncol(dendroSampleGrob_scored)), "null"), pos = -1)
+diff_cols_scored <- ncol(matrixGrob_scored) - ncol(dendroSampleGrob_scored)
+
+if (diff_cols_scored > 0) {
+  dendroSampleGrob_scored <- gtable_add_cols(dendroSampleGrob_scored, unit(rep(1, ncol(matrixGrob_scored) - ncol(dendroSampleGrob_scored)), "null"), pos = -1)
+}
+
 # result_scored <- rbind(dendroSampleGrob_scored[7, ], matrixGrob_scored[7:nrow(matrixGrob_scored), ], size = "last")
 # result_scored <- rbind(matrixGrob_scored[1:6, ], result_scored, size = "last")
 result_scored <- cbind(dendroSampleGrob_scored[, 5], matrixGrob_scored[, 5:ncol(matrixGrob_scored)], size = "last")

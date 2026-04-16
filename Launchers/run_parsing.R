@@ -18,5 +18,5 @@ source = args[3]
 intensities_type = args[4]
 sheet = as.numeric(args[5])
 
-source(paste0("./Quantitative-proteomics/Parsers/parse_",source,".R"))
+source(paste0("/home/dsauer/projects/Quantitative-proteomics/Parsers/parse_",source,".R"))
 #source(paste0("./Parsers/parse_",source,".R"))
