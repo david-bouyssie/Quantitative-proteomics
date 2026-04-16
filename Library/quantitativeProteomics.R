@@ -538,7 +538,7 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
   matrixGrob <- ggplotGrob(hcPlot)
   dendroProteinGrob <- ggplotGrob(dendrogramProteinsPlot)
   #dendroProteinGrob <- gtable_add_cols(dendroProteinGrob, unit(rep(1, ncol(matrixGrob) - ncol(dendroProteinGrob)), "null"), pos = -1)
-  result <- dendrogramProteinsPlot + plot_spacer() + hcPlot + plot_layout(widths = c(4, -1.1 ,4.5),guides = "collect")
+  result <- dendrogramProteinsPlot + plot_spacer() + hcPlot + plot_layout(widths = c(4, -1.1 ,4.5))
   # Assemble
   #bottomGrob <- cbind(dendroProteinGrob[, 5], matrixGrob[, 5:ncol(matrixGrob)], size = "last")
   #bottomGrob <- cbind(matrixGrob[, 1:4], bottomGrob, size = "last")
