@@ -32,12 +32,8 @@ normalize <- function(df, reference_sample, method = "pqn"){
 
   if (method == "pqn"){
     # Compute median of ratios
-    median_ratios=c()
     ratios = normalized_data[grepl("_ratio_",colnames(normalized_data))]
-    for (ratio in ratios){
-      median = median(ratio,na.rm=T)
-      median_ratios = c(median_ratios,median)
-    }
+    median_ratios = sapply(ratios, median, na.rm=T)
     
     # Median removal
     i=1
@@ -51,12 +47,8 @@ normalize <- function(df, reference_sample, method = "pqn"){
     }
   }else{
     # Compute median of ratios
-    mean_ratios=c()
     ratios = normalized_data[grepl("_ratio_",colnames(normalized_data))]
-    for (ratio in ratios){
-      mean = mean(ratio,na.rm=T)
-      mean_ratios = c(mean_ratios,mean)
-    }
+    mean_ratios = sapply(ratios, mean, na.rm=T)
     
     # Compute the normalized data
     i=1
@@ -94,7 +86,7 @@ norm_factors <- function(subdf, reference_sample){
                                check.names=FALSE)
   
   # Compute ratios
-  normalized_data$Id = subdf[,1]
+  normalized_data$Id = subdf[[1]]
   reference_intensities = as.numeric(as.vector(unlist(subdf[as.character(reference_sample)])))
   for (sample in colnames(subdf)[-1]){
     if(sample!=reference_sample){
@@ -103,12 +95,8 @@ norm_factors <- function(subdf, reference_sample){
   }
   
   # Compute median of ratios
-  median_ratios=c()
   ratios = normalized_data[grepl("_ratio_",colnames(normalized_data))]
-  for (ratio in ratios){
-    median = median(ratio,na.rm=T)
-    median_ratios = c(median_ratios,median)
-  }
+  median_ratios = sapply(ratios, median, na.rm=T)
   
   return(median_ratios)
 }
@@ -139,7 +127,7 @@ normdf <- function(raw_abundance, reference_sample){
 
 ## 3) Application ##
 
-norm_app <- function(df, median_ratios, reference_intensities, normalized_data, raw_abundance){
+norm_app <- function(df, median_ratios, reference_intensities, normalized_data, raw_abundance, reference_sample){
   # Median removal
   i=1
   for (sample in colnames(df)[-1]){
@@ -162,7 +150,7 @@ new_normalization <- function(sub_df, raw_abundance, reference_sample){
   normalized_df <- normdf(raw_abundance, reference_sample)
   
   reference_intensities = as.numeric(as.vector(unlist(sub_df[as.character(reference_sample)])))
-  normalized_data <- norm_app(raw_abundance, med, reference_intensities, normalized_df, raw_abundance)
+  normalized_data <- norm_app(raw_abundance, med, reference_intensities, normalized_df, raw_abundance, reference_sample)
   
   return(normalized_data)
 }

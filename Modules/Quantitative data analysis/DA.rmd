@@ -392,11 +392,10 @@ if(coloring_by_group){
 ```{r mean_technical_replicates, results='asis'}
 ##Parsing of sample data into created group_ids list.  Means are taken of the abundance and intensity figures.##
 
-mean_abundance_repbio = data.frame(data$Id)
-colnames(mean_abundance_repbio) = "Id"
-
-mean_identification_type_repbio = data.frame(data$Id)
-colnames(mean_identification_type_repbio) = "Id"
+mean_cols_list = list()
+idtype_cols_list = list()
+mean_col_names = c()
+idtype_col_names = c()
 
 for(group in group_ids){
   
@@ -407,28 +406,21 @@ for(group in group_ids){
     samples_intensities = subset(sub,sub$repBio==rBio)$File
     samples_identification_type = paste0("Identification_type",sub("Intensity","",samples_intensities))
     
-    if(length(samples_intensities)>1){
-      mean = rowMeans(data[paste0(as.character(samples_intensities),pattern)],na.rm=T)
-      mean_abundance_repbio = cbind(mean_abundance_repbio,mean)
-      
-      id_type = apply(data[samples_identification_type],1,function(x) ifelse("By MS/MS"%in%x,"By MS/MS","By matching"))
-      
-      #id_type2 = data %>% mutate(samples_identification_type=ifelse("By MS/MS"%in%samples_identification_type ,"By MS/MS","By matching"))
-      
-      mean_identification_type_repbio = cbind(mean_identification_type_repbio,id_type)
-      
-    }else{
-      mean_abundance_repbio = cbind(mean_abundance_repbio,data[paste0(as.character(samples_intensities),pattern)])
-      mean_identification_type_repbio = cbind(mean_identification_type_repbio,data[samples_identification_type])
-      
-      write(paste0(as.character(samples_intensities),pattern), "name")
-      write.csv(data, "DA_data.csv", row.names = F)
-    }
+    col_name_mean = paste0(rBio,"_",group,"_mean")
+    col_name_idtype = paste0(rBio,"_",group,"_identification_type")
     
-    colnames(mean_abundance_repbio)[ncol(mean_abundance_repbio)] = paste0(rBio,"_",group,"_mean")
-    colnames(mean_identification_type_repbio)[ncol(mean_identification_type_repbio)] = paste0(rBio,"_",group,"_identification_type")
+    if(length(samples_intensities)>1){
+      mean_cols_list[[col_name_mean]] = rowMeans(data[paste0(as.character(samples_intensities),pattern)],na.rm=T)
+      idtype_cols_list[[col_name_idtype]] = apply(data[samples_identification_type],1,function(x) ifelse("By MS/MS"%in%x,"By MS/MS","By matching"))
+    }else{
+      mean_cols_list[[col_name_mean]] = data[[paste0(as.character(samples_intensities),pattern)]]
+      idtype_cols_list[[col_name_idtype]] = data[[samples_identification_type]]
+    }
   }
 }
+
+mean_abundance_repbio = data.frame(Id = data$Id, mean_cols_list, check.names = FALSE)
+mean_identification_type_repbio = data.frame(Id = data$Id, idtype_cols_list, check.names = FALSE)
 
 data = merge.data.frame(data,mean_abundance_repbio,by="Id")
 data = merge.data.frame(data,mean_identification_type_repbio,by="Id")
@@ -449,51 +441,34 @@ filter_dataset <- function(data, group_ids){
   ##If the final filtered data set is empty, it throws an error##
   
   Filter.threshold.obs = as.numeric(as.character(parameters["Filter.threshold.obs",]))
+  Filter.threshold.ms = as.numeric(as.character(parameters["Filter.threshold.ms",]))
   
-  filtered_data = data
+  # MS/MS filter: count "By MS/MS" per row across Identification_type_ columns
+  id_cols = grep("Identification_type_", colnames(data))
+  msms_counts = rowSums(data[, id_cols] == "By MS/MS", na.rm = TRUE)
+  fail_ms = msms_counts < Filter.threshold.ms
   
-  nb_obs = 0
-  nb_ms = 0
-  for (row in 1:nrow(data)){
-    protein = data[row,]
-    
-    enough=T
-    
-    # of MS/MS > threshold_ms
-    identification = protein[grep("Identification_type_",colnames(protein))]
-    sum = sum(identification=="By MS/MS", na.rm=T)
-    if(sum<as.numeric(as.character(parameters["Filter.threshold.ms",]))){
-        enough=F
-        nb_ms=nb_ms+1
-    }else{
-      
-      cptr_not_enough = 0
-      for(group in group_ids){
-        # write(paste0(group, " in list : ", group_ids), "groups")
-        aValues = protein[paste0(get(as.character(group)),"_mean")]
-        na = is.na(aValues)
-        
-        if((sum(na==F)/length(na))<Filter.threshold.obs){
-          cptr_not_enough = cptr_not_enough+1
-        }
-      }
-      
-      if (cptr_not_enough==length(group_ids)){
-        enough=F
-        nb_obs = nb_obs+1
-      }
-    }
-    
-    if (enough==F){
-      filtered_data = subset(filtered_data,filtered_data$Id!=protein$Id)
-    }
+  # Observation filter: for each group, compute fraction of non-NA _mean columns
+  # A protein fails obs filter only if it fails in ALL groups
+  fail_obs_all_groups = rep(TRUE, nrow(data))
+  for (group in group_ids) {
+    mean_cols = paste0(get(as.character(group)), "_mean")
+    group_vals = data[, mean_cols, drop = FALSE]
+    nonNA_frac = rowSums(!is.na(group_vals)) / ncol(group_vals)
+    fail_obs_all_groups = fail_obs_all_groups & (nonNA_frac < Filter.threshold.obs)
   }
   
-  nbProteins = nrow(filtered_data)
-  filtered_raw_abundance = filtered_data[c("Id",as.character(expDesign[expDesign$Condition == group_ids,]$File))]
-  mean_abundance_repbio = filtered_data[,grepl("_mean|Id$",names(filtered_data))]
+  # A protein is rejected by obs only if it passed MS/MS but failed obs in ALL groups
+  fail_obs = !fail_ms & fail_obs_all_groups
   
-  write.csv(mean_abundance_repbio, "mar.csv", row.names = F)
+  # Keep proteins that pass both filters
+  keep = !fail_ms & !fail_obs_all_groups
+  filtered_data = data[keep, ]
+  nb_ms = sum(fail_ms)
+  nb_obs = sum(fail_obs)
+  
+  nbProteins = nrow(filtered_data)
+  mean_abundance_repbio = filtered_data[,grepl("_mean|Id$",names(filtered_data))]
   
   if (nrow(mean_abundance_repbio) == 0) {
     stop("Can't continue since the number of rows after applied filters is zero. Please check 'Filter.threshold' parameters (try to set lower values).")
@@ -536,7 +511,7 @@ filter_dataset <- function(data, group_ids){
           plot.title = element_text(size=22),
           legend.text = element_text(size=21))
 
-  return(list(filtered_data, mean_abundance_repbio, filtered_raw_abundance, diagrammDFT, diagramm))
+  return(list(filtered_data, mean_abundance_repbio, diagrammDFT, diagramm))
 }
 
 ```
@@ -772,7 +747,6 @@ if(parameters["Imputation.MCAR.model",] != "MNAR"){
   
   }
   
-  write.csv(imputed_intensities, "imputed_intensities.csv", row.names = F)
   pattern = "_mcar"
   
 }else{
@@ -885,22 +859,20 @@ global_filtering <- filter_dataset(data, group_ids)
 filtered_data <- as.data.frame(global_filtering[[1]])
 global_mean_abundance_repbio <- mean_abundance_repbio
 mean_abundance_repbio <- as.data.frame(global_filtering[[2]])
-filtered_raw_abundance <- as.data.frame(global_filtering[[3]])
-#filtered_raw_abundance <-raw_abundance
 global_imputed_abundance <- imputed_abundance
 imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% filtered_data$Id, ]
 #imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% data$Id, ]
 global_imputed_abundance_log <- imputed_abundance_log
 imputed_abundance_log <- global_imputed_abundance_log[global_imputed_abundance_log$Id %in% data$Id, ]
 
-kable(global_filtering[[4]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
+kable(global_filtering[[3]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
             kable_styling(bootstrap_options="condensed",full_width = F,position = "center") %>%
             column_spec(1, bold = T)
 
 if (format_svg) {
-  htmltools::HTML(createPngOrSvg(global_filtering[[5]],"Proteins_filtered", 12, 7))
+  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 12, 7))
 } else {
-  htmltools::HTML(createPngOrSvg(global_filtering[[5]],"Proteins_filtered", 1200, 800))
+  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 1200, 800))
 }
 
 ```
@@ -1250,7 +1222,6 @@ if(parameters["Test.type",]%in%c("anova","kruskall")){
     reshape_abundance$variable = sub(paste0(".*", cond, "$"), cond , sub(paste0(pattern,".*"),"",reshape_abundance$variable))
   }
   
-  write.csv(imputed_abundance, "imputed_abundance.csv", row.names = F)
   for(id in unique(reshape_abundance$Id)){
   
     current_protein_intensities = subset(reshape_abundance,reshape_abundance$Id==id)
@@ -1327,36 +1298,27 @@ for (comparison in comparisons_to_do){
   
   ## Conditional Filtering ##
   
-  #filtering_data <- cbind(data[, 1:4], data$Specific_peptides) # <-
-  filtering_data <- cbind(data[, 1:4], data$Specific_peptides) # <-
-  colnames(filtering_data) <- c("Id", "Accession", "Gene_name", "Label", "Specific_peptides") # 
+  filtering_data <- cbind(data[, 1:4], data$Specific_peptides)
+  colnames(filtering_data) <- c("Id", "Accession", "Gene_name", "Label", "Specific_peptides")
   
-  # Identification_types <- data[grepl("Identification_type_", colnames(data))]
-  # Identification_types <- Identification_types[grepl(paste0(A_name, "|", B_name), colnames(Identification_types))]
-  # filtering_data <- cbind(filtering_data, Identification_types)
+  # Collect all needed columns for both conditions at once
+  couple_files <- expDesign[expDesign$Condition %in% couple, "File"]
+  couple_id_types <- paste0("Identification_type", sub("Intensity", "", couple_files))
   
-  for(group in couple){
-    
-    sub = subset(expDesign,expDesign$Condition==group)
-    sel_global_mean_abundance_repbio <- global_mean_abundance_repbio %>% select(Id,contains(group))
-    
-    filtering_data <- filtering_data %>% left_join(sel_global_mean_abundance_repbio,by="Id")
-      #cbind(filtering_data, global_mean_abundance_repbio[grepl(group, colnames(global_mean_abundance_repbio))])
-    
-    for(file in expDesign[expDesign$Condition == group,]$File){
-      filtering_data <- cbind(filtering_data, data[grepl(paste0("^", file, "$"), colnames(data))])
-      file <- sub("Intensity_", "", file)
-      filtering_data <- cbind(filtering_data, data[grepl(paste0("Identification_type_", file), colnames(data))])
-    }
-  }
+  # Mean abundance columns for both conditions
+  mean_cols <- colnames(global_mean_abundance_repbio)[grepl(paste0(couple, collapse="|"), colnames(global_mean_abundance_repbio)) | colnames(global_mean_abundance_repbio) == "Id"]
+  filtering_data <- merge(filtering_data, global_mean_abundance_repbio[, mean_cols, drop=FALSE], by="Id")
   
-  filtering_data <- cbind(filtering_data, data[grepl("_log$", colnames(data))])
+  # Intensity + Identification columns (single cbind instead of loop)
+  filtering_data <- cbind(filtering_data, data[, couple_files, drop=FALSE], data[, couple_id_types, drop=FALSE])
+  
+  # Log columns
+  filtering_data <- cbind(filtering_data, data[, grepl("_log$", colnames(data)), drop=FALSE])
   
   cond_fltr <- filter_dataset(filtering_data, c(A_name, B_name))
 
   filtered_data <- as.data.frame(cond_fltr[[1]])
   mean_abundance_repbio <- as.data.frame(cond_fltr[[2]])
-  filtered_raw_abundance <- as.data.frame(cond_fltr[[3]])
 
   imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% filtered_data$Id, ]
   imputed_abundance_log <- global_imputed_abundance_log[global_imputed_abundance_log$Id %in% filtered_data$Id, ]
@@ -1376,7 +1338,7 @@ for (comparison in comparisons_to_do){
   totIntensities = merge.data.frame(A,B,by=c("filtered_data$Accession","filtered_data$Label"))
   colnames(totIntensities)[1] = "Accession"
   
-  totIntensities[paste0("mean_intensity_",comparison)] = apply(totIntensities[,3:ncol(totIntensities)],1,function(x) mean(x, na.rm=T))
+  totIntensities[paste0("mean_intensity_",comparison)] = rowMeans(data.matrix(totIntensities[,3:ncol(totIntensities)]), na.rm=T)
   ########################## Compute FC ########################## 
   
   if(as.logical(parameters["Test.paired",])){
@@ -1468,21 +1430,52 @@ for (comparison in comparisons_to_do){
   
     }else{
       
-      statDF[paste0("pval_",comparison)] <- rep("", nrow(statDF))
+      test_type <- as.character(parameters["Test.type",])
+      test_alt <- as.character(parameters["Test.alternative",])
+      test_paired <- as.logical(parameters["Test.paired",])
+      test_var_equal <- as.logical(parameters["Test.var.equal",])
       
-      for(prot in 1:nrow(A)){
+      mat_a <- data.matrix(A[, 3:ncol(A)])
+      mat_b <- data.matrix(B[, 3:ncol(B)])
+      
+      # Vectorized two-sample equal-variance t-test (most common case)
+      if (test_type == "t.test" && test_var_equal && !test_paired) {
+        n_a <- rowSums(!is.na(mat_a))
+        n_b <- rowSums(!is.na(mat_b))
+        mean_a <- rowMeans(mat_a, na.rm = TRUE)
+        mean_b <- rowMeans(mat_b, na.rm = TRUE)
+        var_a <- rowSums((mat_a - mean_a)^2, na.rm = TRUE) / (n_a - 1)
+        var_b <- rowSums((mat_b - mean_b)^2, na.rm = TRUE) / (n_b - 1)
+        df <- n_a + n_b - 2
+        sp2 <- ((n_a - 1) * var_a + (n_b - 1) * var_b) / df
+        t_stat <- (mean_a - mean_b) / sqrt(sp2 * (1/n_a + 1/n_b))
         
-        if(parameters["Test.type",]=="t.test"){
-          pval = t.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
-                      alternative=as.character(parameters["Test.alternative",]),
-                      paired=as.logical(parameters["Test.paired",]),
-                      var.equal=as.logical(parameters["Test.var.equal",]))$p.value
-        }else if(parameters["Test.type",]=="wilcoxon"){
-           pval = wilcox.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
-                      alternative=as.character(parameters["Test.alternative",]),
-                      paired=as.logical(parameters["Test.paired",]))
+        pvals <- switch(test_alt,
+          "two.sided" = 2 * pt(-abs(t_stat), df),
+          "greater"   = pt(t_stat, df, lower.tail = FALSE),
+          "less"      = pt(t_stat, df)
+        )
+        # Handle degenerate cases (< 2 obs in a group)
+        pvals[n_a < 2 | n_b < 2] <- NA
+        
+        statDF[paste0("pval_",comparison)] <- pvals[match(statDF$Accession, A[,1])]
+      } else {
+        # Fallback: row-by-row loop for Welch, paired, or Wilcoxon tests
+        statDF[paste0("pval_",comparison)] <- rep(NA_real_, nrow(statDF))
+        
+        for(prot in 1:nrow(A)){
+          if(test_type == "t.test"){
+            pval <- t.test(as.numeric(A[prot,3:ncol(A)]), as.numeric(B[prot,3:ncol(B)]),
+                        alternative = test_alt,
+                        paired = test_paired,
+                        var.equal = test_var_equal)$p.value
+          } else if(test_type == "wilcoxon"){
+            pval <- wilcox.test(as.numeric(A[prot,3:ncol(A)]), as.numeric(B[prot,3:ncol(B)]),
+                        alternative = test_alt,
+                        paired = test_paired)$p.value
+          }
+          statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession,nomatch=0),] <- pval
         }
-        statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession,nomatch =0),]<- pval
       }
       
     }
@@ -1520,7 +1513,7 @@ for (comparison in comparisons_to_do){
     
     cat(text_spec(comparison, color="#3686D5", bold=T, font_size=18 ))
     
-    cat(kable(cond_fltr[[4]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
+    cat(kable(cond_fltr[[3]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
             kable_styling(bootstrap_options="condensed",full_width = F,position = "center") %>%
             column_spec(1, bold = T))
     
