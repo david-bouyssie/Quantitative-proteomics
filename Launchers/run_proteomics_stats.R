@@ -26,7 +26,7 @@ if (analysis == "QC") {
   origin_file = normalizePath(args[6])
 
   rmarkdown::render(
-    '/home/dsauer/projects/Quantitative-proteomics/Modules/Quantitative data analysis/QC.Rmd',
+    './Quantitative-proteomics/Modules/Quantitative data analysis/QC.Rmd',
     output_file = output_file,
     params = list(
       quantif_file = quantif_file,
@@ -41,15 +41,11 @@ if (analysis == "QC") {
   output_dir = normalizePath(args[3])
   exp_design = normalizePath(args[4])
   parameters = normalizePath(args[5])
-  if (length(args) >= 6){
-    origin_file = normalizePath(args[6])
-  }else{
-    origin_file = ""
-  }
+  origin_file = normalizePath(args[6])
   output_file = file.path(output_dir, "DA.html")
   
   rmarkdown::render(
-    '/home/dsauer/projects/Quantitative-proteomics/Modules/Quantitative data analysis/DA.rmd',
+    './Quantitative-proteomics/Modules/Quantitative data analysis/DA.rmd',
     
     output_file = output_file ,
     params = list(
@@ -57,7 +53,9 @@ if (analysis == "QC") {
       parameters = parameters,
       design_exp = exp_design,
       output_dir = output_dir,
-      origin_file = origin_file
+      origin_file = origin_file,
+      proline_source_file = quantif_file,
+      proline_sheet = 1
     )
   )
 

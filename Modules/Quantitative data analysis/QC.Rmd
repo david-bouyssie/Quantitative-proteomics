@@ -7,6 +7,7 @@ params:
   quantif_file: "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt"
   design_exp: ""
   parameters: ""
+  origin_file: ""
 ---
 
 <style type="text/css">
@@ -248,6 +249,15 @@ keep_empty_rows = as.logical(parameters["keep_empty_rows",])
 format_svg = as.logical(parameters["format_svg",])
 coloring_by_group = as.logical(parameters["coloring_by_group",])
 
+```
+
+
+```{r date, results='asis'}
+##Parsing to create a data frame in html formatting##
+
+kable(data.frame(c("R-Analysis Version", "File", "Origin File", "Date"),c(2.11,params$quantif_file,params$origin_file,format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
+          kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
+          column_spec(1, bold = T)
 ```
 
 
@@ -603,6 +613,7 @@ if (Normalization){
   intensities_to_normalize = cbind(data$Id,raw_abundance)
   colnames(intensities_to_normalize)[1] = "Id"
   normalized_abundance = normalize(intensities_to_normalize,reference_sample)
+  
   data = cbind(data,normalized_abundance[,-1])
   
   pattern = "_norm"
@@ -831,8 +842,13 @@ if(exists('normalized_abundance') && is.data.frame(get('normalized_abundance')))
 imputed_samples = impute_background_noise_gaussian(data_to_impute)[[3]]
 data = cbind(data,imputed_samples)
 
-imputed_samples_log = imputed_samples
-imputed_samples_log[,1:ncol(imputed_samples_log)] = log10(imputed_samples_log)
+#####imputed_samples_log = imputed_samples
+
+#####imputed_samples_log[,1:ncol(imputed_samples_log)] = log10(imputed_samples_log)
+imputed_samples_log <- imputed_samples
+imputed_samples_log[imputed_samples_log == 0] <- 1e-8
+imputed_samples_log <- log10(imputed_samples_log)
+
 colnames(imputed_samples_log)[1:ncol(imputed_samples_log)] = paste0(colnames(imputed_samples_log)[1:ncol(imputed_samples_log)],"_log")
 data = cbind(data,imputed_samples_log)
 
@@ -894,6 +910,7 @@ cat(text_spec("\n Missing values are imputed with the gaussian model implemented
 
 pcaInput <- imputed_abundance
 colnames(pcaInput) = sub("_imputed_log","",colnames(pcaInput))
+
 pca=dudi.pca(pcaInput,scale = FALSE, scannf = FALSE, nf = 2)
 
 z_pca=dudi.pca(pcaInput,scale = TRUE, scannf = FALSE, nf = 2)
