@@ -41,7 +41,11 @@ if (analysis == "QC") {
   output_dir = normalizePath(args[3])
   exp_design = normalizePath(args[4])
   parameters = normalizePath(args[5])
-  origin_file = normalizePath(args[6])
+  if (length(args) >= 6){
+    origin_file = normalizePath(args[6])
+  }else{
+    origin_file = ""
+  }
   output_file = file.path(output_dir, "DA.html")
   
   rmarkdown::render(
@@ -53,9 +57,7 @@ if (analysis == "QC") {
       parameters = parameters,
       design_exp = exp_design,
       output_dir = output_dir,
-      origin_file = origin_file,
-      proline_source_file = quantif_file,
-      proline_sheet = 1
+      origin_file = origin_file
     )
   )
 
