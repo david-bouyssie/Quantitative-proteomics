@@ -26,7 +26,7 @@ if (analysis == "QC") {
   origin_file = normalizePath(args[6])
 
   rmarkdown::render(
-    '/home/dsauer/projects/Quantitative-proteomics/Modules/Quantitative data analysis/QC.Rmd',
+    './Quantitative-proteomics/Modules/Quantitative data analysis/QC.Rmd',
     output_file = output_file,
     params = list(
       quantif_file = quantif_file,
@@ -49,7 +49,7 @@ if (analysis == "QC") {
   output_file = file.path(output_dir, "DA.html")
   
   rmarkdown::render(
-    '/home/dsauer/projects/Quantitative-proteomics/Modules/Quantitative data analysis/DA.rmd',
+    './Quantitative-proteomics/Modules/Quantitative data analysis/DA.rmd',
     
     output_file = output_file ,
     params = list(

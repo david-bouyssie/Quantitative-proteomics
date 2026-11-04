@@ -2,11 +2,11 @@
 ---
 title: "Differential analysis"
 params:
-  quant_df: "/home/dsauer/projects/Quantitative-proteomics/Example/Datasets/Freya/FTH_ebna_proteasome_inhibitors_TL_16042026_processed_2026-04-24_1504_parsed_output.txt"
-  parameters: "/home/dsauer/projects/Quantitative-proteomics/Example/Datasets/Freya/stats_parameters_TL.txt"
-  design_exp: "/home/dsauer/projects/Quantitative-proteomics/Example/Datasets/Freya/EXPERIMENTAL_DESIGN_TL.txt"
-  output_dir: "/home/dsauer/projects/Quantitative-proteomics/Example/Datasets/Freya/output"
-  origin_file: "/home/dsauer/projects/Quantitative-proteomics/Example/Datasets/Freya/FTH_ebna_proteasome_inhibitors_TL_16042026_processed_2026-04-24_1504.xlsx"
+  quant_df: "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt"
+  parameters: "../../Example/Datasets/QC-DA/Parameters.txt"
+  design_exp: "../../Example/Datasets/QC-DA/designExp.txt"
+  output_dir: "../../Example/Reports/"
+  origin_file: ""
 output:
   html_document:
     pandoc_args:
