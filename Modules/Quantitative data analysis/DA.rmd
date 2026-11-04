@@ -2,13 +2,11 @@
 ---
 title: "Differential analysis"
 params:
-  quant_df: "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt"
-  parameters: "../../Example/Datasets/QC-DA/Parameters.txt"
-  design_exp: "../../Example/Datasets/QC-DA/designExp.txt"
-  output_dir: "../../Example/Reports/"
-  origin_file: ""
-  proline_source_file: "none"
-  proline_sheet: 4
+  quant_df: "/home/dsauer/projects/Quantitative-proteomics/Example/Datasets/Freya/FTH_ebna_proteasome_inhibitors_TL_16042026_processed_2026-04-24_1504_parsed_output.txt"
+  parameters: "/home/dsauer/projects/Quantitative-proteomics/Example/Datasets/Freya/stats_parameters_TL.txt"
+  design_exp: "/home/dsauer/projects/Quantitative-proteomics/Example/Datasets/Freya/EXPERIMENTAL_DESIGN_TL.txt"
+  output_dir: "/home/dsauer/projects/Quantitative-proteomics/Example/Datasets/Freya/output"
+  origin_file: "/home/dsauer/projects/Quantitative-proteomics/Example/Datasets/Freya/FTH_ebna_proteasome_inhibitors_TL_16042026_processed_2026-04-24_1504.xlsx"
 output:
   html_document:
     pandoc_args:
@@ -364,6 +362,8 @@ Test.adjust.FDR <- parameters["Test.adjust.FDR",]
 
 ```{r metadata, results='asis'}
 
+## Parsing to create a data frame in html formatting ##
+
 kable(data.frame(c("R-Analysis Version", "File", "Number of rows", "Origin File", "Date"),c(2.11,params$quant_df,nrow(data),params$origin_file,format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
           kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
           column_spec(1, bold = T)
@@ -429,7 +429,7 @@ if (normalization){
     normalized_abundance = normalize(raw_abundance,reference_sample)
   }
   
-  
+  # Merging normalized values with data, and creating normalized_abundance var
   data = merge.data.frame(data,normalized_abundance,by="Id")
   normalized_abundance = normalized_abundance[,grepl("_norm",colnames(normalized_abundance))]
   
@@ -474,10 +474,15 @@ if(coloring_by_group){
 
 ```{r mean_technical_replicates, results='asis'}
 
-mean_cols_list = list()
-idtype_cols_list = list()
-mean_col_names = c()
-idtype_col_names = c()
+## Parsing of sample data into created group_ids list.  Combining technical replicates into biological-replicate-level means ##
+
+# Creating data frame containing ID - from data - for mean_abundance
+mean_abundance_repbio = data.frame(data$Id)
+colnames(mean_abundance_repbio) = "Id"
+
+# Creating data frame containing ID - from data - for mean_identification_type
+mean_identification_type_repbio = data.frame(data$Id)
+colnames(mean_identification_type_repbio) = "Id"
 
 # Looping over each experimental condition or "group"
 for(group in group_ids){
@@ -492,22 +497,32 @@ for(group in group_ids){
     samples_intensities = subset(sub,sub$repBio==rBio)$File
     samples_identification_type = paste0("Identification_type",sub("Intensity","",samples_intensities))
     
-    col_name_mean = paste0(rBio,"_",group,"_mean")
-    col_name_idtype = paste0(rBio,"_",group,"_identification_type")
-    
+    # if a bio-rep contains multiple technical replicates
     if(length(samples_intensities)>1){
-      mean_cols_list[[col_name_mean]] = rowMeans(data[paste0(as.character(samples_intensities),pattern)],na.rm=T)
-      idtype_cols_list[[col_name_idtype]] = apply(data[samples_identification_type],1,function(x) ifelse("By MS/MS"%in%x,"By MS/MS","By matching"))
-    }else{
-      mean_cols_list[[col_name_mean]] = data[[paste0(as.character(samples_intensities),pattern)]]
-      idtype_cols_list[[col_name_idtype]] = data[[samples_identification_type]]
+      
+      # Average the abundance/intensity values, and appending then to the end of bio-rep table
+      mean_ab = rowMeans(data[paste0(as.character(samples_intensities),pattern)],na.rm=T)
+      mean_abundance_repbio = cbind(mean_abundance_repbio,mean_ab)
+      
+      # Collapsing identification types across technical replicates, if not classified as "By MS/MS" classify as "By matching".
+      id_type = apply(data[samples_identification_type],1,function(x) ifelse("By MS/MS"%in%x,"By MS/MS","By matching"))
+      mean_identification_type_repbio = cbind(mean_identification_type_repbio,id_type)
+      
+    }else{ # If a bio-rep has only one technical replicate
+      
+      # Copying original abundance/intensity column
+      mean_abundance_repbio = cbind(mean_abundance_repbio,data[paste0(as.character(samples_intensities),pattern)])
+      mean_identification_type_repbio = cbind(mean_identification_type_repbio,data[samples_identification_type])
+      
     }
+    
+    # Renaming most recent mean abundance column to include "_mean" and identification column to include "_identification_type"
+    colnames(mean_abundance_repbio)[ncol(mean_abundance_repbio)] = paste0(rBio,"_",group,"_mean")
+    colnames(mean_identification_type_repbio)[ncol(mean_identification_type_repbio)] = paste0(rBio,"_",group,"_identification_type")
   }
 }
 
-mean_abundance_repbio = data.frame(Id = data$Id, mean_cols_list, check.names = FALSE)
-mean_identification_type_repbio = data.frame(Id = data$Id, idtype_cols_list, check.names = FALSE)
-
+# Adding mean_abundance and mean_identification_type columns to main data set
 data = merge.data.frame(data,mean_abundance_repbio,by="Id")
 data = merge.data.frame(data,mean_identification_type_repbio,by="Id")
 ```
@@ -533,34 +548,58 @@ filter_dataset <- function(data, group_ids){
   Filter.threshold.obs = as.numeric(as.character(parameters["Filter.threshold.obs",]))
   Filter.threshold.ms = as.numeric(as.character(parameters["Filter.threshold.ms",]))
   
-  # MS/MS filter: count "By MS/MS" per row across Identification_type_ columns
-  id_cols = grep("Identification_type_", colnames(data))
-  msms_counts = rowSums(data[, id_cols] == "By MS/MS", na.rm = TRUE)
-  fail_ms = msms_counts < Filter.threshold.ms
+  filtered_data = data
+  nb_obs = 0
+  nb_ms = 0
   
-  # Observation filter: for each group, compute fraction of non-NA _mean columns
-  # A protein fails obs filter only if it fails in ALL groups
-  fail_obs_all_groups = rep(TRUE, nrow(data))
-  for (group in group_ids) {
-    mean_cols = paste0(get(as.character(group)), "_mean")
-    group_vals = data[, mean_cols, drop = FALSE]
-    nonNA_frac = rowSums(!is.na(group_vals)) / ncol(group_vals)
-    fail_obs_all_groups = fail_obs_all_groups & (nonNA_frac < Filter.threshold.obs)
+  # Looping through each protein/row
+  for (row in 1:nrow(data)){
+    
+    protein = data[row,]
+    enough=T
+    
+    # Collecting all identification type columns and counting all "By MS/MS"
+    identification = protein[grep("Identification_type_",colnames(protein))]
+    sum = sum(identification=="By MS/MS", na.rm=T)
+    
+    # If number of MS/MS identifications is below threshold
+    if(sum<Filter.threshold.ms){
+      # Exclude and tick up counter for excluded from lack of MS/MS
+        enough=F
+        nb_ms=nb_ms+1
+    }
+    else{
+      # Count how many groups don't have enough observed values
+      cptr_not_enough = 0
+      for(group in group_ids){
+        # Selecting bio-replicate mean columns 
+        aValues = protein[paste0(get(as.character(group)),"_mean")]
+        na = is.na(aValues)
+        # If the fraction of observed values is below the threshold, count the group as insufficient
+        if((sum(na==F)/length(na))<Filter.threshold.obs){
+          cptr_not_enough = cptr_not_enough+1
+        }
+      }
+      # If the protein was found insufficient in all groups, exclude it and tick up counter for excluded for # observations
+      if (cptr_not_enough==length(group_ids)){
+        enough=F
+        nb_obs = nb_obs+1
+      }
+    }
+    # If the protein was market for exclusion, take it out of the filtered dataset
+    if (enough==F){
+      filtered_data = subset(filtered_data,filtered_data$Id!=protein$Id)
+    }
   }
-  
-  # A protein is rejected by obs only if it passed MS/MS but failed obs in ALL groups
-  fail_obs = !fail_ms & fail_obs_all_groups
-  
-  # Keep proteins that pass both filters
-  keep = !fail_ms & !fail_obs_all_groups
-  filtered_data = data[keep, ]
-  nb_ms = sum(fail_ms)
-  nb_obs = sum(fail_obs)
   
   # Count the number of proteins in the filtered dataset
   nbProteins = nrow(filtered_data)
+  
+  # Subsets for raw abundance and mean_abundance for filtered proteins
+  filtered_raw_abundance = filtered_data[c("Id",as.character(expDesign[expDesign$Condition == group_ids,]$File))]
   mean_abundance_repbio = filtered_data[,grepl("_mean|Id$",names(filtered_data))]
   
+  # If the sub-dataset for mean_abundance is 0 (all proteins filtered out), throw error
   if (nrow(mean_abundance_repbio) == 0) {
     stop("Can't continue since the number of rows after applied filters is zero. Please check 'Filter.threshold' parameters (try to set lower values).")
   }
@@ -603,7 +642,7 @@ filter_dataset <- function(data, group_ids){
           plot.title = element_text(size=22),
           legend.text = element_text(size=21))
 
-  return(list(filtered_data, mean_abundance_repbio, diagrammDFT, diagramm))
+  return(list(filtered_data, mean_abundance_repbio, filtered_raw_abundance, diagrammDFT, diagramm))
 }
 
 ```
@@ -624,7 +663,8 @@ if (normalization){
   
   # Creating subset of data containing Id and normalized abundance
   normalized_abundance = data[c("Id",paste0(as.character(expDesign$File),"_norm"))]
-  # Plots
+  
+  # Creating a 2 column dataframe with sample and intensity
   df_raw_intensity = reshape2::melt(raw_abundance[-1])
   colnames(df_raw_intensity) = c("Sample","Intensity")
   df_raw_intensity$Sample = sub("Intensity_","",df_raw_intensity$Sample)
@@ -655,6 +695,7 @@ if (normalization){
     
   cat(text_spec("\n"))  
   
+  # Creating a 2 column dataframe with sample and normalized intensity
   df_norm_intensity = reshape2::melt(normalized_abundance[-1])
   colnames(df_norm_intensity) = c("Sample","Intensity")
   df_norm_intensity$Sample = sub("Intensity_","", df_norm_intensity$Sample)
@@ -705,9 +746,12 @@ if (normalization){
 
 ```{r na_distribution, results='asis'}
 
+## Calculating missing values per group ##
+
+# Dataframe storing the median abundance accross bio-reps and number of missing values
 na_distribution = data.frame(median=numeric(),sum_na=numeric())
-# medians = c()
-# sums_na = c()
+
+# Dataframe that will store missing value percentages per group
 na_percentage = data.frame(Group=character(),na_percentage=character(),na_count=character())
 
 # Looping through each group
@@ -863,6 +907,7 @@ if(imputation_method != "MNAR"){
   
   }
   
+  # Setting pattern to _mcar for later column finding
   pattern = "_mcar"
   
 }else{
@@ -892,16 +937,26 @@ imputed_abundance[imputed_abundance=="MCAR"] <- NA
 # Add imputed abundance columns back to main dataframe
 data = merge.data.frame(data,imputed_abundance,by="Id")
 
-#imputed_abundance_log = imputed_abundance
-#imputed_abundance_log[,2:ncol(imputed_abundance_log)] = log10(data.matrix(imputed_abundance_log[,2:ncol(imputed_abundance_log)]))
-#colnames(imputed_abundance_log)[2:ncol(imputed_abundance_log)] = paste0(colnames(imputed_abundance)[2:ncol(imputed_abundance_log)],"_log")
-
 # Keep ID column, log transform the rest
-imputed_abundance_log = data.frame(
-  Id = imputed_abundance[,1],
-  log10(imputed_abundance[,2:ncol(imputed_abundance)])
+imputed_abundance_values <- imputed_abundance[, 2:ncol(imputed_abundance)]
+
+imputed_abundance_values <- data.frame(
+  lapply(imputed_abundance_values, as.numeric),
+  check.names = FALSE
 )
-colnames(imputed_abundance_log)[2:ncol(imputed_abundance_log)] = paste0(colnames(imputed_abundance)[2:ncol(imputed_abundance)],"_log")
+
+imputed_abundance_values[imputed_abundance_values <= 0] <- NA
+
+imputed_abundance_log <- data.frame(
+  Id = imputed_abundance[, 1],
+  log10(imputed_abundance_values),
+  check.names = FALSE
+)
+
+colnames(imputed_abundance_log)[2:ncol(imputed_abundance_log)] <- paste0(
+  colnames(imputed_abundance)[2:ncol(imputed_abundance)],
+  "_log"
+)
 
 data = merge.data.frame(data,imputed_abundance_log,by="Id")
 
@@ -924,7 +979,7 @@ if(imputation){
   colnames(abundanceDF) = c("Sample","log_abundance")
 }
 
-## imputed?
+# Identifying values that were missing before imputation
 imputed = reshape2::melt(is.na(mean_abundance_repbio[,-1]))
 imputationDF = cbind(imputationDF,imputed$value)
 colnames(imputationDF) = c("Sample","Intensity","Is_imputed")
@@ -965,7 +1020,8 @@ if(exists("gaussian_parameters")){
 
 
 ```{r global_filtering}
-##Parsing of data input file to separate by specific peptides##
+
+## Applies the filter_dataset method that was created earlier, updates main datasets with filtered data ##
 
 global_filtering <- filter_dataset(data, group_ids)
 
@@ -975,6 +1031,11 @@ filtered_data <- as.data.frame(global_filtering[[1]])
 # Copy of unfiltered mean_abundance, then replacing it with the filtered version
 global_mean_abundance_repbio <- mean_abundance_repbio
 mean_abundance_repbio <- as.data.frame(global_filtering[[2]])
+
+# Raw abundance table after filtering
+filtered_raw_abundance <- as.data.frame(global_filtering[[3]])
+
+# Saving imputed unfiltered abundance, keeping only imputed abundance rows that passed filtering
 global_imputed_abundance <- imputed_abundance
 imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% filtered_data$Id, ]
 
@@ -982,15 +1043,16 @@ imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% f
 global_imputed_abundance_log <- imputed_abundance_log
 imputed_abundance_log <- global_imputed_abundance_log[global_imputed_abundance_log$Id %in% filtered_data$Id, ]
 
-kable(global_filtering[[3]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
+# Creating table for filtering summary
+kable(global_filtering[[4]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
             kable_styling(bootstrap_options="condensed",full_width = F,position = "center") %>%
             column_spec(1, bold = T)
 
 # Printing filtering barplot into output report
 if (format_svg) {
-  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 12, 7))
+  htmltools::HTML(createPngOrSvg(global_filtering[[5]],"Proteins_filtered", 12, 7))
 } else {
-  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 1200, 800))
+  htmltools::HTML(createPngOrSvg(global_filtering[[5]],"Proteins_filtered", 1200, 800))
 }
 
 ```
@@ -1066,9 +1128,7 @@ cat(text_spec("Median deviation", color="#3686D5", bold=T, font_size=18 ))
 
 ```{r plot_median_deviation, results='asis'}
 
-df_median_deviation_before_processing = reshape2::melt(df_median_deviation_before_processing[,-1])
-colnames(df_median_deviation_before_processing) = c("Group","value")
-df_median_deviation_before_processing$Group = sub("\\..*","",df_median_deviation_before_processing$Group)
+## Plotting median deviation before and after pre-prossing/imputation ##
 
 # Convert the before-imputation median deviation table from wide to long format, fixing formatting for column names
 median_deviation_before_long  = reshape2::melt(df_median_deviation_before_processing[,-1])
@@ -1092,11 +1152,10 @@ median_deviation_density_before_processing = ggplot() +
           legend.text=element_text(size=16),
           legend.title=element_text(size=18))
 
-##Creating the data frame for 'Median deviation after processing' line graph##
-
-df_median_deviation_after_processing = reshape2::melt(df_median_deviation_after_processing[,-1])
-colnames(df_median_deviation_after_processing) = c("Group","value")
-df_median_deviation_after_processing$Group = sub("\\..*","",df_median_deviation_after_processing$Group)
+# Convert the after-imputation median deviation table from wide to long format, fixing formatting for column names
+df_median_deviation_after_long = reshape2::melt(df_median_deviation_after_processing[,-1])
+colnames(df_median_deviation_after_long) = c("Group","value")
+df_median_deviation_after_long$Group = sub("\\..*","",df_median_deviation_after_long$Group)
 
 # Filtering for 0 or na values before logging in density plot
 df_median_deviation_after_long <- df_median_deviation_after_long[
@@ -1138,8 +1197,8 @@ cat(text_spec("\n CV distribution", color="#3686D5", bold=T, font_size=18 ))
 # Convert the before-imputation CV table from wide to long format, fixing formatting for column names
 df_cv_before_processing = df_cv_before_processing[,-1]
 colnames(df_cv_before_processing) = group_ids
-df_cv_before_processing = reshape2::melt(df_cv_before_processing)
-colnames(df_cv_before_processing) = c("num","Group","value")
+df_cv_before_long = reshape2::melt(df_cv_before_processing)
+colnames(df_cv_before_long) = c("num","Group","value")
 
 # Filtering out NA, infinite values, 0s, and values above 100
 cv_before_plot <- subset(df_cv_before_long, !is.na(value) & is.finite(value) & value >= 0 & value <= 100)
@@ -1159,8 +1218,8 @@ cv_density_before_processing = ggplot() +
 # Convert the after-imputation CV table from wide to long format, fixing formatting for column names
 df_cv_after_processing = df_cv_after_processing[,-1]
 colnames(df_cv_after_processing) = group_ids
-df_cv_after_processing2 = reshape2::melt(df_cv_after_processing)
-colnames(df_cv_after_processing2) = c("num","Group","value")
+df_cv_after_long = reshape2::melt(df_cv_after_processing)
+colnames(df_cv_after_long) = c("num","Group","value")
 
 # Filtering out NA, infinite values, 0s, and values above 100
 cv_after_plot <- subset(df_cv_after_long, !is.na(value) & is.finite(value) & value >= 0 & value <= 100)
@@ -1307,14 +1366,13 @@ if(Test.type %in% c("anova","kruskall")){
     }
   }
   
-  
-  # Reshape df of intensities to fit anova/kruskal needs
+  # Reshape intensity_df to anova test input (each row is one measurement and "variable" stores the group/sample ID)
   reshape_abundance = reshape2::melt(intensity_df,id="Id")
-  # reshape_abundance$variable = sub(".*_","",sub(paste0(pattern,".*"),"",reshape_abundance$variable))
   for(cond in unique(expDesign$Condition)){
     reshape_abundance$variable = sub(paste0(".*", cond, "$"), cond , sub(paste0(pattern,".*"),"",reshape_abundance$variable))
   }
   
+  # For each protein, subset the long-format abundance table and sun the global statistical test
   for(id in unique(reshape_abundance$Id)){
   
     # Keeping only abundance values for the current protein
@@ -1383,24 +1441,34 @@ for (comparison in comparisons_to_display){
   A_name = couple[1]
   B_name = couple[2]
   
-  ## Conditional Filtering ##
+  # Starting a comparison-specific filtering table with identifier columns
+  filtering_data <- data[c("Id", "Accession", "Gene_name", "Label", "Specific_peptides")]
   
-  filtering_data <- cbind(data[, 1:4], data$Specific_peptides)
-  colnames(filtering_data) <- c("Id", "Accession", "Gene_name", "Label", "Specific_peptides")
+  # Add abundance and identification columns for each of the comparison groups
+  for(group in couple){
+    
+    # Subset for current group
+    group_mean_cols <- grep(paste0("_", group, "_mean$"), colnames(global_mean_abundance_repbio), value = TRUE)
+    
+    if (length(group_mean_cols) == 0) {
+      stop("No mean abundance columns found for group: ", group)
+    }
+    
+    sel_global_mean_abundance_repbio <- global_mean_abundance_repbio %>% select(Id, all_of(group_mean_cols))
+    
+    # Adding the mean abundance column to the filtering table
+    filtering_data <- filtering_data %>% left_join(sel_global_mean_abundance_repbio,by="Id")
+    
+    # For each raw file in this group, add raw intensity column and matching identification type column
+    for(file in expDesign[expDesign$Condition == group,]$File){
+      filtering_data <- cbind(filtering_data, data[grepl(paste0("^", file, "$"), colnames(data))])
+      file <- sub("Intensity_", "", file)
+      filtering_data <- cbind(filtering_data, data[grepl(paste0("^Identification_type_", file, "$"), colnames(data))])
+    }
+  }
   
-  # Collect all needed columns for both conditions at once
-  couple_files <- expDesign[expDesign$Condition %in% couple, "File"]
-  couple_id_types <- paste0("Identification_type", sub("Intensity", "", couple_files))
-  
-  # Mean abundance columns for both conditions
-  mean_cols <- colnames(global_mean_abundance_repbio)[grepl(paste0(couple, collapse="|"), colnames(global_mean_abundance_repbio)) | colnames(global_mean_abundance_repbio) == "Id"]
-  filtering_data <- merge(filtering_data, global_mean_abundance_repbio[, mean_cols, drop=FALSE], by="Id")
-  
-  # Intensity + Identification columns (single cbind instead of loop)
-  filtering_data <- cbind(filtering_data, data[, couple_files, drop=FALSE], data[, couple_id_types, drop=FALSE])
-  
-  # Log columns
-  filtering_data <- cbind(filtering_data, data[, grepl("_log$", colnames(data)), drop=FALSE])
+  # Add all log-transformed abundance columns
+  filtering_data <- cbind(filtering_data, data[grepl("_log$", colnames(data))])
   
   # Apply filtering to only the two conditions for comparison
   cond_fltr <- filter_dataset(filtering_data, c(A_name, B_name))
@@ -1452,8 +1520,8 @@ for (comparison in comparisons_to_display){
   # Merging conditions A and B by protein identifiers
   totIntensities = merge.data.frame(A,B,by=c("Accession","Label"))
   
-  totIntensities[paste0("mean_intensity_",comparison)] = rowMeans(data.matrix(totIntensities[,3:ncol(totIntensities)]), na.rm=T)
-  ########################## Compute FC ########################## 
+  # Calculate the average intensity across all intensity columns from both conditions
+  totIntensities[paste0("mean_intensity_",comparison)] = apply(totIntensities[,3:ncol(totIntensities)],1,function(x) mean(x, na.rm=T))
   
   #################################### Computing Fold Change #########################################################
   
@@ -1586,52 +1654,27 @@ for (comparison in comparisons_to_display){
     # T.test / Wilcoxon test
     }else{
       
-      test_type <- as.character(parameters["Test.type",])
-      test_alt <- as.character(parameters["Test.alternative",])
-      test_paired <- as.logical(parameters["Test.paired",])
-      test_var_equal <- as.logical(parameters["Test.var.equal",])
+      # Initialize pvalue column for comparison
+      statDF[paste0("pval_",comparison)] <- NA_real_
       
-      mat_a <- data.matrix(A[, 3:ncol(A)])
-      mat_b <- data.matrix(B[, 3:ncol(B)])
-      
-      # Vectorized two-sample equal-variance t-test (most common case)
-      if (test_type == "t.test" && test_var_equal && !test_paired) {
-        n_a <- rowSums(!is.na(mat_a))
-        n_b <- rowSums(!is.na(mat_b))
-        mean_a <- rowMeans(mat_a, na.rm = TRUE)
-        mean_b <- rowMeans(mat_b, na.rm = TRUE)
-        var_a <- rowSums((mat_a - mean_a)^2, na.rm = TRUE) / (n_a - 1)
-        var_b <- rowSums((mat_b - mean_b)^2, na.rm = TRUE) / (n_b - 1)
-        df <- n_a + n_b - 2
-        sp2 <- ((n_a - 1) * var_a + (n_b - 1) * var_b) / df
-        t_stat <- (mean_a - mean_b) / sqrt(sp2 * (1/n_a + 1/n_b))
+      # Loop over each protein and apply selected test
+      for(prot in seq_len(nrow(A))){
         
-        pvals <- switch(test_alt,
-          "two.sided" = 2 * pt(-abs(t_stat), df),
-          "greater"   = pt(t_stat, df, lower.tail = FALSE),
-          "less"      = pt(t_stat, df)
-        )
-        # Handle degenerate cases (< 2 obs in a group)
-        pvals[n_a < 2 | n_b < 2] <- NA
-        
-        statDF[paste0("pval_",comparison)] <- pvals[match(statDF$Accession, A[,1])]
-      } else {
-        # Fallback: row-by-row loop for Welch, paired, or Wilcoxon tests
-        statDF[paste0("pval_",comparison)] <- rep(NA_real_, nrow(statDF))
-        
-        for(prot in 1:nrow(A)){
-          if(test_type == "t.test"){
-            pval <- t.test(as.numeric(A[prot,3:ncol(A)]), as.numeric(B[prot,3:ncol(B)]),
-                        alternative = test_alt,
-                        paired = test_paired,
-                        var.equal = test_var_equal)$p.value
-          } else if(test_type == "wilcoxon"){
-            pval <- wilcox.test(as.numeric(A[prot,3:ncol(A)]), as.numeric(B[prot,3:ncol(B)]),
-                        alternative = test_alt,
-                        paired = test_paired)$p.value
-          }
-          statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession,nomatch=0),] <- pval
+        # T.Test
+        if(Test.type=="t.test"){
+          pval = t.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
+                      alternative,
+                      paired=Test.paired,
+                      var.equal=Test.var.equal)$p.value
+          
+        # Wilcoxon test
+        }else if(Test.type=="wilcoxon"){
+           pval = wilcox.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
+                      alternative,
+                      paired=Test.paired)$p.value
         }
+        # Add proteins pvalue to statDF
+        statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession,nomatch =0),]<- pval
       }
       
     }
@@ -1680,7 +1723,8 @@ for (comparison in comparisons_to_display){
     # Printing comparison name
     cat(text_spec(comparison, color="#3686D5", bold=T, font_size=18 ))
     
-    cat(kable(cond_fltr[[3]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
+    # Printing filtering summary table for comparison
+    cat(kable(cond_fltr[[4]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
             kable_styling(bootstrap_options="condensed",full_width = F,position = "center") %>%
             column_spec(1, bold = T))
     
@@ -2050,28 +2094,24 @@ for (comparison in comparisons_to_display){
           formatC(as.numeric(significant_proteins_table[[i]]), format = "e", digits = 5)
         )
       }
-      # write.csv(significant_proteins_table, "sig_prot_tab.txt")
-    
-      #cat(knitr::knit_print(DT::datatable(significant_proteins_table,
-      #rownames=FALSE,
-      #extensions = 'Buttons',
-      #options = list(dom = 'Bfrtip',buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),scrollX = TRUE))%>%
-      #DT::formatStyle(columns = colnames(significant_proteins_table),fontSize = '8pt', rowHeight = '30px')))
       
-      DT::datatable(significant_proteins_table,
-      rownames = FALSE,
-      extensions = 'Buttons',
-      options = list(
-        dom = 'Bfrtip',
-        buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
-        scrollX = TRUE
-      )
-    ) %>%
-      DT::formatStyle(
-        columns = colnames(significant_proteins_table),
-        fontSize = '8pt',
-        rowHeight = '30px'
-      )
+      # Creating HTML datatable and apply styling
+      sig_dt <- DT::datatable(significant_proteins_table,
+        rownames = FALSE,
+        extensions = 'Buttons',
+        options = list(
+          dom = 'Bfrtip',
+          buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+          scrollX = TRUE
+          )
+        ) %>%
+        DT::formatStyle(
+          columns = colnames(significant_proteins_table),
+          fontSize = '8pt',
+          rowHeight = '30px'
+        )
+      
+      print(htmltools::tagList(sig_dt))
       
     }
   }
@@ -2110,39 +2150,33 @@ for (comparison in comparisons_to_display){
   }
   
   
-  new_name <- paste0("Label (", comparison, ")")
-
-  #if(no_imputation){
-  #  output_t <- merge(output_t, filtered_data[grepl(paste0("((",A_name,"|",B_name,").*_noimpute_log$|Accession$|Label$)"),names(filtered_data))][, -2], by = "Accession", all = T)
-  #}else{
-  #  output_t <- merge(output_t, filtered_data[grepl(paste0("((",A_name,"|",B_name,").*_imputed_log$|Accession$|Label$)"),names(filtered_data))][, -2], by = "Accession", all = T)
-  #}
-  #output_t <- merge(output_t, current_statDF, by="Accession", all = T)
-  if (no_imputation) {
-    to_add <- filtered_data[
-      grepl(paste0("((", A_name, "|", B_name, ").*_noimpute_log$|Accession$|Label$)"), names(filtered_data))
-    ][, -2]
-  } else {
-    to_add <- filtered_data[
-      grepl(paste0("((", A_name, "|", B_name, ").*_imputed_log$|Accession$|Label$)"), names(filtered_data))
-    ][, -2]
-  }
-  
-  
   # keep only columns not already in output_t, except Accession which is the key
   non_key_cols <- setdiff(names(to_add), "Accession")
-
   names(to_add)[names(to_add) %in% non_key_cols] <- paste0(non_key_cols, "_", comparison)
-  
   to_add <- to_add[, c("Accession", setdiff(names(to_add), c("Accession", names(output_t)))), drop = FALSE]
-  
   output_t <- merge(output_t, to_add, by = "Accession", all = TRUE)
   
-  # same idea for current_statDF
-  stat_to_add <- current_statDF[, c("Accession", setdiff(names(current_statDF), c("Accession", names(output_t)))), drop = FALSE]
+  # Choose merge key
+  if ("Id" %in% colnames(current_statDF) && "Id" %in% colnames(output_t)) {
+    key_col <- "Id"
+  } else if ("Accession" %in% colnames(current_statDF) && "Accession" %in% colnames(output_t)) {
+    key_col <- "Accession"
+  } else {
+    stop("No common merge key found between current_statDF and output_t.")
+  }
   
-  output_t <- merge(output_t, stat_to_add, by = "Accession", all = TRUE)
+  # Select key plus columns not already in output_t
+  stat_cols_to_add <- c(
+    key_col,
+    setdiff(names(current_statDF), c(key_col, names(output_t)))
+  )
   
+  # Keep only columns that really exist in current_statDF
+  stat_cols_to_add <- intersect(stat_cols_to_add, names(current_statDF))
+  
+  stat_to_add <- current_statDF[, stat_cols_to_add, drop = FALSE]
+  
+  output_t <- merge(output_t, stat_to_add, by = key_col, all = TRUE)
   output_t$PresentInBoth <- !is.na(output_t$Label)
   
 
@@ -2192,35 +2226,82 @@ analysis_metadata <- data.frame(
 
 ```{r save_data}
 
-if(params$proline_source_file == "none"){
-  data.table::fwrite(output_t,paste0(params$output_dir,"/output_table.tsv"), row.names = F, sep = "\t")
-  #data.table::fwrite(output_t, params$output_table, row.names = F, sep = "\t")
-}else{
+############################################################
+# Save DA output table
+#
+# Behavior:
+# 1. If params$origin_file is a valid Excel workbook:
+#      - load that workbook
+#      - read its "Protein sets" sheet
+#      - match by:
+#            Protein sets$protein_set_id  <->  df/output_t$Id
+#      - append quantification/statistical output columns into "Protein sets"
+#      - remove "Parsed_proteins_set" if it exists
+#
+# 2. If no valid origin_file is available:
+#      - create a new workbook
+#      - write df + output_t side-by-side into "Parsed_proteins_set"
+#
+# In both cases:
+#      - add/replace R_Params
+#      - add/replace R_Metadata
+#      - save DA_output_table.xlsx
+############################################################
 
-  # existing_file <- loadWorkbook(params$proline_source_file)
+
+############################
+# Helper functions
+############################
+
+replaceWorksheet <- function(wb, sheet_name) {
   
-  source_file <- params$proline_source_file
-  ext <- tolower(tools::file_ext(source_file))
-  
-  if (ext %in% c("xlsx", "xlsm")) {
-    existing_file <- openxlsx::loadWorkbook(source_file)
-  } else if (ext %in% c("txt", "tsv")) {
-    
-    # 1. Read the tab-separated file
-    df <- read.delim(source_file, sep = "\t", header = TRUE, stringsAsFactors = FALSE)
-    
-    # 2. Create a new workbook
-    existing_file <- openxlsx::createWorkbook()
-    
-    # 3. Add a worksheet (name can be anything meaningful)
-    openxlsx::addWorksheet(existing_file, "Parsed_proteins_set")
-    
-    # 4. Write the data into it
-    openxlsx::writeData(existing_file, "Parsed_proteins_set", df)
-    
-  } else {
-    stop("Unsupported file type: ", source_file)
+  if (sheet_name %in% names(wb)) {
+    openxlsx::removeWorksheet(wb, sheet_name)
   }
+  
+  openxlsx::addWorksheet(wb, sheet_name)
+}
+
+
+appendMatchedColumns <- function(base_df,
+                                 add_df,
+                                 base_id_col,
+                                 add_id_col,
+                                 columns_to_skip = character()) {
+  
+  # Match IDs as character to avoid numeric/character mismatches.
+  base_ids <- as.character(base_df[[base_id_col]])
+  add_df[[add_id_col]] <- as.character(add_df[[add_id_col]])
+  
+  # Avoid duplicated IDs in the table being added.
+  # This prevents duplicated/ambiguous matches.
+  add_df <- add_df[!duplicated(add_df[[add_id_col]]), , drop = FALSE]
+  
+  match_idx <- match(base_ids, add_df[[add_id_col]])
+  
+  # Columns to add, excluding the matching ID column and any explicitly skipped columns.
+  cols_to_add <- setdiff(colnames(add_df), c(add_id_col, columns_to_skip))
+  
+  # Store final Excel/dataframe positions of newly added columns.
+  added_positions <- integer(0)
+  
+  for (col_name in cols_to_add) {
+    
+    # If the column already exists in Protein sets, do not duplicate it.
+    if (col_name %in% colnames(base_df)) {
+      next
+    }
+    
+    base_df[[col_name]] <- add_df[[col_name]][match_idx]
+    added_positions[col_name] <- ncol(base_df)
+  }
+  
+  list(
+    data = base_df,
+    added_positions = added_positions
+  )
+}
+
 
 ############################
 # Prepare input paths
@@ -2301,31 +2382,14 @@ if (!"Protein sets" %in% names(output_file)) {
   stop("origin_file was provided, but the workbook has no 'Protein sets' worksheet.")
 }
 
-  setColWidths(existing_file, worksheet_name, (cdc[indice_list[index] + 1]):(cdc[indice_list[index + 1]]), widths = 4)
-  }
-  
-  #Metadata Sheet
+protein_sets <- openxlsx::read.xlsx(
+  origin_file_value,
+  sheet = "Protein sets",
+  check.names = FALSE
+)
 
-  addWorksheet(existing_file, "R_Metadata")
-  
-  writeData(existing_file, "R_Metadata", analysis_metadata, colNames = FALSE)
-  
-  metadata_style <- createStyle(fgFill = "lightblue")
-  addStyle(
-    existing_file,
-    "R_Metadata",
-    metadata_style,
-    cols = 1:2,
-    rows = 1:nrow(analysis_metadata),
-    gridExpand = TRUE
-  )
-  
-  setColWidths(existing_file, "R_Metadata", cols = 1:2, widths = 35)
-
-  # Save the modified Excel file
-  exit_address <- paste0(as.character(params$output_dir), "/DA_output_table.xlsx")
-  # exit_address <- paste0("D:/dev/donald/R/Quantitative-proteomics/Modules/Quantitative data analysis/DA", "_output_table.xlsx")
-  saveWorkbook(wb = existing_file, file = as.character(exit_address), overwrite = TRUE)
+if (!"protein_set_id" %in% colnames(protein_sets)) {
+  stop("The 'Protein sets' worksheet has no 'protein_set_id' column.")
 }
 
 original_cols <- colnames(protein_sets)
