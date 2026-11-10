@@ -146,7 +146,6 @@ library(reshape2)
 library(kableExtra)
 library(grid)
 library(gridExtra)
-library(imp4p)
 library(svglite)
 library(matrixStats)
 library(scico)
@@ -424,7 +423,7 @@ if (normalization){
   }
   
   # Find the sample with the least NA
-  na_count_by_sample = fast_apply_nb_na(as.matrix(raw_abundance[,-1]),2)
+  na_count_by_sample = unname(colSums(is.na(as.matrix(raw_abundance[,-1]))))
   na_by_sample = data.frame(na_count_by_sample,colnames(raw_abundance[,-1]))
   reference_sample = as.character(subset(na_by_sample,na_by_sample$na_count_by_sample==min(na_by_sample$na_count_by_sample))[,2][1])
   

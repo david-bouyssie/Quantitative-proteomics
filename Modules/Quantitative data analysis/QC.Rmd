@@ -138,10 +138,6 @@ library(ggdendro)
 library(scico)
 library(gtable)
 library(grid)
-library(corrplot)
-library(ade4)
-library(factoextra)
-library(imp4p)
 library(GGally)
 library(RColorBrewer)
 library(gridExtra)
@@ -151,7 +147,6 @@ library(kableExtra)
 library(svglite)
 library(base64enc)
 library(htmltools)
-library(rlist)
 library(stringr)
 library(dplyr)
 
@@ -201,6 +196,11 @@ createPngOrSvg <- function(plot_data, image_name, height = 600, length = 600, gr
 ##Importing raw data file given as a parameter and parses the names of the samples included##
 
 data <- read.csv(params$quantif_file, check.names = F, sep="\t")
+
+# Condition and replicate of each sample (in the order of the sample columns), when an experimental design is given
+sample_conditions <- NULL
+sample_replicates <- NULL
+
 if(file.exists(params$design_exp)){
   expDesign <- read.csv(params$design_exp, header = T, sep="\t")
 
@@ -229,6 +229,8 @@ if(file.exists(params$design_exp)){
       
       colnames(abundance_repbio)[ncol(abundance_repbio)] = paste0("Intensity_Proteome_",sub(" ", "", rBio),"_",group)
       colnames(identification_type_repbio)[ncol(identification_type_repbio)] = paste0("Identification_type_",sub(" ", "", rBio),"_",group)
+      sample_conditions <- c(sample_conditions, as.character(group))
+      sample_replicates <- c(sample_replicates, as.character(rBio))
     }
   }
   
@@ -299,15 +301,10 @@ if(coloring_by_group && file.exists(params$design_exp)){
   
   ######################################################################
   
-  sample_colors <- c()
-  
-  for (i in 1:length(group_names)){
-    for (k in expDesign$Condition){
-      if(group_names[i] == k){
-        sample_colors <- list.append(sample_colors, group_colors[i])
-      }
-    }
-  }
+  # Colour of each sample: the colour of its group, samples ordered group by group
+  sample_colors <- unlist(lapply(seq_along(group_names), function(i){
+    rep(group_colors[i], sum(expDesign$Condition == group_names[i]))
+  }))
 }else{
   color_group <- FALSE
 }
@@ -518,11 +515,12 @@ if (length(sample_names)<16 & nrow(data)<5000){
     xlab("")+
     ylab("")+
     ggtitle("Sample correlation") +
+    labs(fill = "Correlation coefficient") +
     theme(plot.title=element_text(size=22),
         axis.title=element_text(size=18),
         axis.text.y=element_text(size=18),
         axis.text.x=element_text(angle=90,size=18),
-        legend.title=element_text("Correlation coefficient",size=16),
+        legend.title=element_text(size=16),
         legend.text = element_text(size=16))
 }
 
@@ -554,37 +552,44 @@ if(length(identification_type)>0){
   IdentificationTypeDF = data.frame(samples,identifications)
   IdentificationTypeDF$samples <- factor(IdentificationTypeDF$samples, as.character(namesDF$Id))
   
-  # Format and order labels for ploting
-  IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, unique(IdentificationTypeDF$identifications))
-  # IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, rev(levels(IdentificationTypeDF$identifications))) # reverse order
-  levels = levels(IdentificationTypeDF$identifications) 
-  levels[length(levels) + 1] <- "Not available" # add a new factor for missing values
-  IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, rev(levels(IdentificationTypeDF$identifications))) # reverse order
-  IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, levels = levels)
-  IdentificationTypeDF$identifications[is.na(IdentificationTypeDF$identifications)] <- "Not available"
-  IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, rev(levels(IdentificationTypeDF$identifications))) # reverse order
-  
-  # write.csv(IdentificationTypeDF, 'id_type')
-  
+  # Colour of each identification type (a missing value means that the protein was not observed in the sample)
+  IdentificationTypeDF$identifications[is.na(IdentificationTypeDF$identifications)] <- "Not observed"
+  id_type_colors <- c("By MS/MS" = "dodgerblue4", "By matching" = "dodgerblue1", "Not observed" = "gray80")
+
+  # Any other value (unexpected) is shown in dark grey
+  other_types <- setdiff(unique(IdentificationTypeDF$identifications), names(id_type_colors))
+  id_type_colors <- c(id_type_colors, setNames(rep("gray40", length(other_types)), other_types))
+
+  # Stacking order: "By MS/MS" at the bottom of the bars, "Not observed" at the top
+  IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, levels = rev(names(id_type_colors)))
+
   ##Framing for 'Indentification type distribution across samples' plot using ggplot##
-  
-  identification_type_plot = ggplot(data = IdentificationTypeDF, mapping = aes(x=samples, fill = identifications, col=identifications)) +
-  geom_bar(alpha=0.8,width=1) +
+
+  # Smaller sample labels when there are many samples, so that they do not overlap
+  n_id_samples <- nlevels(IdentificationTypeDF$samples)
+  id_label_size <- if (n_id_samples > 20) 11 else 16
+
+  identification_type_plot = ggplot(data = IdentificationTypeDF, mapping = aes(x=samples, fill = identifications)) +
+  geom_bar(width=0.9) +
   xlab("")+
-  scale_fill_manual("",values=c("By MS/MS"="dodgerblue4","By Matching"="dodgerblue1","Identified Only"="gray70", "Not Observed" = "black"))+
-  scale_colour_manual("",values=c("By MS/MS"="dodgerblue4","By Matching"="dodgerblue1","Identified Only"="gray70", "Not Observed" = "black"))+
+  ylab("Number of proteins")+
+  scale_fill_manual("", values = id_type_colors, breaks = names(id_type_colors))+
+  scale_y_continuous(expand = expansion(mult = c(0, 0.02)))+
   ggtitle("Identification types distribution across samples") +
    theme(plot.title = element_text(size=22),
         axis.title=element_text(size=18),
-        axis.text.x=element_text(angle=90,size=18),
-        axis.text.y=element_text(size=18),
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=id_label_size),
+        axis.text.y=element_text(size=16),
+        legend.position="bottom",
         legend.text=element_text(size=16))
-  
+
 }
 
 ##Plotting and printing 'Identification type distribution across samples' plot (.svg or .png dependent on set parameters) with download link##
 
-htmltools::HTML(createPngOrSvg(identification_type_plot,"Identification_types_distribution_across_samples"))
+if (exists("identification_type_plot")) {
+  htmltools::HTML(createPngOrSvg(identification_type_plot,"Identification_types_distribution_across_samples", 650, max(600, 22 * n_id_samples)))
+}
 
 ```
 
@@ -601,7 +606,7 @@ htmltools::HTML(createPngOrSvg(identification_type_plot,"Identification_types_di
 
 ##Parsing from data file for normalization of samples##
 
-na_count_by_sample = fast_apply_nb_na(as.matrix(data[,sample_names]),2)
+na_count_by_sample = unname(colSums(is.na(as.matrix(data[,sample_names]))))
 na_by_sample = data.frame(na_count_by_sample,sample_names)
 
 # Extract raw intensities
@@ -869,11 +874,8 @@ na_mask <- is.na(raw_mat)
 imputedFlagDF <- reshape2::melt(na_mask)
 imputedIntensityDF$imputed <- imputedFlagDF$value
 
-## imputed?
-imputed = c()
-for (sample_name in sample_names){
-  imputed = c(imputed,is.na(raw_abundance))
-}
+## imputed? (one flag per protein and sample, in the same order as reshape2::melt(imputed_abundance), i.e. sample by sample)
+imputed = as.vector(na_mask)
 ## final dataframe
 #imputedIntensityDF <- data.frame(imputedIntensityDF,imputed)
 
@@ -908,96 +910,80 @@ cat(text_spec("\n Missing values are imputed with the gaussian model implemented
 </div>
 <br>
 
-```{r echo=FALSE}
-##Creating data frame for 'Inertia' bar graph##
+```{r pca_compute, echo=FALSE}
+## PCA of the samples: samples are the observations, proteins the variables ##
 
-pcaInput <- imputed_abundance
-colnames(pcaInput) = sub("_imputed_log","",colnames(pcaInput))
+# Log10 intensities after normalization (if enabled) and imputation, one column per sample
+pca_matrix <- as.matrix(imputed_abundance)
+colnames(pca_matrix) <- sample_names
+pca_matrix <- pca_matrix[apply(pca_matrix, 1, function(x) all(is.finite(x))), , drop = FALSE]
 
-pca=dudi.pca(pcaInput,scale = FALSE, scannf = FALSE, nf = 2)
+# Values that were missing before imputation, and number of quantified proteins per sample (proteome depth)
+missing_before_imputation <- is.na(as.matrix(raw_abundance[sample_names]))
+n_quantified <- colSums(!missing_before_imputation)
+pct_imputed <- round(100 * mean(missing_before_imputation), 1)
 
-z_pca=dudi.pca(pcaInput,scale = TRUE, scannf = FALSE, nf = 2)
+# Main PCA: each protein centered, not scaled (more variable proteins weigh more)
+pca_main <- prcomp(t(pca_matrix), center = TRUE, scale. = FALSE)
+
+# Scaled PCA: each protein centered and scaled to unit variance (every protein weighs the same).
+# Proteins with a constant profile cannot be scaled and are left out.
+pca_scaled <- prcomp(t(pca_matrix[apply(pca_matrix, 1, sd) > 0, , drop = FALSE]), center = TRUE, scale. = TRUE)
+
+pca_subtitle <- paste0(nrow(pca_matrix), " proteins, ", pct_imputed, "% of the values imputed")
+
+# Sample annotations (condition and replicate are known only when an experimental design is given)
+pca_samples <- data.frame(sample = sample_names, n_quantified = n_quantified, row.names = NULL)
+has_design <- length(sample_conditions) == length(sample_names)
+if (has_design) {
+  pca_samples$condition <- factor(sample_conditions, levels = unique(sample_conditions))
+  pca_samples$replicate <- factor(sample_replicates, levels = unique(sample_replicates))
+}
+
+# Percentage of variance explained by each component
+variance_explained <- function(p) 100 * p$sdev^2 / sum(p$sdev^2)
+
+# Samples projected on the first two components
+plot_pca_samples <- function(p, title) {
+  ve <- variance_explained(p)
+  df <- data.frame(pca_samples, PC1 = p$x[, 1], PC2 = p$x[, 2])
+  g <- ggplot(df, aes(x = PC1, y = PC2)) +
+    geom_hline(yintercept = 0, linetype = 2, colour = "grey60") +
+    geom_vline(xintercept = 0, linetype = 2, colour = "grey60")
+  if (has_design) {
+    use_shapes <- nlevels(df$replicate) <= 6
+    g <- g +
+      {if (use_shapes) geom_point(aes(colour = condition, shape = replicate), size = 3.5) else geom_point(aes(colour = condition), size = 3.5)} +
+      {if (color_group) scale_colour_manual(values = setNames(group_colors, group_names))}
+  } else {
+    g <- g + geom_point(size = 3.5)
+  }
+  g +
+    ggrepel::geom_text_repel(aes(label = sample), size = 3, colour = "grey30", max.overlaps = 20) +
+    labs(title = title, subtitle = pca_subtitle,
+         x = paste0("PC1 (", round(ve[1], 1), "%)"), y = paste0("PC2 (", round(ve[2], 1), "%)")) +
+    theme(plot.title = element_text(size = 20),
+          plot.subtitle = element_text(size = 14),
+          axis.title = element_text(size = 18),
+          axis.text = element_text(size = 16),
+          legend.title = element_text(size = 16),
+          legend.text = element_text(size = 14))
+}
 
 ```
 
 <div class="row">
 <div class = "col-md-6">
-```{r echo=FALSE, warning=FALSE}
-##Creating data frame for 'Samples projection' pcq plot##
-
-pca_df <- data.frame(
-  sample = sample_names,
-  pc1 = pca$co[,1],
-  pc2 <- pca$co[,2]
-)
-
-contribution1 <- round(100 * pca$eig[1] / sum(pca$eig))
-contribution2 <- round(100 * pca$eig[2] / sum(pca$eig))
-
-##Framing 'Samples projection' pcq plot using ggplot##
-
-pcaPlot <- ggplot(pca_df, aes(x = pc1, y = pc2)) +
-    geom_point() +
-    ggrepel::geom_label_repel(aes(label = sample, color = sample),size=3,
-    max.overlaps = Inf,
-    box.padding = 0.5,
-    point.padding = 0.3) +
-    geom_hline(yintercept=0, linetype=2) +
-    geom_vline(xintercept=0,linetype=2) +
-    xlab(paste0("PC1 [", contribution1, "%]")) +
-    ylab(paste0("PC2 [", contribution2, "%]")) +
-   ggtitle("Samples projection") +
-  #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T,breaks=sample_names)+
-  {if(color_group) scale_color_manual(values = sample_colors)} +
-  theme(legend.position="none",
-        plot.title = element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text=element_text(size=18))
-
-##Plotting and printing 'Samples projection' pcq plot into html (.svg or .png dependent on set parameters) with download link##
-
-  htmltools::HTML(createPngOrSvg(pcaPlot,"Samples_projection"))
+```{r pca_main_plot, echo=FALSE, results='asis'}
+htmltools::HTML(createPngOrSvg(plot_pca_samples(pca_main, "PCA of the samples"), "PCA_samples", 700, 700))
+cat(text_spec("\n Log10 intensities, each protein centered. Proteins vary in weight according to their variance, so the components reflect the largest changes between samples.", italic = T, font_size = "12px"))
 ```
 </div>
 
 <div class = "col-md-6">
-```{r echo=FALSE, warning=FALSE}
-# Z-scored
-  
-z_pca_df <- data.frame(
-  sample = sample_names,
-  pc1 = z_pca$co[,1],
-  pc2 <- z_pca$co[,2]
-)
-
-#pc1 <- z_pca$co[,1]
-#pc2 <- z_pca$co[,2]
-contribution1 <- round(100 * z_pca$eig[1] / sum(z_pca$eig))
-contribution2 <- round(100 * z_pca$eig[2] / sum(z_pca$eig))
-
-##Framing 'Samples projection' pcq plot using ggplot##
-
-pcaPlot <- ggplot(z_pca_df, aes(x = pc1, y = pc2)) +
-    geom_point() +
-    geom_label_repel(aes(label = sample, color = sample),size=3, max.overlaps = Inf,
-    box.padding = 0.5,
-    point.padding = 0.3) +
-    geom_hline(yintercept=0, linetype=2) +
-    geom_vline(xintercept=0,linetype=2) +
-    xlab(paste0("PC1 [", contribution1, "%]")) +
-    ylab(paste0("PC2 [", contribution2, "%]")) +
-   ggtitle("Samples projection (Z-scored)") +
-  #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T,breaks=sample_names)+
-  {if(color_group) scale_color_manual(values = sample_colors)} +
-  theme(legend.position="none",
-        plot.title = element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text=element_text(size=18))
-
-##Plotting and printing 'Samples projection' pcq plot into html (.svg or .png dependent on set parameters) with download link##
-
-  htmltools::HTML(createPngOrSvg(pcaPlot,"Samples_projection_(Z-scored)"))
-
+```{r pca_scaled_plot, echo=FALSE, results='asis'}
+htmltools::HTML(createPngOrSvg(plot_pca_samples(pca_scaled, "PCA of the samples, proteins scaled (technical view)"), "PCA_samples_scaled", 700, 700))
+cat(text_spec("\n Each protein is also scaled to unit variance, so all proteins weigh the same, including the many proteins that do not change. Their technical noise then has as much weight as the biological changes: this view helps to detect technical effects (injection order, batches), not biological ones.", italic = T, font_size = "12px"))
 ```
 </div>
 </div>
@@ -1006,160 +992,86 @@ pcaPlot <- ggplot(z_pca_df, aes(x = pc1, y = pc2)) +
 
 <div class="row">
 <div class = "col-md-6">
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-##Plotting and printing 'Samples contribution' circle chart into html doc (.svg or .png dependent on set parameters) with download link## 
+```{r pca_depth, echo=FALSE, results='asis'}
+## Do the first components follow the proteome depth of the samples? ##
 
-# if (params$coloring_by_group) {
-#   line_color <- sample_colors
-# } else {
-#   line_color <- "black"
-# }
+depth_df <- rbind(
+  data.frame(pca_samples, component = "PC1", score = pca_main$x[, 1]),
+  data.frame(pca_samples, component = "PC2", score = pca_main$x[, 2])
+)
+depth_r <- c(PC1 = cor(pca_main$x[, 1], n_quantified), PC2 = cor(pca_main$x[, 2], n_quantified))
+depth_df$component <- factor(depth_df$component, levels = c("PC1", "PC2"),
+                             labels = paste0(c("PC1", "PC2"), " (r = ", round(depth_r, 2), ")"))
 
-crcl <- fviz_pca_var(pca,
-             # col.var = sample_colors,
-             # palette = unique(sample_colors), 
-             col.var = "contrib",
-             gradient.cols = c("black", "dodgerblue"),
-             repel = TRUE,
-             labelsize = 4,
-             title = "Samples contribution",
-             # fill = sample_names,
-             # palette = line_color, # Add color based on the Species variable
-             ggtheme=theme(plot.title=element_text(size=20),
-                           axis.title=element_text(size=18),
-                           axis.text=element_text(size=18),
-                           legend.text = element_text(size=16),
-                          legend.title = element_text(size=16))
-              ) #+ scale_color_manual(values = unique(sample_colors),
-             #                        labels = group_names)
+depth_plot <- ggplot(depth_df, aes(x = n_quantified, y = score)) +
+  {if (has_design) geom_point(aes(colour = condition), size = 3) else geom_point(size = 3)} +
+  {if (has_design && color_group) scale_colour_manual(values = setNames(group_colors, group_names))} +
+  facet_wrap(~component, ncol = 1, scales = "free_y") +
+  labs(title = "Components vs proteome depth", x = "Number of quantified proteins (before imputation)", y = "Sample score") +
+  theme(plot.title = element_text(size = 20),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        strip.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 12))
 
-
-  htmltools::HTML(createPngOrSvg(crcl,"Samples_contribution"))
+htmltools::HTML(createPngOrSvg(depth_plot, "PCA_vs_proteome_depth", 700, 700))
+cat(text_spec("\n Sample scores of the main PCA against the number of proteins quantified in each sample. A strong correlation (|r| close to 1) means that the component mostly reflects differences in proteome depth (and therefore imputed values) rather than biology.", italic = T, font_size = "12px"))
 ```
 </div>
 
 <div class = "col-md-6">
-```{r echo=FALSE, warning=FALSE, message=FALSE}
-  #Z-Scored
-crcl_z <- fviz_pca_var(z_pca,
-             # col.var = sample_colors,
-             # palette = unique(sample_colors), 
-             col.var = "contrib",
-             gradient.cols = c("black", "dodgerblue"),
-             repel = TRUE,
-             labelsize = 4,
-             title = "Samples contribution (Z-scored)",
-             # fill = sample_names,
-             # palette = line_color, # Add color based on the Species variable
-             ggtheme=theme(plot.title=element_text(size=20),
-                           axis.title=element_text(size=18),
-                           axis.text=element_text(size=18),
-                           legend.text = element_text(size=16),
-                          legend.title = element_text(size=16))
-              ) #+ scale_color_manual(values = unique(sample_colors),
-             #                        labels = group_names)
+```{r pca_scree, echo=FALSE, results='asis'}
+## Variance explained by the first components of both PCAs ##
 
+n_components <- min(10, length(pca_main$sdev))
+scree_df <- rbind(
+  data.frame(pca = "Main PCA", component = seq_len(n_components), variance = variance_explained(pca_main)[seq_len(n_components)]),
+  data.frame(pca = "Proteins scaled", component = seq_len(n_components), variance = variance_explained(pca_scaled)[seq_len(n_components)])
+)
 
-  htmltools::HTML(createPngOrSvg(crcl_z,"Samples_contribution_(Z-scored)"))
+scree_plot <- ggplot(scree_df, aes(x = factor(component), y = variance)) +
+  geom_col(fill = "dodgerblue3") +
+  geom_text(aes(label = paste0(round(variance, 1), "%")), vjust = -0.4, size = 3.5) +
+  facet_wrap(~pca, ncol = 1) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(title = "Variance explained", x = "Component", y = "% of variance") +
+  theme(plot.title = element_text(size = 20),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        strip.text = element_text(size = 14))
 
+htmltools::HTML(createPngOrSvg(scree_plot, "PCA_variance_explained", 700, 700))
 ```
 </div>
 </div>
 
 <br>
 
-<div class="row">
-<div class = "col-md-6">
-```{r echo=FALSE}
+```{r pca_top_loadings, echo=FALSE}
+## Proteins contributing most to the first two components of the main PCA ##
 
-##Plots and prints 'Inertia' bar graph into html doc (.svg or .png dependent on set parameters) with download link##
-
-barplt <- fviz_eig(pca,addlabels=TRUE,
-         barfill="dodgerblue3",
-         alpha.ind=1, 
-         title="Inertia",
-         ggtheme=theme(plot.title = element_text(size=22),
-                       axis.title=element_text(size=18),
-                       axis.text=element_text(size=18)))
-
-  htmltools::HTML(createPngOrSvg(barplt,"Inertia"))
-```
-</div>
-
-<div class = "col-md-6">
-```{r echo=FALSE}
-#Z-scored
-barplt <- fviz_eig(z_pca,addlabels=TRUE,
-         barfill="dodgerblue3",
-         alpha.ind=1, 
-         title="Inertia (Z-scored)",
-         ggtheme=theme(plot.title = element_text(size=22),
-                       axis.title=element_text(size=18),
-                       axis.text=element_text(size=18)))
-
-  htmltools::HTML(createPngOrSvg(barplt,"Inertia_(Z-scored)"))
-
-```
-</div>
-</div>
-
-<div class="row">
-<div class = "col-md-6">
-```{r echo=FALSE, warning=FALSE}
-##Creating data frame for 'Projection of proteins' scatter plot##
-
-rotatedData <- pca$li
-Missing_values = rep(0,length(rotatedData[,1]))
-for (sample_name in sample_names){
-  Missing_values <- Missing_values + is.na(data[[sample_name]])
+# Protein labels: gene name when available, accession otherwise
+protein_labels <- as.character(data$Id)
+if ("Accession" %in% colnames(data)) protein_labels <- as.character(data$Accession)
+if ("Gene_name" %in% colnames(data)) {
+  has_gene <- !is.na(data$Gene_name) & data$Gene_name != ""
+  protein_labels[has_gene] <- as.character(data$Gene_name[has_gene])
 }
-rotatedData$Missing_values <- Missing_values
+names(protein_labels) <- rownames(imputed_abundance)
+loadings_labels <- protein_labels[rownames(pca_matrix)]
 
-##Framing 'Projection of proteins' scatter plot using ggplot##
+top_loadings <- do.call(rbind, lapply(c("PC1", "PC2"), function(pc) {
+  l <- pca_main$rotation[, pc]
+  top <- order(abs(l), decreasing = TRUE)[seq_len(min(10, length(l)))]
+  data.frame(Component = pc, Rank = seq_along(top), Protein = loadings_labels[top], Loading = round(l[top], 3), row.names = NULL)
+}))
 
-rotationPlot <- ggplot() +
-  geom_point(data = rotatedData, mapping = aes(x = Axis1, y = Axis2, col = Missing_values), alpha = 0.5) +
-  ggtitle("Projection of proteins")+
-  theme(plot.title=element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text=element_text(size=18),
-        legend.text = element_text(size=16),
-        legend.title = element_text(size=16))
-
-##Plotting and printing 'Projection of proteins' scatter plot into html (.svg or .png dependent on set parameters) with download link##
-
-  htmltools::HTML(createPngOrSvg(rotationPlot,"Projection_of_proteins"))
+kable(top_loadings, format = "html", booktabs = T,
+      caption = "Proteins with the largest loadings on PC1 and PC2 of the main PCA (the sign gives the direction along the component)") %>%
+  kable_styling(bootstrap_options = "condensed", full_width = F, position = "left") %>%
+  collapse_rows(columns = 1, valign = "top")
 ```
-</div>
-
-<div class = "col-md-6">
-```{r echo=FALSE, warning=FALSE}
-#Z-scored
-rotatedData <- z_pca$li
-Missing_values = rep(0,length(rotatedData[,1]))
-for (sample_name in sample_names){
-  Missing_values <- Missing_values + is.na(data[[sample_name]])
-}
-rotatedData$Missing_values <- Missing_values
-
-##Framing 'Projection of proteins' scatter plot using ggplot##
-
-rotationPlot <- ggplot() +
-  geom_point(data = rotatedData, mapping = aes(x = Axis1, y = Axis2, col = Missing_values), alpha = 0.5) +
-  ggtitle("Projection of proteins (Z-scored)")+
-  theme(plot.title=element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text=element_text(size=18),
-        legend.text = element_text(size=16),
-        legend.title = element_text(size=16))
-
-##Plotting and printing 'Projection of proteins' scatter plot into html (.svg or .png dependent on set parameters) with download link##
-
-  htmltools::HTML(createPngOrSvg(rotationPlot,"Projection_of_proteins_(Z-scored)"))
-
-```
-</div>
-</div>
 
 
 <br>
@@ -1204,7 +1116,7 @@ heatmapDF=subset(heatmapDF,heatmapDF$imputed==F)
 # Order samples according to clustering results
 orderedSamples <- sample_names[hClustSamples$order]
 orderedSamples <- orderedSamples[!is.na(orderedSamples)]
-orderedSamples <- sort(orderedSamples, decreasing = FALSE)
+# (keep the clustering order, so that the rows match the dendrogram)
 heatmapDF$orderedSamples <- factor(heatmapDF$sample, levels = orderedSamples)
 heatmapDF$x <- as.numeric(heatmapDF$orderedSamples)
 
@@ -1304,7 +1216,7 @@ heatmapDF_Z=subset(heatmapDF_Z,heatmapDF_Z$imputed==F)
 # Order samples according to clustering results
 orderedSamples <- sample_names[hClustSamples$order]
 orderedSamples <- orderedSamples[!is.na(orderedSamples)]
-orderedSamples <- sort(orderedSamples, decreasing = FALSE)
+# (keep the clustering order, so that the rows match the dendrogram)
 heatmapDF_Z$orderedSamples <- factor(heatmapDF_Z$sample, levels = orderedSamples)
 heatmapDF_Z$x <- as.numeric(heatmapDF_Z$orderedSamples)
 
