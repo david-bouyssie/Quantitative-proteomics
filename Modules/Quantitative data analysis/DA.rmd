@@ -462,11 +462,18 @@ if(coloring_by_group){
   
   l <- length(group_ids)
 
-  group_colors <- brewer.pal(l, "Set2")
-  
-  # Matching sample colors to samples in the same group
+  # brewer.pal() is limited to 8 colors for Set2 (and needs n >= 3)
+  if(l <= 8){
+    group_colors <- brewer.pal(8, "Set2")[seq_len(l)]
+  }else{
+    group_colors <- colorRampPalette(brewer.pal(12, "Paired"))(l)
+  }
+
+  # Matching sample colors to samples in the same group, named by sample
+  # so that scale_color_manual() maps them by name rather than by position
   color_map <- setNames(group_colors, group_ids)
-  sample_colors <- unname(color_map[sample_names])
+  sample_colors <- color_map[sample_names]
+  names(sample_colors) <- sub("Intensity_", "", expDesign$File)
   
 }
 

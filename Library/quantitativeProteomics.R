@@ -783,8 +783,7 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
     plot_spacer() +
     hcPlot +
     plot_layout(
-      widths = c(4, -1.1, 4.5),
-      guides = "collect"
+      widths = c(4, -1.1, 4.5)
     )
   
   # These were in your original function.
