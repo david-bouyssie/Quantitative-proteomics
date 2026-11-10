@@ -350,6 +350,15 @@ Test.adjust.FDR <- parameters["Test.adjust.FDR",]
 
 ```
 
+```{r validate_inputs}
+
+## Checking that the experimental design, the quantification table and the comparisons are consistent ##
+## (per-sample columns are then selected by their exact names, see group_cols()) ##
+
+validate_inputs(data, expDesign, comparisons = comparisons_to_display)
+
+```
+
 
 <br>
 <div id="banner">
@@ -446,8 +455,28 @@ if (normalization){
 
 group_ids <- unique(expDesign$Condition)
 
-for (group in group_ids){
-  assign(group,paste0(unique(expDesign$repBio[which(expDesign$Condition==group)]),"_",group))
+# Sample ids ("<repBio>_<Condition>") of each group, used as prefix of all the per-sample columns
+# (stored in a named list rather than assign(), so that a condition name cannot overwrite another variable)
+group_samples <- lapply(setNames(as.list(group_ids), group_ids), function(group){
+  paste0(unique(expDesign$repBio[which(expDesign$Condition==group)]),"_",group)
+})
+
+# Returns the exact names of the per-sample columns of the given groups, "<sample id><suffix>", in experimental design order.
+# If 'available' is given (column names of the table to subset), stops when an expected column is missing.
+group_cols <- function(groups, suffix, available = NULL){
+  cols <- paste0(unlist(group_samples[as.character(groups)], use.names = FALSE), suffix)
+  if (!is.null(available)) {
+    missing_cols <- setdiff(cols, available)
+    if (length(missing_cols) > 0) {
+      stop("Missing column(s) for group(s) ", paste(groups, collapse = ", "), ": ", paste(missing_cols, collapse = ", "))
+    }
+  }
+  cols
+}
+
+# Returns a lookup table giving the group of each per-sample column "<sample id><suffix>"
+group_of_cols <- function(suffix){
+  setNames(rep(names(group_samples), lengths(group_samples)), paste0(unlist(group_samples, use.names = FALSE), suffix))
 }
 ```
 
@@ -566,7 +595,7 @@ filter_dataset <- function(data, group_ids){
   # A protein is found insufficient only if the fraction is below the threshold in ALL groups
   fail_obs_all_groups = rep(TRUE, nrow(data))
   for (group in group_ids) {
-    mean_cols = paste0(get(as.character(group)), "_mean")
+    mean_cols = group_cols(group, "_mean", colnames(data))
     group_vals = data[, mean_cols, drop = FALSE]
     nonNA_frac = rowSums(!is.na(group_vals)) / ncol(group_vals)
     fail_obs_all_groups = fail_obs_all_groups & (nonNA_frac < Filter.threshold.obs)
@@ -745,13 +774,8 @@ na_percentage = data.frame(Group=character(),na_percentage=character(),na_count=
 for(Group in group_ids){
   
   # Selecting the bio-rep mean abundance columns for this group and adding a check if no mean_abundance found
-  # current_group_intensities = mean_abundance_repbio[paste0(get(as.character(Group)),"_mean")]
-  current_group_cols <- grep(paste0("_", Group, "_mean$"), colnames(mean_abundance_repbio), value = TRUE)
-  
-  if (length(current_group_cols) == 0) {
-    stop("No mean abundance columns found for group: ", Group)
-  }
-  
+  current_group_cols <- group_cols(Group, "_mean", colnames(mean_abundance_repbio))
+
   current_group_intensities <- mean_abundance_repbio[current_group_cols]
   current_group_intensities_nrows = nrow(current_group_intensities)
   
@@ -866,15 +890,11 @@ if(imputation_method != "MNAR"){
   for(group in group_ids){
     
     # Select bio-reps for this group and matching identification_type columns for this group
-    group_mean_cols <- grep(paste0("_", group, "_mean$"), colnames(mean_abundance_repbio), value = TRUE)
-    
-    if (length(group_mean_cols) == 0) {
-      stop("No mean abundance columns found for group: ", group)
-    }
-    
+    group_mean_cols <- group_cols(group, "_mean", colnames(mean_abundance_repbio))
+
     intensities_current_condition = data.frame(data$Id,mean_abundance_repbio[group_mean_cols],check.names=F)
     intensities_current_condition <- intensities_current_condition %>% mutate(across(everything(), as.numeric))
-    identification_type_current_condition = data.frame(data[grepl(paste0("^Id$|",group,"_identification_type$"),names(data))],check.names=F)
+    identification_type_current_condition = data.frame(data[c("Id", group_cols(group, "_identification_type", names(data)))],check.names=F)
     
     # Run MCAR imputation method using thresholds
     imputed_intensities = impute_mcar(intensities_current_condition,
@@ -906,7 +926,7 @@ if(imputation_method != "MNAR"){
 ## MNAR IMPUTATION ##
 
 # If MCAR IMPUTATION parameter is set to MNAR, data is taken for either the Gaussian or Percentile models
-intensities_to_impute = data[grepl(paste0(pattern,"$|Id$"),colnames(data))]
+intensities_to_impute = data[c("Id", group_cols(group_ids, pattern, colnames(data)))]
 
 # Imputing Gaussian or Percentile models per parameter
 if(Imputation.MNAR.model == "gaussian"){
@@ -952,19 +972,14 @@ imputed_abundance_log = data[grepl("_log$|Id$",colnames(data))]
 imputationDF = reshape2::melt(imputed_abundance_log[,-1])
 colnames(imputationDF) = c("Sample","log_abundance")
 
-# If imputation is enabled, also create a log-transformed version of the original bio-rep mean abundance table
-if(imputation){
-  abundance_log = mean_abundance_repbio
-  abundance_log[,2:ncol(abundance_log)] = log10(data.matrix(abundance_log[,2:ncol(abundance_log)]))
-  colnames(abundance_log)[2:ncol(abundance_log)] = paste0(colnames(mean_abundance_repbio)[2:ncol(abundance_log)],"_noimpute_log")
-  
-  data = merge.data.frame(data,abundance_log,by="Id")
-  
-  # Make a data frame of values to plot
-  abundance_log = data[grepl("_noimpute_log$|Id$",colnames(data))]
-  abundanceDF = reshape2::melt(abundance_log[,-1])
-  colnames(abundanceDF) = c("Sample","log_abundance")
-}
+# Also create a log-transformed version of the original (non-imputed) bio-rep mean abundance table,
+# used by the statistical tests and the outputs when imputation is disabled
+abundance_log = mean_abundance_repbio
+abundance_log[,2:ncol(abundance_log)] = log10(data.matrix(abundance_log[,2:ncol(abundance_log)]))
+colnames(abundance_log)[2:ncol(abundance_log)] = paste0(colnames(mean_abundance_repbio)[2:ncol(abundance_log)],"_noimpute_log")
+
+data = merge.data.frame(data,abundance_log,by="Id")
+abundance_log = data[c("Id", group_cols(group_ids, "_mean_noimpute_log", colnames(data)))]
 
 # Identifying values that were missing before imputation
 imputed = reshape2::melt(is.na(mean_abundance_repbio[,-1]))
@@ -1065,12 +1080,7 @@ df_cv_after_processing = seq(1,nrow(filtered_data)) #data
 for (group in group_ids){
   
   # Selecting bio-rep mean abundance columns for group
-  before_cols <- grep(paste0(group, "_mean$"), names(filtered_data), value = TRUE)
-  
-  # Verifies that columns were found/selected, then adding them to subset
-  if (length(before_cols) == 0) {
-    stop("No before-processing mean columns found for group: ", group)
-  }
+  before_cols <- group_cols(group, "_mean", names(filtered_data))
   intensities = filtered_data[before_cols]
 
   # Compute median deviation for the selected group columns
@@ -1082,12 +1092,7 @@ for (group in group_ids){
   df_cv_before_processing = cbind(df_cv_before_processing,compute_cv(intensities))
 
   # Select post-imputation columns for this group
-  after_cols <- grep(paste0(group, ".*_imputed$"), names(filtered_data), value = TRUE)
-  
-  # Verifies that columns were found/selected, then adding them to subset
-  if (length(after_cols) == 0) {
-    stop("No after-processing imputed columns found for group: ", group)
-  }
+  after_cols <- group_cols(group, paste0(pattern, "_imputed"), names(filtered_data))
   intensities = filtered_data[after_cols]
 
   # Computing median deviation for the selected group columns
@@ -1336,25 +1341,29 @@ pvalue_table <- NULL
 if(Test.type %in% c("anova","kruskall")){
   
   # If imputation is used, take logged or unlogged imputed values. Else, take unimputed logged or unlogged values
+  # (col_suffix is the suffix of the per-sample columns of the selected table)
   if(imputation){
     if(Test.log==T){
       intensity_df = imputed_abundance_log
+      col_suffix = paste0(pattern, "_imputed_log")
     }else{
       intensity_df = imputed_abundance
+      col_suffix = paste0(pattern, "_imputed")
     }
   }else{
     if(Test.log==T){
       intensity_df = abundance_log
+      col_suffix = "_mean_noimpute_log"
     }else{
       intensity_df = mean_abundance_repbio
+      col_suffix = "_mean"
     }
   }
-  
-  # Reshape intensity_df to anova test input (each row is one measurement and "variable" stores the group/sample ID)
+  intensity_df = intensity_df[c("Id", group_cols(group_ids, col_suffix, colnames(intensity_df)))]
+
+  # Reshape intensity_df to anova test input (each row is one measurement and "variable" stores the group of the sample)
   reshape_abundance = reshape2::melt(intensity_df,id="Id")
-  for(cond in unique(expDesign$Condition)){
-    reshape_abundance$variable = sub(paste0(".*", cond, "$"), cond , sub(paste0(pattern,".*"),"",reshape_abundance$variable))
-  }
+  reshape_abundance$variable = unname(group_of_cols(col_suffix)[as.character(reshape_abundance$variable)])
   
   # For each protein, subset the long-format abundance table and sun the global statistical test
   for(id in unique(reshape_abundance$Id)){
@@ -1432,12 +1441,8 @@ for (comparison in comparisons_to_display){
   for(group in couple){
     
     # Subset for current group
-    group_mean_cols <- grep(paste0("_", group, "_mean$"), colnames(global_mean_abundance_repbio), value = TRUE)
-    
-    if (length(group_mean_cols) == 0) {
-      stop("No mean abundance columns found for group: ", group)
-    }
-    
+    group_mean_cols <- group_cols(group, "_mean", colnames(global_mean_abundance_repbio))
+
     sel_global_mean_abundance_repbio <- global_mean_abundance_repbio %>% select(Id, all_of(group_mean_cols))
     
     # Adding the mean abundance column to the filtering table
@@ -1445,9 +1450,8 @@ for (comparison in comparisons_to_display){
     
     # For each raw file in this group, add raw intensity column and matching identification type column
     for(file in expDesign[expDesign$Condition == group,]$File){
-      filtering_data <- cbind(filtering_data, data[grepl(paste0("^", file, "$"), colnames(data))])
-      file <- sub("Intensity_", "", file)
-      filtering_data <- cbind(filtering_data, data[grepl(paste0("^Identification_type_", file, "$"), colnames(data))])
+      filtering_data <- cbind(filtering_data, data[file])
+      filtering_data <- cbind(filtering_data, data[paste0("Identification_type", sub("Intensity", "", file))])
     }
   }
   
@@ -1469,33 +1473,17 @@ for (comparison in comparisons_to_display){
   # Using imputed or non-imputed DFs depending on parameters
   if (imputation) {
     
-    A_cols <- grep(A_name, colnames(imputed_abundance), value = TRUE)
-    B_cols <- grep( B_name, colnames(imputed_abundance), value = TRUE)
-    
-    if (length(A_cols) == 0) {
-      stop("No abundance columns found for group: ", A_name)
-    }
+    A_cols <- group_cols(A_name, paste0(pattern, "_imputed"), colnames(imputed_abundance))
+    B_cols <- group_cols(B_name, paste0(pattern, "_imputed"), colnames(imputed_abundance))
 
-    if (length(B_cols) == 0) {
-      stop("No abundance columns found for group: ", B_name)
-    }
-    
     A <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, imputed_abundance[A_cols], check.names = FALSE)
     B <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, imputed_abundance[B_cols], check.names = FALSE)
     
   } else {
     
-    A_cols <- grep(paste0("_", A_name, "_mean$"), colnames(mean_abundance_repbio), value = TRUE)
-    B_cols <- grep(paste0("_", B_name, "_mean$"), colnames(mean_abundance_repbio), value = TRUE)
-  
-    if (length(A_cols) == 0) {
-      stop("No abundance columns found for group: ", A_name)
-    }
+    A_cols <- group_cols(A_name, "_mean", colnames(mean_abundance_repbio))
+    B_cols <- group_cols(B_name, "_mean", colnames(mean_abundance_repbio))
 
-    if (length(B_cols) == 0) {
-      stop("No abundance columns found for group: ", B_name)
-    }
-    
     A <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, mean_abundance_repbio[A_cols], check.names = FALSE)
     B <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, mean_abundance_repbio[B_cols], check.names = FALSE)
     
@@ -1520,17 +1508,10 @@ for (comparison in comparisons_to_display){
     
   }else{
     
-    # For unpaired comparisons, choose the DF based on the imputation parameters
-    if (imputation && imputation_method == "MNAR") {
-      totIntensities[paste0("mean_intensity_",A_name)] = rowMeans(data.matrix(totIntensities[grep(paste0("_", A_name, "_mean_imputed$"), names(totIntensities), value = TRUE)]),na.rm = TRUE)
-      totIntensities[paste0("mean_intensity_",B_name)] = rowMeans(data.matrix(totIntensities[grep(paste0("_", B_name, "_mean_imputed$"), names(totIntensities), value = TRUE)]),na.rm = TRUE)
-    } else if(imputation && imputation_method != "MNAR"){
-      totIntensities[paste0("mean_intensity_",A_name)] = rowMeans(data.matrix(totIntensities[grep(paste0("_", A_name, "_mcar_imputed$"), names(totIntensities), value = TRUE)]),na.rm = TRUE)
-      totIntensities[paste0("mean_intensity_",B_name)] = rowMeans(data.matrix(totIntensities[grep(paste0("_", B_name, "_mcar_imputed$"), names(totIntensities), value = TRUE)]),na.rm = TRUE)
-    }else{
-      totIntensities[paste0("mean_intensity_", A_name)] <- rowMeans(data.matrix(totIntensities[grep(paste0("_", A_name, "_mean$"), names(totIntensities), value = TRUE)]), na.rm = TRUE)
-      totIntensities[paste0("mean_intensity_", B_name)] <- rowMeans(data.matrix(totIntensities[grep(paste0("_", B_name, "_mean$"), names(totIntensities), value = TRUE)]), na.rm = TRUE)
-    }
+    # For unpaired comparisons, average the A and B columns selected above
+    # (imputed "_mean_imputed" / "_mcar_imputed" columns, or "_mean" columns without imputation)
+    totIntensities[paste0("mean_intensity_",A_name)] = rowMeans(data.matrix(totIntensities[A_cols]),na.rm = TRUE)
+    totIntensities[paste0("mean_intensity_",B_name)] = rowMeans(data.matrix(totIntensities[B_cols]),na.rm = TRUE)
     
     # Calculating fold change as A / B
     totIntensities[paste0("fc_",comparison)] = totIntensities[paste0("mean_intensity_",A_name)] / totIntensities[paste0("mean_intensity_",B_name)]
@@ -1564,22 +1545,10 @@ for (comparison in comparisons_to_display){
     
     # If the test should be performed on logged values, rebuild A and B accordingly
     if(Test.log==T){
-      if(imputation){
-        A_cols <- grep(paste0("_", A_name, ".*_imputed_log$"), colnames(filtered_data), value = TRUE)
-        B_cols <- grep(paste0("_", B_name, ".*_imputed_log$"), colnames(filtered_data), value = TRUE)
-      }else{
-        A_cols <- grep(paste0("_", A_name, ".*_noimpute_log$"), colnames(filtered_data), value = TRUE)
-        B_cols <- grep(paste0("_", B_name, ".*_noimpute_log$"), colnames(filtered_data), value = TRUE)
-      }
-      
-      if (length(A_cols) == 0) {
-        stop("No log abundance columns found for group: ", A_name)
-      }
-      
-      if (length(B_cols) == 0) {
-        stop("No log abundance columns found for group: ", B_name)
-      }
-      
+      log_suffix <- if(imputation) paste0(pattern, "_imputed_log") else "_mean_noimpute_log"
+      A_cols <- group_cols(A_name, log_suffix, colnames(filtered_data))
+      B_cols <- group_cols(B_name, log_suffix, colnames(filtered_data))
+
       A <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, filtered_data[A_cols], check.names = FALSE)
       B <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, filtered_data[B_cols], check.names = FALSE)
       
@@ -1933,46 +1902,23 @@ for (comparison in comparisons_to_display){
         
         significant_proteins_data <- filtered_data[matched_rows, ]
 
-        if (imputation) {
-          intensity_cols <- grep(
-            paste0("((", A_name, "|", B_name, ").*imputed_log$)"),
-            names(significant_proteins_data),
-            value = TRUE
-          )
-        } else {
-          intensity_cols <- grep(
-            paste0("((", A_name, "|", B_name, ").*_noimpute_log$)"),
-            names(significant_proteins_data),
-            value = TRUE
-          )
-        }
-        
+        # Log intensity columns of the A and B samples, in table order
+        log_suffix <- if (imputation) paste0(pattern, "_imputed_log") else "_mean_noimpute_log"
+        intensity_cols <- intersect(
+          names(significant_proteins_data),
+          group_cols(c(A_name, B_name), log_suffix, names(significant_proteins_data))
+        )
+
         significant_proteins_intensities <- significant_proteins_data[
           c("Accession", "Label", intensity_cols)
         ]
-        
-        # Renaming heatmap columns
-        if (imputation) {
-          colnames(significant_proteins_intensities) <- c(
-            "Accession",
-            "Label",
-            sub(
-              paste0(pattern, "_imputed.*"),
-              "",
-              colnames(significant_proteins_intensities)[3:ncol(significant_proteins_intensities)]
-            )
-          )
-        } else {
-          colnames(significant_proteins_intensities) <- c(
-            "Accession",
-            "Label",
-            sub(
-              paste0(pattern, "_noimpute_log.*"),
-              "",
-              colnames(significant_proteins_intensities)[3:ncol(significant_proteins_intensities)]
-            )
-          )
-        }
+
+        # Renaming heatmap columns with the sample ids (column names without their suffix)
+        colnames(significant_proteins_intensities) <- c(
+          "Accession",
+          "Label",
+          substr(intensity_cols, 1, nchar(intensity_cols) - nchar(log_suffix))
+        )
         
         heatmap_values <- significant_proteins_intensities[, -c(1, 2)]
 
@@ -2167,15 +2113,12 @@ for (comparison in comparisons_to_display){
   new_name <- paste0("Label (", comparison, ")")
 
   # Adding imputed or unimputed data
-  if (imputation) {
-    to_add <- filtered_data[
-      grepl(paste0("((", A_name, "|", B_name, ").*_imputed_log$|Accession$|Label$)"), names(filtered_data))
-    ][, -2]
-  } else {
-    to_add <- filtered_data[
-      grepl(paste0("((", A_name, "|", B_name, ").*_noimpute_log$|Accession$|Label$)"), names(filtered_data))
-    ][, -2]
-  }
+  # (Accession and the log intensity columns of the A and B samples, in table order)
+  log_suffix <- if (imputation) paste0(pattern, "_imputed_log") else "_mean_noimpute_log"
+  to_add <- filtered_data[c(
+    "Accession",
+    intersect(names(filtered_data), group_cols(c(A_name, B_name), log_suffix, names(filtered_data)))
+  )]
   
   
   # keep only columns not already in output_t, except Accession which is the key
@@ -2531,8 +2474,9 @@ openxlsx::setColWidths(
   # No origin_file, so create Parsed_proteins_set as before
   ############################################################
   
-  original_cols <- list()
-  
+  # The parsed quantification columns are the original columns, the DA output columns are appended after them
+  original_cols <- colnames(df)
+
   worksheet_name <- "Parsed_proteins_set"
   
   replaceWorksheet(output_file, worksheet_name)
@@ -2606,15 +2550,18 @@ merged_header_style <- openxlsx::createStyle(
 )
 
 # Apply light green to the original columns
-openxlsx::addStyle(
-  output_file,
-  worksheet_name,
-  style = original_header_style,
-  rows = 1,
-  cols = 1:n_original_cols,
-  gridExpand = TRUE,
-  stack = TRUE
-)
+# (seq_len() and not 1:n, which gives c(1, 0) when n = 0 and creates an invalid cell in column 0)
+if (n_original_cols > 0) {
+  openxlsx::addStyle(
+    output_file,
+    worksheet_name,
+    style = original_header_style,
+    rows = 1,
+    cols = seq_len(n_original_cols),
+    gridExpand = TRUE,
+    stack = TRUE
+  )
+}
 
 # Apply light blue to the newly added / merged columns
 if (n_original_cols < main_sheet_cols) {

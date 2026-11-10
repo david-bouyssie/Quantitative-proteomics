@@ -1,4 +1,102 @@
 
+#####################
+# Inputs validation #
+#####################
+
+# This function checks that the experimental design and the quantification table are consistent and unambiguous,
+# so that per-sample columns can be selected by their exact names. It stops with the list of all the problems found.
+validate_inputs <- function(data, expDesign, comparisons = NULL, derived_suffixes = c("_mean", "_identification_type")){
+
+  # Inputs :
+  # data : quantification table (with an "Id" column, "Intensity_*" and "Identification_type_*" columns)
+  # expDesign : experimental design (columns File, repBio, Condition)
+  # comparisons : optional vector of comparisons "A/B"
+  # derived_suffixes : suffixes appended to sample ids ("<repBio>_<Condition>") to create new columns
+  # Output :
+  # invisible TRUE, or an error listing the problems
+
+  problems <- c()
+
+  # Experimental design
+  required <- c("File", "repBio", "Condition")
+  missing_design_cols <- setdiff(required, colnames(expDesign))
+  if (length(missing_design_cols) > 0) {
+    stop("Experimental design: missing column(s) ", paste(missing_design_cols, collapse = ", "), " (expected: File, repBio, Condition).")
+  }
+  for (col in required) {
+    n_empty <- sum(is.na(expDesign[[col]]) | trimws(as.character(expDesign[[col]])) == "")
+    if (n_empty > 0) problems <- c(problems, paste0("Experimental design: ", n_empty, " empty value(s) in column ", col))
+  }
+  files <- as.character(expDesign$File)
+  if (anyDuplicated(files)) {
+    problems <- c(problems, paste0("Experimental design: duplicated File name(s): ", paste(unique(files[duplicated(files)]), collapse = ", ")))
+  }
+  sample_ids <- paste0(expDesign$repBio, "_", expDesign$Condition)
+  pairs_by_sample <- tapply(paste(expDesign$repBio, expDesign$Condition, sep = "\r"), sample_ids, function(x) length(unique(x)))
+  if (any(pairs_by_sample > 1)) {
+    problems <- c(problems, paste0("Experimental design: ambiguous sample id(s) <repBio>_<Condition> obtained from different repBio/Condition pairs: ",
+                                   paste(names(pairs_by_sample)[pairs_by_sample > 1], collapse = ", ")))
+  }
+
+  # Quantification table
+  if (anyDuplicated(colnames(data))) {
+    problems <- c(problems, paste0("Quantification table: duplicated column name(s): ", paste(unique(colnames(data)[duplicated(colnames(data))]), collapse = ", ")))
+  }
+  if (!"Id" %in% colnames(data)) {
+    problems <- c(problems, "Quantification table: missing 'Id' column")
+  } else if (anyDuplicated(data$Id)) {
+    problems <- c(problems, paste0("Quantification table: duplicated Id value(s): ", paste(head(unique(data$Id[duplicated(data$Id)]), 10), collapse = ", ")))
+  }
+  missing_files <- setdiff(files, colnames(data))
+  if (length(missing_files) > 0) {
+    problems <- c(problems, paste0("Quantification table: intensity column(s) of the experimental design not found: ", paste(missing_files, collapse = ", ")))
+  }
+  id_type_cols <- paste0("Identification_type", sub("Intensity", "", files))
+  missing_id_types <- setdiff(id_type_cols, colnames(data))
+  if (length(missing_id_types) > 0) {
+    problems <- c(problems, paste0("Quantification table: identification type column(s) not found: ", paste(missing_id_types, collapse = ", ")))
+  }
+  derived_cols <- c(outer(unique(sample_ids), derived_suffixes, paste0))
+  colliding_cols <- intersect(derived_cols, colnames(data))
+  if (length(colliding_cols) > 0) {
+    problems <- c(problems, paste0("Quantification table: column(s) already named like the columns created by the analysis: ", paste(colliding_cols, collapse = ", ")))
+  }
+
+  # Comparisons
+  if (length(comparisons) > 0) {
+    conditions <- unique(as.character(expDesign$Condition))
+    for (comparison in comparisons) {
+      couple <- strsplit(comparison, "/")[[1]]
+      if (length(couple) != 2) {
+        problems <- c(problems, paste0("Invalid comparison \"", comparison, "\": expected two conditions separated by \"/\" (e.g. \"",
+                                       paste(head(conditions, 2), collapse = "/"), "\")"))
+        next
+      }
+      unknown <- setdiff(couple, conditions)
+      if (length(unknown) > 0) {
+        problems <- c(problems, paste0("Invalid comparison \"", comparison, "\": ", paste0("\"", unknown, "\"", collapse = " and "),
+                                       if (length(unknown) > 1) " do" else " does",
+                                       " not match any condition defined in the experimental design (existing conditions: ",
+                                       paste(conditions, collapse = ", "), ")"))
+      } else if (couple[1] == couple[2]) {
+        problems <- c(problems, paste0("Invalid comparison \"", comparison, "\": a condition cannot be compared with itself"))
+      }
+    }
+  }
+
+  if (length(problems) > 0) {
+    stop(paste(c("Invalid inputs:", problems), collapse = "\n - "), call. = FALSE)
+  }
+
+  # Intensity columns absent from the design are allowed (samples can be excluded on purpose), but reported
+  unused_files <- setdiff(grep("^Intensity", colnames(data), value = TRUE), files)
+  if (length(unused_files) > 0) {
+    warning("Intensity column(s) not used because absent from the experimental design: ", paste(unused_files, collapse = ", "), call. = FALSE)
+  }
+
+  invisible(TRUE)
+}
+
 #################
 # Normalization #
 #################
