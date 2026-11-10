@@ -99,7 +99,7 @@ Here you can find a description of all parameters and possible values:
 | Test.adjust.procedure | Choose the multiple test correction procedure | none / BH / ABH |
 | Fold.Change | Choose the ratio that should be computed between conditions | fc / zscore |
 | Volcano.threshold.pvalue | Significativity threshold for pvalue | {0,1} |
-| Volcano.threshold.fc | Significativity threshold for ratio | ℝ |
+| Volcano.threshold.fc | Significativity threshold for ratio, expressed as an absolute log2 fold change (e.g. 0.58 for a 1.5-fold change, 1 for a 2-fold change) | ℝ+ |
 | Volcano.coloring.style | Choose coloring based on signifigance or intensity (heatmap or monochrome) | signifigance / intensity / monochrome |
 | Volcano.manual.accession | List of protein accession codes for manual labeling | Example : Q9JHU4;A2ASS6;Q8VDD5;Q9QXS1 |
 | Volcano.no.labeling | Choose to have no labels on volcano plot | T / F |

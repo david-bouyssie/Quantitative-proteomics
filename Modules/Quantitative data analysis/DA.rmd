@@ -1809,8 +1809,9 @@ for (comparison in comparisons_to_display){
       # Manually labeling by accession number
       {if(lblng_mnl) ggrepel::geom_text_repel(aes(label = ifelse(current_statDF_MA$Accession %in% prtn_lbl_lst, as.character(current_statDF_MA$Label),'')), 
                                               hjust=1,vjust=-1, size=3, box.padding = .15, max.overlaps = 10000)}+
-      geom_hline(yintercept=log2(Volcano.threshold.fc),linetype="dashed") +
-      geom_hline(yintercept=-log2(Volcano.threshold.fc),linetype="dashed") +
+      # Volcano.threshold.fc is already expressed as a log2 fold change
+      geom_hline(yintercept=Volcano.threshold.fc,linetype="dashed") +
+      geom_hline(yintercept=-Volcano.threshold.fc,linetype="dashed") +
       ggtitle("MA plot")+
       xlab("log 10(Intensity)")+
       ylab(paste0('log2(',Fold.Change,')')) +
@@ -1864,8 +1865,9 @@ for (comparison in comparisons_to_display){
       {if(!col_sig) geom_point(aes(color=Intensity, alpha = .7),size=pnt_sz)}+
       # Adding pvalue and fc threshold lines
       geom_hline(yintercept=-log10(Volcano.threshold.pvalue),linetype="dashed")+
-      geom_vline(xintercept=log2(Volcano.threshold.fc),linetype="dashed")+
-      geom_vline(xintercept=-log2(Volcano.threshold.fc),linetype="dashed")+
+      # Volcano.threshold.fc is already expressed as a log2 fold change
+      geom_vline(xintercept=Volcano.threshold.fc,linetype="dashed")+
+      geom_vline(xintercept=-Volcano.threshold.fc,linetype="dashed")+
       # If monochrome mode selected
       {if(monochrome && !col_sig) scale_color_gradient(low = 'lightblue', high = 'blue4')}+
       # If no color scheme, color by intensity
