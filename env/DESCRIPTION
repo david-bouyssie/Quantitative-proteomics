@@ -1,0 +1,46 @@
+Type: project
+Package: QuantitativeProteomicsEnv
+Title: Package environment of the Quantitative-proteomics reports (R 4.2)
+Version: 1.0.0
+Description: Packages loaded by the Quantitative-proteomics launchers, parsers, library and reports.
+    The lockfile renv.lock records the full dependency tree.
+    Version caps, all due to R 4.2 and the bundled pandoc 2.2.1:
+    rmarkdown < 2.32 (2.32 requires pandoc >= 2.8);
+    GGally < 2.3.0 (2.3.0 and later require R >= 4.3);
+    ggplot2 < 4.0.0 (GGally 2.2.1 is not compatible with ggplot2 4),
+    and with it ggrepel < 0.9.6, patchwork < 1.3.0 and scales < 1.4.0,
+    taken as built together in the CRAN repository of R 4.2 binaries.
+Depends: R (>= 4.2.0)
+Imports:
+    base64enc,
+    Biobase,
+    data.table,
+    dplyr,
+    DT,
+    fastcluster,
+    GGally (< 2.3.0),
+    ggdendro,
+    ggplot2 (< 4.0.0),
+    ggrepel (< 0.9.6),
+    gridExtra,
+    gtable,
+    htmltools,
+    kableExtra,
+    knitr,
+    limma,
+    matrixStats,
+    multtest,
+    openxlsx,
+    patchwork (< 1.3.0),
+    RColorBrewer,
+    readr,
+    readxl,
+    reshape2,
+    rmarkdown (< 2.32),
+    scales (< 1.4.0),
+    scico,
+    showtext,
+    stringr,
+    svglite,
+    tibble,
+    tidyr

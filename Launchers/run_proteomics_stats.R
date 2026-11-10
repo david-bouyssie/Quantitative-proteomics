@@ -1,9 +1,10 @@
-.libPaths(
-  c(
-    .libPaths(),
-    "./renv/library/R-4.2/x86_64-w64-mingw32"
-  )
-)
+# Package library of the renv project (see Quantitative-proteomics/env/renv.lock), placed first so that its packages take precedence
+# over the copies in the R system library. Paths are relative to R-Portable_with_QP (set by run_script.bat).
+renv_library <- "./Quantitative-proteomics/env/renv/library/R-4.2/x86_64-w64-mingw32"
+if (!dir.exists(renv_library)) {
+  stop("Package library not found: ", normalizePath(renv_library, mustWork = FALSE))
+}
+.libPaths(c(renv_library, .libPaths()))
 
 ### PATCH WINDOWS FONTS (see: https://stackoverflow.com/questions/55933524/r-can-not-find-fonts-to-be-used-in-plotting) ###
 if (.Platform$OS.type == "windows") {
@@ -23,7 +24,11 @@ if (analysis == "QC") {
   output_file = file.path(normalizePath(dirname(args[3])), basename(args[3]))
   parameters = normalizePath(args[4])
   exp_design = normalizePath(args[5])
-  origin_file = normalizePath(args[6])
+  if (length(args) >= 6){
+    origin_file = normalizePath(args[6])
+  }else{
+    origin_file = ""
+  }
 
   rmarkdown::render(
     './Quantitative-proteomics/Modules/Quantitative data analysis/QC.Rmd',

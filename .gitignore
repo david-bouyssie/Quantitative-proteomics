@@ -1,0 +1,10 @@
+# R session files
+.Rhistory
+.RData
+.Rproj.user/
+
+# Temporary figures written by the reports while rendering (deleted at the end of a successful render)
+Modules/**/temp/
+
+# The renv package library (env/renv/library) is excluded by env/renv/.gitignore, as it only works with
+# R 4.2 on 64-bit Windows: rebuild it from env/renv.lock with renv::restore(project = "env")
