@@ -23,9 +23,11 @@ intensities = proteinGroupsInput[,grepl(paste0(intensities_type," .+Sample"),nam
 colnames(intensities) = paste0("Intensity_",sub(".*Sample ", "", colnames(intensities)))
 
 identification_types = proteinGroupsInput[,grepl("Found in Sample in",names(proteinGroupsInput))]
+# PD "Found in Sample" values: High = identified by MS/MS in this sample,
+# Peak Found = quantified by feature mapping (match between runs), Not Found = absent
 identification_types[identification_types=="Not Found"] <- NA
-identification_types[identification_types=="High"] <- "By matching"
-identification_types[identification_types=="Peak Found"] <- "By MS/MS"
+identification_types[identification_types=="High"] <- "By MS/MS"
+identification_types[identification_types=="Peak Found"] <- "By matching"
 colnames(identification_types) = paste0("Identification_type_",sub("Found in Sample in .* Sample ","",colnames(identification_types)))
 
 specific_peptides = proteinGroupsInput[grepl("Number.of.Unique.Peptides",names(proteinGroupsInput))]
