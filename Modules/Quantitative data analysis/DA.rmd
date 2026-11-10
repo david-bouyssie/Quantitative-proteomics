@@ -555,55 +555,35 @@ filter_dataset <- function(data, group_ids){
   Filter.threshold.obs = as.numeric(as.character(parameters["Filter.threshold.obs",]))
   Filter.threshold.ms = as.numeric(as.character(parameters["Filter.threshold.ms",]))
   
-  filtered_data = data
-  nb_obs = 0
-  nb_ms = 0
-  
-  # Looping through each protein/row
-  for (row in 1:nrow(data)){
-    
-    protein = data[row,]
-    enough=T
-    
-    # Collecting all identification type columns and counting all "By MS/MS"
-    identification = protein[grep("Identification_type_",colnames(protein))]
-    sum = sum(identification=="By MS/MS", na.rm=T)
-    
-    # If number of MS/MS identifications is below threshold
-    if(sum<Filter.threshold.ms){
-      # Exclude and tick up counter for excluded from lack of MS/MS
-        enough=F
-        nb_ms=nb_ms+1
-    }
-    else{
-      # Count how many groups don't have enough observed values
-      cptr_not_enough = 0
-      for(group in group_ids){
-        # Selecting bio-replicate mean columns 
-        aValues = protein[paste0(get(as.character(group)),"_mean")]
-        na = is.na(aValues)
-        # If the fraction of observed values is below the threshold, count the group as insufficient
-        if((sum(na==F)/length(na))<Filter.threshold.obs){
-          cptr_not_enough = cptr_not_enough+1
-        }
-      }
-      # If the protein was found insufficient in all groups, exclude it and tick up counter for excluded for # observations
-      if (cptr_not_enough==length(group_ids)){
-        enough=F
-        nb_obs = nb_obs+1
-      }
-    }
-    # If the protein was market for exclusion, take it out of the filtered dataset
-    if (enough==F){
-      filtered_data = subset(filtered_data,filtered_data$Id!=protein$Id)
-    }
+  # MS/MS filter: counting all "By MS/MS" per protein across the identification type columns
+  id_cols = grep("Identification_type_", colnames(data))
+  msms_counts = rowSums(data[, id_cols, drop = FALSE] == "By MS/MS", na.rm = TRUE)
+
+  # If number of MS/MS identifications is below threshold, exclude the protein
+  fail_ms = msms_counts < Filter.threshold.ms
+
+  # Observation filter: for each group, compute the fraction of observed bio-replicate mean values.
+  # A protein is found insufficient only if the fraction is below the threshold in ALL groups
+  fail_obs_all_groups = rep(TRUE, nrow(data))
+  for (group in group_ids) {
+    mean_cols = paste0(get(as.character(group)), "_mean")
+    group_vals = data[, mean_cols, drop = FALSE]
+    nonNA_frac = rowSums(!is.na(group_vals)) / ncol(group_vals)
+    fail_obs_all_groups = fail_obs_all_groups & (nonNA_frac < Filter.threshold.obs)
   }
-  
+
+  # A protein is excluded for # observations only if it passed the MS/MS filter
+  fail_obs = !fail_ms & fail_obs_all_groups
+
+  # Keep proteins that pass both filters, and count the excluded ones
+  filtered_data = data[!fail_ms & !fail_obs_all_groups, ]
+  nb_ms = sum(fail_ms)
+  nb_obs = sum(fail_obs)
+
   # Count the number of proteins in the filtered dataset
   nbProteins = nrow(filtered_data)
-  
-  # Subsets for raw abundance and mean_abundance for filtered proteins
-  filtered_raw_abundance = filtered_data[c("Id",as.character(expDesign[expDesign$Condition == group_ids,]$File))]
+
+  # Subset of mean_abundance for filtered proteins
   mean_abundance_repbio = filtered_data[,grepl("_mean|Id$",names(filtered_data))]
   
   # If the sub-dataset for mean_abundance is 0 (all proteins filtered out), throw error
@@ -649,7 +629,7 @@ filter_dataset <- function(data, group_ids){
           plot.title = element_text(size=22),
           legend.text = element_text(size=21))
 
-  return(list(filtered_data, mean_abundance_repbio, filtered_raw_abundance, diagrammDFT, diagramm))
+  return(list(filtered_data, mean_abundance_repbio, diagrammDFT, diagramm))
 }
 
 ```
@@ -1039,9 +1019,6 @@ filtered_data <- as.data.frame(global_filtering[[1]])
 global_mean_abundance_repbio <- mean_abundance_repbio
 mean_abundance_repbio <- as.data.frame(global_filtering[[2]])
 
-# Raw abundance table after filtering
-filtered_raw_abundance <- as.data.frame(global_filtering[[3]])
-
 # Saving imputed unfiltered abundance, keeping only imputed abundance rows that passed filtering
 global_imputed_abundance <- imputed_abundance
 imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% filtered_data$Id, ]
@@ -1051,15 +1028,15 @@ global_imputed_abundance_log <- imputed_abundance_log
 imputed_abundance_log <- global_imputed_abundance_log[global_imputed_abundance_log$Id %in% filtered_data$Id, ]
 
 # Creating table for filtering summary
-kable(global_filtering[[4]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
+kable(global_filtering[[3]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
             kable_styling(bootstrap_options="condensed",full_width = F,position = "center") %>%
             column_spec(1, bold = T)
 
 # Printing filtering barplot into output report
 if (format_svg) {
-  htmltools::HTML(createPngOrSvg(global_filtering[[5]],"Proteins_filtered", 12, 7))
+  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 12, 7))
 } else {
-  htmltools::HTML(createPngOrSvg(global_filtering[[5]],"Proteins_filtered", 1200, 800))
+  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 1200, 800))
 }
 
 ```
@@ -1528,7 +1505,7 @@ for (comparison in comparisons_to_display){
   totIntensities = merge.data.frame(A,B,by=c("Accession","Label"))
   
   # Calculate the average intensity across all intensity columns from both conditions
-  totIntensities[paste0("mean_intensity_",comparison)] = apply(totIntensities[,3:ncol(totIntensities)],1,function(x) mean(x, na.rm=T))
+  totIntensities[paste0("mean_intensity_",comparison)] = rowMeans(data.matrix(totIntensities[,3:ncol(totIntensities)]), na.rm=T)
   
   #################################### Computing Fold Change #########################################################
   
@@ -1663,27 +1640,69 @@ for (comparison in comparisons_to_display){
       
       # Initialize pvalue column for comparison
       statDF[paste0("pval_",comparison)] <- NA_real_
-      
-      # Loop over each protein and apply selected test
-      for(prot in seq_len(nrow(A))){
-        
-        # T.Test
-        if(Test.type=="t.test"){
-          pval = t.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
-                      alternative,
-                      paired=Test.paired,
-                      var.equal=Test.var.equal)$p.value
-          
-        # Wilcoxon test
-        }else if(Test.type=="wilcoxon"){
-           pval = wilcox.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
-                      alternative,
-                      paired=Test.paired)$p.value
+
+      # Vectorized two-sample equal-variance t-test (most common case), equivalent to t.test(var.equal = TRUE)
+      if(Test.type=="t.test" && Test.var.equal && !Test.paired){
+
+        mat_a <- data.matrix(A[, 3:ncol(A)])
+        mat_b <- data.matrix(B[, 3:ncol(B)])
+
+        n_a <- rowSums(!is.na(mat_a))
+        n_b <- rowSums(!is.na(mat_b))
+        mean_a <- rowMeans(mat_a, na.rm = TRUE)
+        mean_b <- rowMeans(mat_b, na.rm = TRUE)
+        var_a <- rowSums((mat_a - mean_a)^2, na.rm = TRUE) / (n_a - 1)
+        var_b <- rowSums((mat_b - mean_b)^2, na.rm = TRUE) / (n_b - 1)
+
+        # Pooled variance (a group with a single value contributes no variance)
+        df <- n_a + n_b - 2
+        sp2 <- (ifelse(n_a > 1, (n_a - 1) * var_a, 0) + ifelse(n_b > 1, (n_b - 1) * var_b, 0)) / df
+        stderr <- sqrt(sp2 * (1/n_a + 1/n_b))
+        t_stat <- (mean_a - mean_b) / stderr
+
+        pvals <- switch(alternative,
+          "two.sided" = 2 * pt(-abs(t_stat), df),
+          "greater"   = pt(t_stat, df, lower.tail = FALSE),
+          "less"      = pt(t_stat, df)
+        )
+
+        # Same cases where t.test() stops with an error: an empty group, fewer than 3 values in total, or constant data
+        not_testable <- n_a < 1 | n_b < 1 | df < 1 | stderr < 10 * .Machine$double.eps * pmax(abs(mean_a), abs(mean_b))
+        pvals[not_testable %in% TRUE] <- NA
+
+        # Add proteins pvalues to statDF
+        statDF[paste0("pval_",comparison)] <- pvals[match(statDF$Accession, A[,1])]
+
+      }else{
+
+        # Loop over each protein and apply selected test (Welch, paired or Wilcoxon)
+        for(prot in seq_len(nrow(A))){
+
+          # A protein that cannot be tested (e.g. no value in a group, constant data) gets a NA pvalue instead of stopping the report
+          pval <- tryCatch({
+
+            # T.Test
+            if(Test.type=="t.test"){
+              t.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
+                     alternative = alternative,
+                     paired=Test.paired,
+                     var.equal=Test.var.equal)$p.value
+
+            # Wilcoxon test
+            }else if(Test.type=="wilcoxon"){
+              wilcox.test(as.numeric(A[prot,3:ncol(A)]),as.numeric(B[prot,3:ncol(B)]),
+                          alternative = alternative,
+                          paired=Test.paired)$p.value
+            }else{
+              NA_real_
+            }
+          }, error = function(e) NA_real_)
+
+          # Add proteins pvalue to statDF
+          statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession,nomatch =0),]<- pval
         }
-        # Add proteins pvalue to statDF
-        statDF[paste0("pval_",comparison)][match(A[prot,1],statDF$Accession,nomatch =0),]<- pval
       }
-      
+
     }
     
   }
@@ -1731,7 +1750,7 @@ for (comparison in comparisons_to_display){
     cat(text_spec(comparison, color="#3686D5", bold=T, font_size=18 ))
     
     # Printing filtering summary table for comparison
-    cat(kable(cond_fltr[[4]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
+    cat(kable(cond_fltr[[3]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
             kable_styling(bootstrap_options="condensed",full_width = F,position = "center") %>%
             column_spec(1, bold = T))
     
