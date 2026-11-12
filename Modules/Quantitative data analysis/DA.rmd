@@ -1800,14 +1800,13 @@ for (comparison in comparisons_to_display){
     
   ########################## Graph Parameters   ########################## 
     
-    # If multiple-testing correction procedure was used, adjust the colvano plot pvalue threshold
+    # P-value at which the volcano plot threshold line is drawn. With a multiple-testing correction, significance is decided
+    # on the q-values, so the line is drawn at the largest p-value among the proteins with q <= threshold (no line if there is none).
+    # A local variable is used: Volcano.threshold.pvalue must not be modified, as it decides significance for every comparison.
+    volcano_pvalue_line <- Volcano.threshold.pvalue
     if(Test.adjust.procedure!="none"){
-      significant_df <- subset(current_statDF, qval < Volcano.threshold.pvalue)
-      Volcano.threshold.pvalue <- max(significant_df$pval)
-      
-      if (nrow(significant_df) > 0) {
-        Volcano.threshold.pvalue <- max(significant_df$pval, na.rm = TRUE)
-      }
+      significant_df <- subset(current_statDF, !is.na(qval) & qval <= Volcano.threshold.pvalue)
+      volcano_pvalue_line <- if (nrow(significant_df) > 0) max(significant_df$pval, na.rm = TRUE) else NA
     }
     
     # Remove rows where either fc or pval is NA
@@ -1832,7 +1831,7 @@ for (comparison in comparisons_to_display){
       # If not coloring by significance
       {if(!col_sig) geom_point(aes(color=Intensity, alpha = .7),size=pnt_sz)}+
       # Adding pvalue and fc threshold lines
-      geom_hline(yintercept=-log10(Volcano.threshold.pvalue),linetype="dashed")+
+      {if(!is.na(volcano_pvalue_line)) geom_hline(yintercept=-log10(volcano_pvalue_line),linetype="dashed")}+
       # Volcano.threshold.fc is already expressed as a log2 fold change
       geom_vline(xintercept=Volcano.threshold.fc,linetype="dashed")+
       geom_vline(xintercept=-Volcano.threshold.fc,linetype="dashed")+
