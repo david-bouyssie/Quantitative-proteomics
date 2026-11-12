@@ -95,11 +95,9 @@ Here you can find a description of all parameters and possible values:
 | Test.alternative | Choose if the statistical test should be unilateral or bilateral | two.sided / less / greater |
 | Test.paired | Choose if the statistical test should be paired or not | T / F |
 | Test.var.equal | If t.test is selected, precise if variance are equal (so a Student t.test will be used) or not (so a Welch t.test will be used)  | T / F |
-| Test.adjust.FDR | Choose the FDR for multiple test correction | {0,1} |
 | Test.adjust.procedure | Choose the multiple test correction procedure | none / BH / ABH |
-| Fold.Change | Choose the ratio that should be computed between conditions | fc / zscore |
-| Volcano.threshold.pvalue | Significativity threshold for pvalue | {0,1} |
-| Volcano.threshold.fc | Significativity threshold for ratio, expressed as an absolute log2 fold change (e.g. 0.58 for a 1.5-fold change, 1 for a 2-fold change) | ℝ+ |
+| Stat.threshold.significance | Significance threshold. It is applied to the adjusted p-values (q-values, i.e. it is the FDR) when a multiple test correction is selected, and to the raw p-values otherwise (formerly Volcano.threshold.pvalue) | ]0,1] |
+| Stat.threshold.fc | Fold change threshold, expressed as an absolute log2 fold change (e.g. 0.58 for a 1.5-fold change, 1 for a 2-fold change) (formerly Volcano.threshold.fc) | ℝ+ |
 | Volcano.coloring.style | Choose coloring based on signifigance or intensity (heatmap or monochrome) | signifigance / intensity / monochrome |
 | Volcano.manual.accession | List of protein accession codes for manual labeling | Example : Q9JHU4;A2ASS6;Q8VDD5;Q9QXS1 |
 | Volcano.no.labeling | Choose to have no labels on volcano plot | T / F |
@@ -119,6 +117,9 @@ The intensities are processed in this order:
 2. **Normalization.** Each sample is divided by the median of its ratios to a reference sample (equivalently, the median log2 ratio is subtracted on the log2 scale). The reference is the sample with the fewest missing values. The medians are computed on the proteins kept by the global filter, or on the proteins given in `Proteins.for.normalization`, and the factors are applied to all the proteins.
 3. **Imputation.** Missing values are imputed once, for the proteins kept by the global filter only (the other proteins keep their missing values in the output table). The imputation uses a fixed seed, so two runs on the same data give the same values.
 4. **Comparisons.** For each comparison, the same filter is applied again to the two compared conditions only, then the test is computed.
+5. **Significant proteins.** A protein is significant in a comparison when its adjusted p-value (or its raw p-value without multiple test correction) is at most `Stat.threshold.significance` and its absolute log2 fold change is at least `Stat.threshold.fc`. This single definition is used everywhere (`significant_*` columns of the output table, figures, tables of significant proteins). The volcano plot shows the raw p-values: with a multiple test correction, its horizontal line is drawn at the largest raw p-value among the proteins whose adjusted p-value passes the threshold (no line when there is none).
+
+The previous parameter names `Volcano.threshold.pvalue` and `Volcano.threshold.fc` are still accepted, with a note in the report. `Test.adjust.FDR` and `Fold.Change` are no longer used (the fold change is always the ratio of the mean intensities).
 
 ##### 3.2.2.2. Imputation model description
 

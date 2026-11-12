@@ -311,14 +311,47 @@ Imputation.MNAR.model <- parameters["Imputation.MNAR.model",]
 # Setting MNAR model percentile cutoff
 Imputation.MNAR.percentage <- as.numeric(as.character(parameters["Imputation.MNAR.percentile",]))
 
-# Determines which fold-change column is used (fc or zscore)
-Fold.Change = as.character(parameters["Fold.Change",])
+# Notes about deprecated or ignored parameters, printed below the parameters table (and on the console)
+parameter_notes <- c()
+add_parameter_note <- function(note){
+  parameter_notes <<- c(parameter_notes, note)
+  cat("Note: ", note, "\n", sep = "", file = stderr())
+}
 
-# Setting pvalue threshold for volcano plot
-Volcano.threshold.pvalue = as.numeric(as.character(parameters["Volcano.threshold.pvalue",]))
+# Returns the value of a parameter (as a character string, NA if absent), accepting a deprecated name
+get_parameter <- function(name, deprecated = NULL){
+  if (name %in% rownames(parameters)) return(trimws(as.character(parameters[name,])))
+  for (old_name in deprecated) {
+    if (old_name %in% rownames(parameters)) {
+      add_parameter_note(paste0("Parameter ", old_name, " is deprecated, please rename it ", name, "."))
+      return(trimws(as.character(parameters[old_name,])))
+    }
+  }
+  NA
+}
 
-# Setting fc threshold for volcano plot
-Volcano.threshold.fc = as.numeric(strsplit(as.character(parameters["Volcano.threshold.fc",]),";")[[1]])
+# Removed parameters: the fold change is always the ratio of the mean intensities (fc)
+if ("Fold.Change" %in% rownames(parameters)) {
+  if (trimws(as.character(parameters["Fold.Change",])) != "fc") {
+    stop("Parameter Fold.Change=", parameters["Fold.Change",], " is no longer supported: the fold change is always the ratio of the mean intensities. Please remove the Fold.Change parameter.")
+  }
+  add_parameter_note("Parameter Fold.Change is no longer used (the fold change is always fc) and can be removed.")
+}
+if ("Test.adjust.FDR" %in% rownames(parameters)) {
+  add_parameter_note("Parameter Test.adjust.FDR is no longer used and can be removed: with a multiple testing correction, Stat.threshold.significance is the FDR threshold applied to the adjusted p-values.")
+}
+
+# Significance threshold: applied to the adjusted p-values (q-values) if a multiple testing correction is selected, to the raw p-values otherwise
+Stat.threshold.significance = suppressWarnings(as.numeric(get_parameter("Stat.threshold.significance", deprecated = "Volcano.threshold.pvalue")))
+if (is.na(Stat.threshold.significance) || Stat.threshold.significance <= 0 || Stat.threshold.significance > 1) {
+  stop("Parameter Stat.threshold.significance must be a number greater than 0 and at most 1 (e.g. 0.05).")
+}
+
+# Fold change threshold, expressed as an absolute log2 fold change (e.g. 0.58 for a 1.5-fold change)
+Stat.threshold.fc = suppressWarnings(as.numeric(get_parameter("Stat.threshold.fc", deprecated = "Volcano.threshold.fc")))
+if (is.na(Stat.threshold.fc) || Stat.threshold.fc < 0) {
+  stop("Parameter Stat.threshold.fc must be a single number greater than or equal to 0 (an absolute log2 fold change, e.g. 0.58 for a 1.5-fold change).")
+}
 
 # Setting pvalue calculation test type
 Test.type <- parameters["Test.type",]
@@ -328,9 +361,6 @@ Test.log <- parameters["Test.log",]
 
 # Setting conditions for DA comparison
 comparisons_to_display = strsplit(as.character(parameters["Comparisons",]),";")[[1]]
-
-# Setting threshold for pvalue in volcano plot
-Volcano.threshold.pvalue = as.numeric(as.character(parameters["Volcano.threshold.pvalue",]))
 
 # Setting if test is paired
 Test.paired <- as.logical(parameters["Test.paired",])
@@ -344,8 +374,6 @@ alternative=as.character(parameters["Test.alternative",])
 # Setting test adjustment procedure
 Test.adjust.procedure <- as.character(parameters["Test.adjust.procedure",])
 
-# Setting adjusted FDR for significance test
-Test.adjust.FDR <- parameters["Test.adjust.FDR",]
 
 ```
 
@@ -400,6 +428,15 @@ kable(expDesign,format="html",col.names = c("File", "repBio", "Condition"),bookt
 kable(parameters,format="html",col.names = NULL,booktabs = T, caption = "Parameters") %>%
           kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
           column_spec(1, bold = T)
+```
+
+```{r parameter_notes, results='asis'}
+
+## Printing the notes about deprecated or ignored parameters ##
+
+if (length(parameter_notes) > 0) {
+  cat(paste(sapply(parameter_notes, function(note) text_spec(paste0("Note: ", note), italic = T, font_size = "12px")), collapse = "<br>"))
+}
 ```
 
 </div>
@@ -1439,7 +1476,7 @@ if(Test.type %in% c("anova","kruskall")){
       pval = summary(anova)[[1]][[1,"Pr(>F)"]]
       
       # Tukey post-hoc correction for pairwise comparison pvalues
-      res <- t(TukeyHSD(x=anova, 'current_protein_intensities$variable', conf.level=1-Volcano.threshold.pvalue)[[1]])[4,]
+      res <- t(TukeyHSD(x=anova, 'current_protein_intensities$variable', conf.level=1-Stat.threshold.significance)[[1]])[4,]
       
     # Kruskal-Wallis Test
     }else if(Test.type=="kruskall"){
@@ -1579,12 +1616,7 @@ for (comparison in comparisons_to_display){
   
   # Adding fc results to statDF
   statDF = merge.data.frame(precv_statDF,totIntensities[,c("Accession",paste0("mean_intensity_",comparison),paste0("fc_",comparison))],by="Accession")
-  
-  # If Fold.change is set to zscore, calculate a z-score of the log2 fold changes
-  if(Fold.Change=="zscore"){
-    statDF$zscore <- scale(log2(statDF[paste0("fc_",comparison)]),center = TRUE, scale = TRUE)
-  }
-  
+
  ######################################################### Compute pvalues #########################################################
   
   # If pvalue_table exists and is not NULL, use the previously calculated Anova/Kruskal pvalues
@@ -1743,7 +1775,7 @@ for (comparison in comparisons_to_display){
     
     # Significance evaluated using adjusted pvalues
     value="qval"
-    procedure_results = mt.rawp2adjp(as.numeric(unlist(statDF[paste0("pval_",comparison)])), proc=Test.adjust.procedure, alpha=Test.adjust.FDR)
+    procedure_results = mt.rawp2adjp(as.numeric(unlist(statDF[paste0("pval_",comparison)])), proc=Test.adjust.procedure, alpha=Stat.threshold.significance)
     qval = data.frame(procedure_results$adjp,procedure_results$index)[order(procedure_results$index),2]
   }else{
     
@@ -1763,8 +1795,8 @@ for (comparison in comparisons_to_display){
   statDF[paste0("significant_",comparison)]<-rep(F, nrow(statDF))
   
   # Initially classify every protein as not significant
-  statDF[paste0("significant_",comparison)][(statDF[paste0(value,"_",comparison)]<=Volcano.threshold.pvalue)
-                                            & (abs(log2(statDF[paste0(Fold.Change,"_",comparison)]))>=Volcano.threshold.fc)] <- T
+  statDF[paste0("significant_",comparison)][(statDF[paste0(value,"_",comparison)]<=Stat.threshold.significance)
+                                            & (abs(log2(statDF[paste0("fc_",comparison)]))>=Stat.threshold.fc)] <- T
   
   ########################## Results displaying ##########################
   
@@ -1838,12 +1870,12 @@ for (comparison in comparisons_to_display){
       # Manually labeling by accession number
       {if(lblng_mnl) ggrepel::geom_text_repel(aes(label = ifelse(current_statDF_MA$Accession %in% prtn_lbl_lst, as.character(current_statDF_MA$Label),'')), 
                                               hjust=1,vjust=-1, size=3, box.padding = .15, max.overlaps = 10000)}+
-      # Volcano.threshold.fc is already expressed as a log2 fold change
-      geom_hline(yintercept=Volcano.threshold.fc,linetype="dashed") +
-      geom_hline(yintercept=-Volcano.threshold.fc,linetype="dashed") +
+      # Stat.threshold.fc is already expressed as a log2 fold change
+      geom_hline(yintercept=Stat.threshold.fc,linetype="dashed") +
+      geom_hline(yintercept=-Stat.threshold.fc,linetype="dashed") +
       ggtitle("MA plot")+
       xlab("log 10(Intensity)")+
-      ylab(paste0('log2(',Fold.Change,')')) +
+      ylab("log2(fc)") +
       theme(legend.position = "right",
         plot.title = element_text(size=22),
         axis.title=element_text(size=24),
@@ -1863,10 +1895,10 @@ for (comparison in comparisons_to_display){
     
     # P-value at which the volcano plot threshold line is drawn. With a multiple-testing correction, significance is decided
     # on the q-values, so the line is drawn at the largest p-value among the proteins with q <= threshold (no line if there is none).
-    # A local variable is used: Volcano.threshold.pvalue must not be modified, as it decides significance for every comparison.
-    volcano_pvalue_line <- Volcano.threshold.pvalue
+    # A local variable is used: Stat.threshold.significance must not be modified, as it decides significance for every comparison.
+    volcano_pvalue_line <- Stat.threshold.significance
     if(Test.adjust.procedure!="none"){
-      significant_df <- subset(current_statDF, !is.na(qval) & qval <= Volcano.threshold.pvalue)
+      significant_df <- subset(current_statDF, !is.na(qval) & qval <= Stat.threshold.significance)
       volcano_pvalue_line <- if (nrow(significant_df) > 0) max(significant_df$pval, na.rm = TRUE) else NA
     }
     
@@ -1893,9 +1925,9 @@ for (comparison in comparisons_to_display){
       {if(!col_sig) geom_point(aes(color=Intensity, alpha = .7),size=pnt_sz)}+
       # Adding pvalue and fc threshold lines
       {if(!is.na(volcano_pvalue_line)) geom_hline(yintercept=-log10(volcano_pvalue_line),linetype="dashed")}+
-      # Volcano.threshold.fc is already expressed as a log2 fold change
-      geom_vline(xintercept=Volcano.threshold.fc,linetype="dashed")+
-      geom_vline(xintercept=-Volcano.threshold.fc,linetype="dashed")+
+      # Stat.threshold.fc is already expressed as a log2 fold change
+      geom_vline(xintercept=Stat.threshold.fc,linetype="dashed")+
+      geom_vline(xintercept=-Stat.threshold.fc,linetype="dashed")+
       # If monochrome mode selected
       {if(monochrome && !col_sig) scale_color_gradient(low = 'lightblue', high = 'blue4')}+
       # If no color scheme, color by intensity
@@ -2207,8 +2239,14 @@ for (comparison in comparisons_to_display){
   stat_to_add <- current_statDF[, stat_cols_to_add, drop = FALSE]
   
   output_t <- merge(output_t, stat_to_add, by = key_col, all = TRUE)
-  output_t$PresentInBoth <- !is.na(output_t$Label)
-  
+
+  # A protein is kept for the statistical analysis of this comparison if it passed the comparison filter (it is in current_statDF).
+  # For the first comparison, the "Label" column is the one of the input table (filled for every protein): it is emptied for the
+  # proteins not kept, as the label columns of the other comparisons are.
+  kept_in_comparison <- output_t[[key_col]] %in% current_statDF[[key_col]]
+  output_t$Label[!kept_in_comparison] <- NA
+  output_t$PresentInBoth <- kept_in_comparison
+
 
   # Get the column index of the column to be moved
   label_index <- which(colnames(output_t) == "Label")
