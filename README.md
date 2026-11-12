@@ -62,6 +62,7 @@ The QC module generates a report providing a global visualization of data qualit
 | keep_empty_rows | Should empty rows be kept in the dataset ? | T / F |
 | format_svg | Choose SVG or PNG format for figure images | SVG / PNG |
 | coloring_by_group | Should figures be colored by group/condition? (WARNING : need to have Experimental Design to use this function) | T / F |
+| Imputation.MNAR.percentile | Percentile (in %) of the observed intensities of each sample used as noise level to impute the missing values (noise model, see 3.2.2.2). Without experimental design, the noise standard deviation is estimated over all the samples taken as one group. 5 if absent | ]0,10] |
 
 <br/>
 

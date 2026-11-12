@@ -227,7 +227,7 @@ if(file.exists(params$design_exp)){
       abundance_repbio = cbind(abundance_repbio,data[as.character(samples_intensities)])
       identification_type_repbio = cbind(identification_type_repbio,data[samples_identification_type])
       
-      colnames(abundance_repbio)[ncol(abundance_repbio)] = paste0("Intensity_Proteome_",sub(" ", "", rBio),"_",group)
+      colnames(abundance_repbio)[ncol(abundance_repbio)] = paste0("Intensity_",sub(" ", "", rBio),"_",group)
       colnames(identification_type_repbio)[ncol(identification_type_repbio)] = paste0("Identification_type_",sub(" ", "", rBio),"_",group)
       sample_conditions <- c(sample_conditions, as.character(group))
       sample_replicates <- c(sample_replicates, as.character(rBio))
@@ -238,7 +238,9 @@ if(file.exists(params$design_exp)){
   data = merge.data.frame(data,abundance_repbio,by="Id")
 }
 sample_names = colnames(data)[grepl("Intensity",names(data))]
-sample_names_parsed = sub("Intensity_Proteome_", "", sample_names)
+# Sample name without the intensity prefix, as in the identification type columns ("Identification_type_<sample>"):
+# ("Intensity_<repBio>_<Condition>" with an experimental design, the input column names otherwise)
+sample_names_parsed = sub("^Intensity_", "", sample_names)
 parameters <- read.csv(params$parameters, header=T, sep="=")
 
 # write.csv(data, "QC_data.csv", row.names = F)
@@ -253,6 +255,17 @@ Normalization = as.logical(parameters["Normalization",])
 keep_empty_rows = as.logical(parameters["keep_empty_rows",])
 format_svg = as.logical(parameters["format_svg",])
 coloring_by_group = as.logical(parameters["coloring_by_group",])
+
+# Percentile (in %) of the observed intensities of each sample used as noise level by the imputation (5 if absent)
+if ("Imputation.MNAR.percentile" %in% rownames(parameters)) {
+  Imputation.MNAR.percentile = suppressWarnings(as.numeric(as.character(parameters["Imputation.MNAR.percentile",])))
+} else {
+  Imputation.MNAR.percentile = 5
+  cat("Note: parameter Imputation.MNAR.percentile is absent, 5 is used.\n", file = stderr())
+}
+if (is.na(Imputation.MNAR.percentile) || Imputation.MNAR.percentile <= 0 || Imputation.MNAR.percentile > 10) {
+  stop("Parameter Imputation.MNAR.percentile must be greater than 0 and at most 10 (%).")
+}
 
 ```
 
@@ -847,7 +860,26 @@ if(exists('normalized_abundance') && is.data.frame(get('normalized_abundance')))
 
 ##Creating data frame for 'Log intensities distribution with imputed values' histogram##
 
-imputed_samples = impute_background_noise_gaussian(data_to_impute)[[3]]
+# Imputation with the noise model of the library (see estimate_noise_model). The noise sd is estimated within conditions when an
+# experimental design is given, and over all the samples (one group) otherwise. If the model cannot be estimated (too few
+# low-intensity proteins), the missing values are replaced by the percentile of each sample.
+has_design_for_imputation <- length(sample_conditions) == ncol(data_to_impute) - 1
+imputation_groups <- if (has_design_for_imputation) sample_conditions else rep("all samples", ncol(data_to_impute) - 1)
+percentile <- Imputation.MNAR.percentile/100
+
+noise_model <- tryCatch(estimate_noise_model(data_to_impute, imputation_groups, percentile), error = function(e) e)
+if (inherits(noise_model, "error")) {
+  imputed_samples = impute_using_noise_percentile(data_to_impute, percentile)
+  imputation_text <- paste0("Missing values are replaced by the ", Imputation.MNAR.percentile, "% percentile of the observed intensities of each sample (the noise model could not be estimated: ",
+                            sub("\\.$", "", sub("^Imputation: ", "", sub(" Use the percentile model.*$", "", conditionMessage(noise_model)))), ").")
+} else {
+  imputed_samples = impute_using_noise_model(data_to_impute, imputation_groups, noise_model, seed = 1)
+  imputation_text <- paste0("Missing values are imputed with the noise model: values are drawn around the noise level of each sample (the ",
+                            Imputation.MNAR.percentile, "% percentile of its observed intensities) with a standard deviation of ",
+                            formatC(noise_model$noise_sd, format = "f", digits = 2), " log2, estimated on ", noise_model$n_rows, " low-intensity protein measurements ",
+                            ifelse(has_design_for_imputation, "within conditions.", "over all the samples taken as one group (no experimental design was given, so the standard deviation may include differences between conditions)."),
+                            " The imputation uses a fixed seed and is reproducible.")
+}
 data = cbind(data,imputed_samples)
 
 #####imputed_samples_log = imputed_samples
@@ -899,7 +931,7 @@ histogram <- ggplot() +
 
 ##Prints explanation of histogram data##
 
-cat(text_spec("\n Missing values are imputed with the gaussian model implemented in the library.",italic=T,font_size="12px"))
+cat(text_spec(paste0("\n ", imputation_text),italic=T,font_size="12px"))
 ```
 </div>
 </div>

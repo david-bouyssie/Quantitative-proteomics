@@ -219,66 +219,6 @@ if(TRUE){
     as.matrix(as.data.frame(lapply(df, function(x) if (is.numeric(x)) as.numeric(x) else as.numeric(as.character(x))), check.names = FALSE))
   }
 
-  # This function impute missing values with background noise using a gaussian model
-  impute_background_noise_gaussian <- function(df){
-    
-    # Input :
-    # df : quantification matrix
-    # Output :
-    # quantification matrix with imputed intensities
-    
-    # Remove "MCAR" annotations from the quantification matrix so numeric functions can work
-    df_without_string = numeric_intensity_matrix(df)
-
-    # Compute 1rst percentile (-> mean of the gaussian model)
-    percentile = 0.01
-    m = as.numeric(quantile(df_without_string[,-1],percentile, na.rm = T))
-    
-    # Compute sd between 1rst and 2nd percentile (-> sd of the gaussian model)
-    min = m
-    max = as.numeric(quantile(df_without_string[,-1],0.02, na.rm = T))
-    intensities = as.numeric(unlist(df_without_string[,-1]))
-    sd_exp = sd(intensities[intensities<=max & intensities>=min & !is.na(intensities)])
-    
-    # Create a gaussian distribution with the computed parameters
-    n = sum(is.na(df))
-    gaussian <- rnorm(2*n,m,sd_exp)
-    
-    # Pull missing values in gaussian distribution
-    imputed_values = c()
-    if(length(gaussian)<30){
-      
-      q1 = quantile(gaussian)[2]
-      q3 = quantile(gaussian)[4]
-      interval = gaussian[gaussian>q1 & gaussian<q3]
-      imputed_values = c(sample(interval,n,replace=T))
-      
-    }else{
-      
-      gaussian = gaussian[gaussian>0]
-      gaussian = sort(gaussian)
-      
-      ## Compute proportion of NA to pull in each interval
-      interval_size = (max(gaussian)-min(gaussian))/21
-      i=min(gaussian)
-      while(i<max(gaussian)){
-        interval = gaussian[gaussian>=i&gaussian<i+interval_size]
-        percentage = length(interval)/length(gaussian)
-        imputed_values = c(imputed_values,sample(interval,ceiling(percentage*n),replace=T))
-        i = i+interval_size
-      }
-    }
-    
-    #Replace missing values in data
-    df[is.na(df)] <- sample(imputed_values,length(df[is.na(df)]),replace=F)
-    colnames(df)[2:ncol(df)] = paste0(colnames(df)[2:ncol(df)],"_imputed")
-    
-    results = list(m,sd_exp,df)
-    
-    return(results)
-    
-  }
-  
   # This function impute missing values with background noise using a percentile.
   impute_using_noise_percentile <- function(df,per){
     
