@@ -297,6 +297,13 @@ compute_cv <- function(intensity_matrix){
 # Imputation #
 ##############
 if(TRUE){
+  # Converts a table whose cells may contain the "MCAR" marker (cells deliberately left missing) to a numeric matrix.
+  # data.matrix() must not be used here: it turns character columns into factor codes.
+  numeric_intensity_matrix <- function(df){
+    df[df=="MCAR"] <- NA
+    as.matrix(as.data.frame(lapply(df, function(x) as.numeric(as.character(x))), check.names = FALSE))
+  }
+
   # This function impute missing values with background noise using a gaussian model
   impute_background_noise_gaussian <- function(df){
     
@@ -306,10 +313,8 @@ if(TRUE){
     # quantification matrix with imputed intensities
     
     # Remove "MCAR" annotations from the quantification matrix so numeric functions can work
-    df_without_string = df
-    df_without_string[df_without_string=="MCAR"] <- NA
-    df_without_string = data.matrix(df_without_string)
-    
+    df_without_string = numeric_intensity_matrix(df)
+
     # Compute 1rst percentile (-> mean of the gaussian model)
     percentile = 0.01
     m = as.numeric(quantile(df_without_string[,-1],percentile, na.rm = T))
@@ -370,9 +375,7 @@ if(TRUE){
     
     for(col in colnames(df)[-1]){
       current_intensities = df[col]
-      df_without_string = current_intensities
-      df_without_string[df_without_string=="MCAR"] <- NA
-      df_without_string = data.matrix(df_without_string)
+      df_without_string = numeric_intensity_matrix(current_intensities)
       percentile = as.numeric(quantile(df_without_string,per, na.rm = T))
       current_intensities[is.na(current_intensities)] <- percentile
       df[col] = current_intensities
