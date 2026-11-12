@@ -85,7 +85,7 @@ Here you can find a description of all parameters and possible values:
 | Filter.threshold.ms | Minimum number of file identified by MS/MS to keep the protein for the analysis | ℕ |
 | Filter.threshold.obs | Minimum percentage of observed intensities in one condition at least to keep the protein for the analysis | {0,100} |
 | Imputation.MNAR.model | Which model should be used to impute MNAR ? | percentile / gaussian |
-| Imputation.MNAR.percentile | Which percentile should be used for the "percentile" imputation model ? | {0,1} |
+| Imputation.MNAR.percentile | Percentile (in %) of the observed intensities of each sample: imputed value for the "percentile" model, noise level for the "gaussian" model (which requires a value greater than 0 and at most 10) | Example : 5 |
 | Imputation.MCAR.model | Which model should be used to impute MCAR ? | none / MNAR / knn |
 | Imputation.MCAR.threshold.obs | Minimum number of observed intensities in a condition to classify the missing values as MCAR | {0, number of replicates} |
 | Imputation.MCAR.threshold.MSMS | Minimum number of file identified by MS/MS in a condition to classify the missing values as MCAR | {0, number of replicates} |
@@ -112,20 +112,29 @@ Here you can find a description of all parameters and possible values:
 The module gives as outputs a TSV table summarizing input data, intensities after each step of processing and final results of statistical results. A report containg QC figures for each processing step and figures showing the results of differential analysis is also provided (see _Example/Reports/DA_proteins__set.html_).
 <br/>
 
-##### 3.2.2.1. Imputation model description
+##### 3.2.2.1. Processing steps
+
+The intensities are processed in this order:
+1. **Global filter.** A protein is kept for the analysis if it is identified by MS/MS in at least `Filter.threshold.ms` files and observed in at least `Filter.threshold.obs` of the replicates of at least one condition (all conditions considered).
+2. **Normalization.** Each sample is divided by the median of its ratios to a reference sample (equivalently, the median log2 ratio is subtracted on the log2 scale). The reference is the sample with the fewest missing values. The medians are computed on the proteins kept by the global filter, or on the proteins given in `Proteins.for.normalization`, and the factors are applied to all the proteins.
+3. **Imputation.** Missing values are imputed once, for the proteins kept by the global filter only (the other proteins keep their missing values in the output table). The imputation uses a fixed seed, so two runs on the same data give the same values.
+4. **Comparisons.** For each comparison, the same filter is applied again to the two compared conditions only, then the test is computed.
+
+##### 3.2.2.2. Imputation model description
 
 Three differents missing values imputation are available :
 - Percentile-based
-- Gaussian-based
+- Gaussian-based (noise model)
 - KNN-based
 <br/>
-The percentile-based model consists in replacing missing values by a chosen percentile of the distribution of intensities in each sample.
+The percentile-based model consists in replacing missing values by a chosen percentile (`Imputation.MNAR.percentile`) of the distribution of intensities in each sample.
 <br/>
-The gaussian-based model consists in replacing missing values by values pulled in a gaussian simulation. The precise working of this model is described below: <br/>
+The gaussian-based model (`Imputation.MNAR.model=gaussian`) replaces missing values by values drawn around the background noise level of each sample. It works on log2 intensities:
+- The noise level of a sample is the `Imputation.MNAR.percentile` percentile of its observed intensities (it must be greater than 0 and at most 10; 5 in the example).
+- The noise standard deviation is estimated on the data: it is the pooled within-condition standard deviation of the proteins whose mean intensity in a condition lies between this percentile and the 25th percentile of all the observed intensities (at least 2 observed values in the condition). At least 100 such protein/condition measurements are required.
+- For each protein and each condition with at least one missing value, one value per sample of the condition is drawn around the noise level of the sample, in such a way that the standard deviation of the drawn set is exactly the noise standard deviation and that no value is further than 2 standard deviations. The observed values are kept, and only the missing ones are replaced.
 
-![Alt text](Images/Gaussian_model.PNG?raw=true "Title")
-_Soit n le nombre de valeurs manquantes à imputer. Soit p1 et p2 les 1er et 2nd percentiles de la distribution des intensités observées dans la totalité des échantillons (A). 
-Dans un premier temps, une distribution gaussienne de médiane p1, d’écart-type celui des intensités observées comprises entre p1 et p2, et de taille 2n est simulée (B). Après suppression des valeurs négatives, cette simulation est ensuite divisée en 21 classes (C). Le nombre de valeurs manquantes tirées aléatoirement dans chacune des classes est alors proportionnel au nombre de valeurs de la simulation contenues dans chacune de ces classes (C)._
+A condition where a protein is entirely missing therefore gets values with a realistic variability, and not nearly identical values.
 
 
 <br/>

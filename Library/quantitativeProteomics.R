@@ -101,157 +101,72 @@ validate_inputs <- function(data, expDesign, comparisons = NULL, derived_suffixe
 # Normalization #
 #################
 
-# This function normalize intensities using the “probabilistic quotient normalization” method (Dieterle et al, 2006).
-normalize <- function(df, reference_sample, method = "pqn"){
-  
+# Normalization by the median of ratios to a reference sample: each sample is divided by the median of its ratios
+# to the reference sample (equivalently, the median log2 ratio is subtracted on the log2 scale).
+# normalize() is the entry point; the helpers below are the steps, kept separate for testing and QC.
+
+# Converts the sample columns of a table to a numeric matrix (same column names)
+numeric_sample_matrix <- function(df){
+  mat <- do.call(cbind, lapply(df, function(x) if (is.numeric(x)) as.numeric(x) else as.numeric(as.character(unlist(x)))))
+  colnames(mat) <- colnames(df)
+  mat
+}
+
+# Returns the name of the reference sample: the (first) sample with the fewest missing values
+choose_reference_sample <- function(mat){
+  mat <- as.matrix(mat)
+  colnames(mat)[which.min(colSums(is.na(mat)))]
+}
+
+# Returns the matrix of the ratios sample / reference, protein by protein (the reference column is 1 where it is observed)
+compute_ratios <- function(mat, reference){
+  if (!reference %in% colnames(mat)) stop("Normalization: reference sample '", reference, "' not found in the intensity columns.")
+  mat / mat[, reference]
+}
+
+# Returns the normalization factor of each sample: the median of its ratios to the reference (1 for the reference).
+# rows : optional subset of the proteins used to compute the factors (logical vector or row indices)
+compute_norm_factors <- function(ratios, rows = NULL){
+  if (!is.null(rows)) ratios <- ratios[rows, , drop = FALSE]
+  factors <- apply(ratios, 2, median, na.rm = TRUE)
+  bad <- names(factors)[is.na(factors) | !is.finite(factors) | factors <= 0]
+  if (length(bad) > 0) {
+    stop("Normalization: no usable ratio to the reference sample for ", paste(bad, collapse = ", "),
+         " (no protein quantified in both samples among the proteins used for normalization).")
+  }
+  factors
+}
+
+# Divides each sample by its normalization factor
+apply_norm_factors <- function(mat, factors){
+  sweep(mat, 2, factors[colnames(mat)], "/")
+}
+
+normalize <- function(df, reference_sample, rows = NULL){
+
   # Inputs :
   # df : quantification matrix whom 1rst column contains proteins id
   # reference_sample : name of the column corresponding to the reference sample
+  # rows : optional subset of the proteins used to compute the normalization factors (logical vector or row indices);
+  #        the factors are applied to all the proteins
   # Output :
-  # dataframe containing the ratio values for each sample, and the normalized quantification matrix
-  
-  # Initialize results dataframe
-  ratio_names = paste0(colnames(df)[!colnames(df)%in%colnames(df)[1] & !colnames(df)%in%reference_sample],"_ratio_",reference_sample)
-  norm_names = paste0(colnames(df)[-1],"_norm")
-  normalized_data = data.frame(matrix(vector(),
-                                      nrow(df),
-                                      (length(ratio_names)+length(norm_names)+1),
-                                      dimnames = list(c(), c("Id",ratio_names,norm_names) )),
-                               check.names=FALSE)
-  
-  # Compute ratios
-  normalized_data$Id <- df[[1]]
-  reference_intensities = as.numeric(as.vector(unlist(df[as.character(reference_sample)])))
-  for (sample in colnames(df)[-1]){
-    if(sample!=reference_sample){
-      normalized_data[paste0(sample,"_ratio_",reference_sample)]<-as.numeric(as.vector(unlist(df[as.character(sample)])))/reference_intensities
-    }
-  }
-  
-  if (method == "pqn"){
-    # Compute median of ratios
-    ratios = normalized_data[grepl("_ratio_",colnames(normalized_data))]
-    median_ratios = sapply(ratios, median, na.rm=T)
+  # dataframe containing the ratio values for each sample ("<sample>_ratio_<reference>"), and the normalized
+  # quantification matrix ("<sample>_norm"). The normalization factors are returned in the "norm_factors" attribute.
 
-    # Median removal
-    i=1
-    for (sample in colnames(df)[-1]){
-      if(sample==reference_sample){
-        normalized_data[paste0(reference_sample,"_norm")]<-reference_intensities
-      }else{
-        normalized_data[paste0(sample,"_norm")]<-as.numeric(as.vector(unlist(df[as.character(sample)])))/median_ratios[i]
-        i=i+1
-      }
-    }
-  }else{
-    # Compute median of ratios
-    ratios = normalized_data[grepl("_ratio_",colnames(normalized_data))]
-    mean_ratios = sapply(ratios, mean, na.rm=T)
-    
-    # Compute the normalized data
-    i=1
-    # mean_ref <- mean(as.numeric(as.vector(unlist(df[as.character(reference_sample)]))), na.rm = T)
-    for (sample in colnames(df)[-1]){
-      if(sample==reference_sample){
-        normalized_data[paste0(reference_sample,"_norm")]<-reference_intensities
-      }else{
-        # normalized_data[paste0(sample,"_norm")]<-as.numeric(as.vector(unlist(df[as.character(sample)])))/normalized_data[paste0(sample,"_ratio_",reference_sample)]
-        # normalized_data[paste0(sample,"_norm")]<-normalized_data[paste0(sample,"_ratio_",reference_sample)] * mean_ref
-        normalized_data[paste0(sample,"_norm")]<-as.numeric(as.vector(unlist(df[as.character(sample)]))) * mean_ratios[i]
-        i=i+1
-      }
-    }
-  }
-  
+  mat <- numeric_sample_matrix(df[-1])
+  ratios <- compute_ratios(mat, reference_sample)
+  factors <- compute_norm_factors(ratios, rows)
+  normalized <- apply_norm_factors(mat, factors)
+
+  others <- colnames(mat) != reference_sample
+  normalized_data <- data.frame(df[[1]], ratios[, others, drop = FALSE], normalized, check.names = FALSE)
+  colnames(normalized_data) <- c("Id", paste0(colnames(mat)[others], "_ratio_", reference_sample), paste0(colnames(mat), "_norm"))
+  attr(normalized_data, "norm_factors") <- factors
+
   return(normalized_data)
-  
+
 }
 
-###################
-#New Normalization#
-###################
-
-## 1) Normalization Factors ##
-
-norm_factors <- function(subdf, reference_sample){
-  # Initialize results dataframe
-  ratio_names = paste0(colnames(subdf)[!colnames(subdf)%in%colnames(subdf)[1] & !colnames(subdf)%in%reference_sample],"_ratio_",reference_sample)
-  norm_names = paste0(colnames(subdf)[-1],"_norm")
-  normalized_data = data.frame(matrix(vector(),
-                                      nrow(subdf),
-                                      (length(ratio_names)+length(norm_names)+1),
-                                      dimnames = list(c(), c("Id",ratio_names,norm_names) )),
-                               check.names=FALSE)
-  
-  # Compute ratios
-  normalized_data$Id = subdf[[1]]
-  reference_intensities = as.numeric(as.vector(unlist(subdf[as.character(reference_sample)])))
-  for (sample in colnames(subdf)[-1]){
-    if(sample!=reference_sample){
-      normalized_data[paste0(sample,"_ratio_",reference_sample)]<-as.numeric(as.vector(unlist(subdf[as.character(sample)])))/reference_intensities
-    }
-  }
-  
-  # Compute median of ratios
-  ratios = normalized_data[grepl("_ratio_",colnames(normalized_data))]
-  median_ratios = sapply(ratios, median, na.rm=T)
-
-  return(median_ratios)
-}
-
-## 2) Create Dataframe ##
-
-normdf <- function(raw_abundance, reference_sample){
-  # Initialize results dataframe
-  ratio_names = paste0(colnames(raw_abundance)[!colnames(raw_abundance)%in%colnames(raw_abundance)[1] & !colnames(raw_abundance)%in%reference_sample],"_ratio_",reference_sample)
-  norm_names = paste0(colnames(raw_abundance)[-1],"_norm")
-  normalized_df = data.frame(matrix(vector(),
-                                    nrow(raw_abundance),
-                                    (length(ratio_names)+length(norm_names)+1),
-                                    dimnames = list(c(), c("Id",ratio_names,norm_names) )),
-                             check.names=FALSE)
-  
-  # Compute ratios
-  normalized_df$Id = raw_abundance[[1]]
-  reference_intensities = as.numeric(as.vector(unlist(raw_abundance[as.character(reference_sample)])))
-  for (sample in colnames(raw_abundance)[-1]){
-    if(sample!=reference_sample){
-      normalized_df[paste0(sample,"_ratio_",reference_sample)]<-as.numeric(as.vector(unlist(raw_abundance[as.character(sample)])))/reference_intensities
-    }
-  }
-  
-  return(normalized_df)
-}
-
-## 3) Application ##
-
-norm_app <- function(df, median_ratios, reference_intensities, normalized_data, raw_abundance, reference_sample){
-  # Median removal
-  i=1
-  for (sample in colnames(df)[-1]){
-    if(sample==reference_sample){
-      normalized_data[paste0(reference_sample,"_norm")]<-raw_abundance[reference_sample]
-    }else{
-      normalized_data[paste0(sample,"_norm")]<-as.numeric(as.vector(unlist(df[as.character(sample)])))/median_ratios[i]
-      i=i+1
-    }
-  }
-  
-  return(normalized_data)
-}
-
-## Aux Function ##
-
-new_normalization <- function(sub_df, raw_abundance, reference_sample){
-  med <- norm_factors(sub_df, reference_sample)
-  
-  normalized_df <- normdf(raw_abundance, reference_sample)
-  
-  reference_intensities = as.numeric(as.vector(unlist(sub_df[as.character(reference_sample)])))
-  normalized_data <- norm_app(raw_abundance, med, reference_intensities, normalized_df, raw_abundance, reference_sample)
-  
-  return(normalized_data)
-}
 
 
 ######
@@ -301,7 +216,7 @@ if(TRUE){
   # data.matrix() must not be used here: it turns character columns into factor codes.
   numeric_intensity_matrix <- function(df){
     df[df=="MCAR"] <- NA
-    as.matrix(as.data.frame(lapply(df, function(x) as.numeric(as.character(x))), check.names = FALSE))
+    as.matrix(as.data.frame(lapply(df, function(x) if (is.numeric(x)) as.numeric(x) else as.numeric(as.character(x))), check.names = FALSE))
   }
 
   # This function impute missing values with background noise using a gaussian model
@@ -365,7 +280,7 @@ if(TRUE){
   }
   
   # This function impute missing values with background noise using a percentile.
-  impute_background_noise_percentile <- function(df,per){
+  impute_using_noise_percentile <- function(df,per){
     
     # Input :
     # df : quantification matrix whom 1rst column contains protein id
@@ -514,6 +429,124 @@ if(TRUE){
   }
 }
 
+
+###############
+# Noise model #
+###############
+
+# Draws k standard values with a mean of exactly 0 and a sd of exactly 1, all within +/- cutoff (0 when k = 1).
+# Single draws beyond the cutoff are redrawn, and the whole set is redrawn if a value is beyond the cutoff after standardization.
+draw_exact_sd <- function(k, cutoff = 2){
+  if (k == 1) return(0)
+  repeat {
+    z <- rnorm(k)
+    while (any(far <- abs(z) > cutoff)) z[far] <- rnorm(sum(far))
+    z <- z - mean(z)
+    z <- z / sd(z)
+    if (all(abs(z) <= cutoff)) return(z)
+  }
+}
+
+# Returns the log2 intensities of a quantification matrix (linear intensities, 1rst column = protein id).
+# Non-positive intensities and cells holding the "MCAR" marker are missing values.
+log2_intensity_matrix <- function(df){
+  linear <- numeric_intensity_matrix(df[-1]); colnames(linear) <- colnames(df)[-1]
+  linear[!is.na(linear) & linear <= 0] <- NA
+  log2(linear)
+}
+
+# This function estimates the background noise model used to impute missing values (MNAR), on the log2 scale.
+# - Noise level of a sample: the given percentile of its observed values.
+# - Noise sd: pooled within-condition sd of the protein-condition rows with at least 2 observed values whose mean lies
+#   between the given percentile and the upper percentile (25%) of all the observed values.
+estimate_noise_model <- function(df, groups, percentile, rows = NULL, upper_percentile = 0.25, min_rows = 100){
+
+  # Inputs :
+  # df : quantification matrix (linear intensities) whom 1rst column contains protein id
+  # groups : condition of each sample column (same order as the columns of df, without the id column)
+  # percentile : percentile of the noise level, as a fraction (0 < percentile <= 0.10)
+  # rows : proteins used to estimate the model (logical vector, default: all)
+  # Output :
+  # list(noise_level (log2, per sample), noise_sd (log2), n_rows (protein-condition rows used for the sd), range (log2 bounds of these rows))
+
+  if (is.na(percentile) || percentile <= 0 || percentile > 0.10) {
+    stop("Imputation.MNAR.percentile must be greater than 0 and at most 10 (%) for the noise model.", call. = FALSE)
+  }
+  groups <- as.character(groups)
+  if (length(groups) != ncol(df) - 1) stop("estimate_noise_model: 'groups' must give the condition of each sample column.")
+  if (is.null(rows)) rows <- rep(TRUE, nrow(df))
+  kept <- log2_intensity_matrix(df)[rows, , drop = FALSE]
+
+  # Noise level of each sample
+  noise_level <- apply(kept, 2, function(x) if (all(is.na(x))) NA else quantile(x, percentile, na.rm = TRUE, names = FALSE))
+  if (any(is.na(noise_level))) {
+    stop("Imputation: no observed value in sample(s) ", paste(colnames(kept)[is.na(noise_level)], collapse = ", "), " among the proteins kept for the analysis.", call. = FALSE)
+  }
+
+  # Noise sd: pooled within-condition sd of the low-intensity protein-condition rows
+  stats <- do.call(rbind, lapply(unique(groups), function(g){
+    Y <- kept[, groups == g, drop = FALSE]
+    n <- rowSums(!is.na(Y)); ok <- n >= 2
+    m <- rowMeans(Y[ok, , drop = FALSE], na.rm = TRUE)
+    data.frame(mean = m, ss = rowSums((Y[ok, , drop = FALSE] - m)^2, na.rm = TRUE), df = n[ok] - 1)
+  }))
+  range <- quantile(kept[!is.na(kept)], c(percentile, upper_percentile), names = FALSE)
+  in_range <- stats$mean >= range[1] & stats$mean <= range[2]
+  if (sum(in_range) < min_rows) {
+    stop("Imputation: only ", sum(in_range), " low-intensity protein/condition rows with at least 2 observed values are available to estimate the noise sd (at least ",
+         min_rows, " are needed). Use the percentile model, or disable the imputation.", call. = FALSE)
+  }
+
+  list(noise_level = noise_level, noise_sd = sqrt(sum(stats$ss[in_range]) / sum(stats$df[in_range])), n_rows = sum(in_range), range = range)
+}
+
+# This function imputes missing values with background noise, using a model returned by estimate_noise_model().
+# For each protein and condition with at least one missing value, a set of values is drawn for all the samples of the condition
+# around their noise levels, with a sd of exactly the noise sd (see draw_exact_sd), and the observed values are kept.
+impute_using_noise_model <- function(df, groups, noise_model, rows = NULL, seed = 1, cutoff = 2){
+
+  # Inputs :
+  # df : quantification matrix (linear intensities) whom 1rst column contains protein id. Cells holding the "MCAR" marker are left missing.
+  # groups : condition of each sample column (same order as the columns of df, without the id column)
+  # noise_model : model returned by estimate_noise_model() for the same matrix
+  # rows : proteins to impute (logical vector, default: all); the other proteins are returned unchanged
+  # seed : seed of the random generator (the imputation is reproducible; the state of the generator is restored afterwards)
+  # Output :
+  # quantification matrix with imputed intensities ("_imputed" columns)
+
+  groups <- as.character(groups)
+  if (length(groups) != ncol(df) - 1) stop("impute_using_noise_model: 'groups' must give the condition of each sample column.")
+  if (is.null(rows)) rows <- rep(TRUE, nrow(df))
+
+  left_missing <- as.matrix(df[-1] == "MCAR"); left_missing[is.na(left_missing)] <- FALSE
+  X <- log2_intensity_matrix(df)
+  noise_level <- noise_model$noise_level[colnames(X)]
+
+  # Imputation, with a fixed seed (the state of the random generator is restored afterwards)
+  old_seed <- if (exists(".Random.seed", envir = globalenv())) get(".Random.seed", envir = globalenv()) else NULL
+  on.exit(if (is.null(old_seed)) suppressWarnings(rm(".Random.seed", envir = globalenv())) else assign(".Random.seed", old_seed, envir = globalenv()))
+  set.seed(seed)
+  imputed <- X
+  to_impute <- is.na(X) & !left_missing
+  for (g in unique(groups)) {
+    s <- which(groups == g)
+    for (i in which(rows & rowSums(to_impute[, s, drop = FALSE]) > 0)) {
+      full <- noise_level[s] + noise_model$noise_sd * draw_exact_sd(length(s), cutoff)
+      miss <- to_impute[i, s]
+      imputed[i, s[miss]] <- full[miss]
+    }
+  }
+
+  # Back to linear intensities; the observed values are returned exactly as given
+  linear <- numeric_intensity_matrix(df[-1])
+  out <- 2^imputed
+  observed <- !is.na(linear) & linear > 0
+  out[observed] <- linear[observed]
+  table <- data.frame(df[[1]], out, check.names = FALSE)
+  colnames(table) <- c(colnames(df)[1], paste0(colnames(df)[-1], "_imputed"))
+
+  return(table)
+}
 
 ###########
 # Heatmap #

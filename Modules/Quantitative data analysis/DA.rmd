@@ -408,46 +408,6 @@ kable(parameters,format="html",col.names = NULL,booktabs = T, caption = "Paramet
 <br>
 
 
-```{r normalization}
-
-## If the normalization T, parsing for the normalization plots ##
-
-if (normalization){
-  
-  # Write.csv(data, "data")
-  raw_abundance = data[c("Id",as.character(expDesign$File))]
-  
-  # If list of proteins to normalize to is specified, create a subset
-  if(length(Normalization_list) > 0){
-    sub_df <- subset(raw_abundance, raw_abundance$Id%in%Normalization_list)
-  }
-  
-  # Find the sample with the least NA
-  na_count_by_sample = unname(colSums(is.na(as.matrix(raw_abundance[,-1]))))
-  na_by_sample = data.frame(na_count_by_sample,colnames(raw_abundance[,-1]))
-  reference_sample = as.character(subset(na_by_sample,na_by_sample$na_count_by_sample==min(na_by_sample$na_count_by_sample))[,2][1])
-  
-  # Normalization
-  # If list of proteins to normalize to is specified, normalize to this subset
-  if(length(Normalization_list) > 0){
-    normalized_abundance = new_normalization(sub_df, raw_abundance, reference_sample)
-  }
-  # Else, normalize to all proteins in the reference sample (least NA values)
-  else{
-    normalized_abundance = normalize(raw_abundance,reference_sample)
-  }
-  
-  # Merging normalized values with data, and creating normalized_abundance var
-  data = merge.data.frame(data,normalized_abundance,by="Id")
-  normalized_abundance = normalized_abundance[,grepl("_norm",colnames(normalized_abundance))]
-  
-  pattern="_norm"
-}else{
-  pattern=""
-}
-
-```
-
 ```{r group_definition, results='asis'}
 
 ## Parsing to group samples based on the experimental design input file ##
@@ -507,59 +467,62 @@ if(coloring_by_group){
 
 ```
 
-```{r mean_technical_replicates, results='asis'}
+```{r mean_technical_replicates_function}
 
-## Parsing of sample data into created group_ids list.  Combining technical replicates into biological-replicate-level means ##
+## Combining technical replicates into biological-replicate-level means ##
 
-# Creating data frame containing ID - from data - for mean_abundance
-mean_abundance_repbio = data.frame(data$Id)
-colnames(mean_abundance_repbio) = "Id"
+# Returns the bio-rep level tables computed from the intensity columns "<File><suffix>" of the quantification table:
+# [[1]] abundance ("<repBio>_<Condition>_mean" columns), [[2]] identification type ("<repBio>_<Condition>_identification_type" columns)
+average_technical_replicates <- function(data, suffix){
 
-# Creating data frame containing ID - from data - for mean_identification_type
-mean_identification_type_repbio = data.frame(data$Id)
-colnames(mean_identification_type_repbio) = "Id"
+  # Creating data frame containing ID - from data - for mean_abundance
+  mean_abundance_repbio = data.frame(data$Id)
+  colnames(mean_abundance_repbio) = "Id"
 
-# Looping over each experimental condition or "group"
-for(group in group_ids){
-  
-  # Taking the subset of experimental design associated with this condition
-  sub = subset(expDesign,expDesign$Condition==group)
-  
-  # Looping over each replicate within this condition
-  for (rBio in unique(sub$repBio)){
-    
-    # Getting intensity columns and converting their names to the corresponding identification type column names
-    samples_intensities = subset(sub,sub$repBio==rBio)$File
-    samples_identification_type = paste0("Identification_type",sub("Intensity","",samples_intensities))
-    
-    # if a bio-rep contains multiple technical replicates
-    if(length(samples_intensities)>1){
-      
-      # Average the abundance/intensity values, and appending then to the end of bio-rep table
-      mean_ab = rowMeans(data[paste0(as.character(samples_intensities),pattern)],na.rm=T)
-      mean_abundance_repbio = cbind(mean_abundance_repbio,mean_ab)
-      
-      # Collapsing identification types across technical replicates, if not classified as "By MS/MS" classify as "By matching".
-      id_type = apply(data[samples_identification_type],1,function(x) ifelse("By MS/MS"%in%x,"By MS/MS","By matching"))
-      mean_identification_type_repbio = cbind(mean_identification_type_repbio,id_type)
-      
-    }else{ # If a bio-rep has only one technical replicate
-      
-      # Copying original abundance/intensity column
-      mean_abundance_repbio = cbind(mean_abundance_repbio,data[paste0(as.character(samples_intensities),pattern)])
-      mean_identification_type_repbio = cbind(mean_identification_type_repbio,data[samples_identification_type])
-      
+  # Creating data frame containing ID - from data - for mean_identification_type
+  mean_identification_type_repbio = data.frame(data$Id)
+  colnames(mean_identification_type_repbio) = "Id"
+
+  # Looping over each experimental condition or "group"
+  for(group in group_ids){
+
+    # Taking the subset of experimental design associated with this condition
+    sub = subset(expDesign,expDesign$Condition==group)
+
+    # Looping over each replicate within this condition
+    for (rBio in unique(sub$repBio)){
+
+      # Getting intensity columns and converting their names to the corresponding identification type column names
+      samples_intensities = subset(sub,sub$repBio==rBio)$File
+      samples_identification_type = paste0("Identification_type",sub("Intensity","",samples_intensities))
+
+      # if a bio-rep contains multiple technical replicates
+      if(length(samples_intensities)>1){
+
+        # Average the abundance/intensity values, and appending then to the end of bio-rep table
+        mean_ab = rowMeans(data[paste0(as.character(samples_intensities),suffix)],na.rm=T)
+        mean_abundance_repbio = cbind(mean_abundance_repbio,mean_ab)
+
+        # Collapsing identification types across technical replicates, if not classified as "By MS/MS" classify as "By matching".
+        id_type = apply(data[samples_identification_type],1,function(x) ifelse("By MS/MS"%in%x,"By MS/MS","By matching"))
+        mean_identification_type_repbio = cbind(mean_identification_type_repbio,id_type)
+
+      }else{ # If a bio-rep has only one technical replicate
+
+        # Copying original abundance/intensity column
+        mean_abundance_repbio = cbind(mean_abundance_repbio,data[paste0(as.character(samples_intensities),suffix)])
+        mean_identification_type_repbio = cbind(mean_identification_type_repbio,data[samples_identification_type])
+
+      }
+
+      # Renaming most recent mean abundance column to include "_mean" and identification column to include "_identification_type"
+      colnames(mean_abundance_repbio)[ncol(mean_abundance_repbio)] = paste0(rBio,"_",group,"_mean")
+      colnames(mean_identification_type_repbio)[ncol(mean_identification_type_repbio)] = paste0(rBio,"_",group,"_identification_type")
     }
-    
-    # Renaming most recent mean abundance column to include "_mean" and identification column to include "_identification_type"
-    colnames(mean_abundance_repbio)[ncol(mean_abundance_repbio)] = paste0(rBio,"_",group,"_mean")
-    colnames(mean_identification_type_repbio)[ncol(mean_identification_type_repbio)] = paste0(rBio,"_",group,"_identification_type")
   }
-}
 
-# Adding mean_abundance and mean_identification_type columns to main data set
-data = merge.data.frame(data,mean_abundance_repbio,by="Id")
-data = merge.data.frame(data,mean_identification_type_repbio,by="Id")
+  return(list(mean_abundance_repbio, mean_identification_type_repbio))
+}
 ```
 
 
@@ -665,6 +628,92 @@ filter_dataset <- function(data, group_ids){
 
 <br>
 <div id="banner">
+# **Global Data filtering**
+</div>
+<br>
+
+
+```{r global_filter}
+
+## The global filter is applied first: the normalization factors and the imputation model are then computed on the proteins kept for the analysis. ##
+## The filter only depends on which values are observed, so it gives the same result on the raw and on the normalized intensities. ##
+
+raw_replicates <- average_technical_replicates(data, "")
+global_filtering <- filter_dataset(merge.data.frame(data, raw_replicates[[1]], by="Id"), group_ids)
+
+# Ids of the proteins kept for the analysis
+kept_ids <- global_filtering[[1]]$Id
+
+# Creating table for filtering summary
+kable(global_filtering[[3]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
+            kable_styling(bootstrap_options="condensed",full_width = F,position = "center") %>%
+            column_spec(1, bold = T)
+
+# Printing filtering barplot into output report
+if (format_svg) {
+  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 12, 7))
+} else {
+  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 1200, 800))
+}
+
+```
+
+
+```{r normalization}
+
+## Normalization by the median of ratios to a reference sample. The normalization factors are computed on the proteins kept ##
+## for the analysis, or on the proteins given in Proteins.for.normalization, and applied to all the proteins. ##
+
+if (normalization){
+
+  raw_abundance = data[c("Id",as.character(expDesign$File))]
+  kept_rows <- raw_abundance$Id %in% kept_ids
+
+  # Proteins used to compute the normalization factors
+  Normalization_list <- Normalization_list[!is.na(Normalization_list)]
+  if(length(Normalization_list) > 0){
+    normalization_rows <- raw_abundance$Id %in% Normalization_list
+    if(!any(normalization_rows)){
+      stop("None of the proteins given in Proteins.for.normalization was found in the Id column of the quantification table.")
+    }
+  }else{
+    normalization_rows <- kept_rows
+  }
+
+  # Reference sample: the sample with the fewest missing values among the proteins kept for the analysis
+  reference_sample = choose_reference_sample(numeric_sample_matrix(raw_abundance[kept_rows, -1]))
+
+  # Normalization (the factors are returned in the "norm_factors" attribute)
+  normalized_abundance = normalize(raw_abundance, reference_sample, rows = normalization_rows)
+  normalization_factors <- attr(normalized_abundance, "norm_factors")
+
+  # Merging normalized values with data, and creating normalized_abundance var
+  data = merge.data.frame(data,normalized_abundance,by="Id")
+  normalized_abundance = normalized_abundance[,grepl("_norm",colnames(normalized_abundance))]
+
+  pattern="_norm"
+}else{
+  pattern=""
+}
+
+```
+
+```{r mean_technical_replicates, results='asis'}
+
+## Parsing of sample data into created group_ids list.  Combining technical replicates into biological-replicate-level means ##
+
+replicates <- average_technical_replicates(data, pattern)
+mean_abundance_repbio = replicates[[1]]
+mean_identification_type_repbio = replicates[[2]]
+
+# Adding mean_abundance and mean_identification_type columns to main data set
+data = merge.data.frame(data,mean_abundance_repbio,by="Id")
+data = merge.data.frame(data,mean_identification_type_repbio,by="Id")
+```
+
+
+<br>
+<div id="banner">
 # **Normalization**
 </div>
 <br>
@@ -741,7 +790,10 @@ if (normalization){
   }
 
   # Printing explanation of normalization methods into html doc
-  cat(text_spec(paste0("\n Normalization method : each intensity is expressed relatively to a reference intensity, as a ratio of intensities. Intensities of the sample with the lowest number of missing values (",reference_sample,") are used as reference intensities. Intensities are then centered by substracting the median of the ratios for each sample."),italic=T,font_size="12px"))
+  cat(text_spec(paste0("\n Normalization method : each sample is divided by the median of its ratios to a reference sample (equivalently, the median log2 ratio is subtracted on the log2 scale). The reference is the sample with the lowest number of missing values (",
+                       reference_sample,"). The medians were computed on ", sum(normalization_rows),
+                       ifelse(length(Normalization_list) > 0, " proteins given in Proteins.for.normalization", " proteins kept for the analysis"),
+                       ". Normalization factors range from ", formatC(min(normalization_factors), format = "f", digits = 3), " to ", formatC(max(normalization_factors), format = "f", digits = 3), "."),italic=T,font_size="12px"))
 
 }else{
 
@@ -927,18 +979,33 @@ if(imputation_method != "MNAR"){
 # If MCAR IMPUTATION parameter is set to MNAR, data is taken for either the Gaussian or Percentile models
 intensities_to_impute = data[c("Id", group_cols(group_ids, pattern, colnames(data)))]
 
-# Imputing Gaussian or Percentile models per parameter
+# The imputation is done once, on the proteins kept by the global filter: the model is estimated on these proteins only,
+# and the other proteins keep their observed values and their missing values
+kept_rows <- intensities_to_impute$Id %in% kept_ids
+percentile = Imputation.MNAR.percentage/100
+
+# Imputing with the noise model ("gaussian") or the percentile model per parameter
 if(Imputation.MNAR.model == "gaussian"){
-  imputation_results = impute_background_noise_gaussian(intensities_to_impute)
-  gaussian_parameters = c(imputation_results[[1]],imputation_results[[2]])
-  imputed_abundance = imputation_results[[3]]
+
+  # Noise model estimated on the kept proteins, then values drawn around the noise level of each sample, with a fixed seed
+  sample_groups <- group_of_cols(pattern)[colnames(intensities_to_impute)[-1]]
+  noise_model = estimate_noise_model(intensities_to_impute, sample_groups, percentile, rows = kept_rows)
+  imputed_abundance = impute_using_noise_model(intensities_to_impute, sample_groups, noise_model, rows = kept_rows, seed = 1)
+
 }else if(Imputation.MNAR.model == "percentile"){
-    percentile = Imputation.MNAR.percentile/100
-    imputed_abundance = impute_background_noise_percentile(intensities_to_impute,percentile)
+
+  imputed_kept = impute_using_noise_percentile(intensities_to_impute[kept_rows, , drop = FALSE],percentile)
+  imputed_abundance = intensities_to_impute
+  colnames(imputed_abundance) = colnames(imputed_kept)
+  imputed_abundance[kept_rows, ] = imputed_kept
+
+}else{
+  stop("Unknown Imputation.MNAR.model: '", Imputation.MNAR.model, "' (expected: gaussian or percentile).")
 }
 
 # Replacing MCAR values with NA values (marked values)
-imputed_abundance[imputed_abundance=="MCAR"] <- NA
+is_mcar <- !is.na(imputed_abundance) & imputed_abundance == "MCAR"
+imputed_abundance[is_mcar] <- NA
 
 # Add imputed abundance columns back to main dataframe
 data = merge.data.frame(data,imputed_abundance,by="Id")
@@ -966,9 +1033,9 @@ colnames(imputed_abundance_log)[2:ncol(imputed_abundance_log)] <- paste0(
 
 data = merge.data.frame(data,imputed_abundance_log,by="Id")
 
-# Make a data frame of values to plot
+# Make a data frame of values to plot (proteins kept by the global filter)
 imputed_abundance_log = data[grepl("_log$|Id$",colnames(data))]
-imputationDF = reshape2::melt(imputed_abundance_log[,-1])
+imputationDF = reshape2::melt(imputed_abundance_log[imputed_abundance_log$Id %in% kept_ids,-1])
 colnames(imputationDF) = c("Sample","log_abundance")
 
 # Also create a log-transformed version of the original (non-imputed) bio-rep mean abundance table,
@@ -980,8 +1047,9 @@ colnames(abundance_log)[2:ncol(abundance_log)] = paste0(colnames(mean_abundance_
 data = merge.data.frame(data,abundance_log,by="Id")
 abundance_log = data[c("Id", group_cols(group_ids, "_mean_noimpute_log", colnames(data)))]
 
-# Identifying values that were missing before imputation
-imputed = reshape2::melt(is.na(mean_abundance_repbio[,-1]))
+# Identifying values that were missing before imputation (same proteins, in the same order)
+kept_log_ids <- imputed_abundance_log$Id[imputed_abundance_log$Id %in% kept_ids]
+imputed = reshape2::melt(is.na(mean_abundance_repbio[match(kept_log_ids, mean_abundance_repbio$Id),-1]))
 imputationDF = cbind(imputationDF,imputed$value)
 colnames(imputationDF) = c("Sample","Intensity","Is_imputed")
 
@@ -1004,30 +1072,35 @@ if (format_svg) {
   htmltools::HTML(createPngOrSvg(histogram,"Log_intensities_distribution_with_imputed_values", 1600, 600))
 }
 
-# If Gaussian MNAR model is created, prints explanation of median and sd figures used
-if(exists("gaussian_parameters")){
-  cat(text_spec(paste0("The gaussian model has a median of ", formatC(gaussian_parameters[1],format = "e", digits=2), " and a sd of ",formatC(gaussian_parameters[2],format = "e", digits=2),"."),italic=T,font_size="12px"))
+# Prints the explanation of the imputation model used
+if(Imputation.MNAR.model == "gaussian"){
+  cat(text_spec(paste0("Missing values of the ", sum(kept_rows), " proteins kept for the analysis were imputed with the noise model. The noise level of each sample is the ",
+                       Imputation.MNAR.percentage, "% percentile of its observed intensities (log10: ", formatC(min(noise_model$noise_level)*log10(2), format = "f", digits = 2), " to ",
+                       formatC(max(noise_model$noise_level)*log10(2), format = "f", digits = 2), "). For each protein and condition with missing values, values are drawn around these levels with a standard deviation of ",
+                       formatC(noise_model$noise_sd, format = "f", digits = 2), " log2 (", formatC(noise_model$noise_sd*log10(2), format = "f", digits = 2),
+                       " log10), estimated within conditions on ", noise_model$n_rows, " low-intensity protein/condition measurements. The imputation uses a fixed seed and is reproducible."),italic=T,font_size="12px"))
+}else{
+  cat(text_spec(paste0("Missing values of the ", sum(kept_rows), " proteins kept for the analysis were replaced by the ", Imputation.MNAR.percentage,
+                       "% percentile of the observed intensities of each sample."),italic=T,font_size="12px"))
 }
 
 
 ```
 
 
-<br>
-<div id="banner">
-# **Global Data filtering**
-</div>
-<br>
-
-
 ```{r global_filtering}
 
-## Applies the filter_dataset method that was created earlier, updates main datasets with filtered data ##
+## Applies the global filter (already computed before the normalization, see global_filter) to the processed tables ##
 
 global_filtering <- filter_dataset(data, group_ids)
 
 # Full dataset after filtering
 filtered_data <- as.data.frame(global_filtering[[1]])
+
+# The proteins kept must be the ones used for the normalization and the imputation
+if(!setequal(filtered_data$Id, kept_ids)){
+  stop("Internal error: the global filter gives different proteins before and after the processing of the intensities.")
+}
 
 # Copy of unfiltered mean_abundance, then replacing it with the filtered version
 global_mean_abundance_repbio <- mean_abundance_repbio
@@ -1040,18 +1113,6 @@ imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% f
 # Saving unfiltered logged imputed abundance, keeping only imputed abundance rows that passed filtering
 global_imputed_abundance_log <- imputed_abundance_log
 imputed_abundance_log <- global_imputed_abundance_log[global_imputed_abundance_log$Id %in% filtered_data$Id, ]
-
-# Creating table for filtering summary
-kable(global_filtering[[3]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
-            kable_styling(bootstrap_options="condensed",full_width = F,position = "center") %>%
-            column_spec(1, bold = T)
-
-# Printing filtering barplot into output report
-if (format_svg) {
-  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 12, 7))
-} else {
-  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 1200, 800))
-}
 
 ```
 
