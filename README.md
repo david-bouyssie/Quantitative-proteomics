@@ -87,10 +87,12 @@ Here you can find a description of all parameters and possible values:
 | Filter.threshold.obs | Minimum percentage of observed intensities in one condition at least to keep the protein for the analysis | {0,100} |
 | Imputation.MNAR.model | Which model should be used to impute MNAR ? | percentile / gaussian |
 | Imputation.MNAR.percentile | Percentile (in %) of the observed intensities of each sample: imputed value for the "percentile" model, noise level for the "gaussian" model (which requires a value greater than 0 and at most 10) | Example : 5 |
-| Imputation.MCAR.model | Which model should be used to impute MCAR ? | none / MNAR / knn |
-| Imputation.MCAR.threshold.obs | Minimum number of observed intensities in a condition to classify the missing values as MCAR | {0, number of replicates} |
-| Imputation.MCAR.threshold.MSMS | Minimum number of file identified by MS/MS in a condition to classify the missing values as MCAR | {0, number of replicates} |
-| Imputation.knn.min.occurrences |  Minimum number of observed intensities in a condition to use the protein as a k-nearest-neighnour for KNN imputation model | {0, number of replicates} |
+| Imputation.MCAR.model | MCAR imputation (see 3.2.2.3): none (no MCAR class: the missing values are MNAR within the limit of Imputation.MNAR.max.obs, left missing beyond), knn (missing values meeting the MCAR criteria are imputed from the neighbours). MNAR, the former name of none, is still accepted | none / knn |
+| Imputation.MNAR.max.obs | Maximum number of observed intensities in a condition for the missing values to be MNAR and imputed with the background noise (see 3.2.2.3). No limit if absent | {0, number of replicates} |
+| Imputation.MCAR.min.obs | Minimum number of observed intensities in a condition to classify the missing values as MCAR (at least 2, greater than Imputation.MNAR.max.obs). Values close to half of the replicates increase the false positives (formerly Imputation.MCAR.threshold.obs) | {2, number of replicates} |
+| Imputation.MCAR.min.MSMS | Minimum number of file identified by MS/MS in a condition to classify the missing values as MCAR (formerly Imputation.MCAR.threshold.MSMS) | {0, number of replicates} |
+| Imputation.MCAR.intensity.cutoff | auto: the missing values are classified as MCAR only above an intensity cutoff estimated from the data (see 3.2.2.3); Q1: only above the first quartile of the observed intensities; none: no intensity criterion. auto if absent | auto / Q1 / none |
+| Imputation.knn.min.occurrences |  Minimum number of observed intensities in a condition to use a protein as a neighbour for the knn model (at least 2) | {2, number of replicates} |
 | Test.type | Which statistical test should be used ? | t.test / limma / wilcoxon |
 | Test.log | Should intensities be transformed by log10 before executing the statistical test ? | T / F |
 | Test.alternative | Choose if the statistical test should be unilateral or bilateral | two.sided / less / greater |
@@ -116,7 +118,7 @@ The module gives as outputs a TSV table summarizing input data, intensities afte
 The intensities are processed in this order:
 1. **Global filter.** A protein is kept for the analysis if it is identified by MS/MS in at least `Filter.threshold.ms` files and observed in at least `Filter.threshold.obs` of the replicates of at least one condition (all conditions considered).
 2. **Normalization.** Each sample is divided by the median of its ratios to a reference sample (equivalently, the median log2 ratio is subtracted on the log2 scale). The reference is the sample with the fewest missing values. The medians are computed on the proteins kept by the global filter, or on the proteins given in `Proteins.for.normalization`, and the factors are applied to all the proteins.
-3. **Imputation.** Missing values are imputed once, for the proteins kept by the global filter only (the other proteins keep their missing values in the output table). The imputation uses a fixed seed, so two runs on the same data give the same values.
+3. **Imputation.** Missing values are imputed once, for the proteins kept by the global filter only (the other proteins keep their missing values in the output table). The imputation uses a fixed seed for each protein and condition, so two runs on the same data give the same values, and the values imputed for a protein do not depend on how the other proteins are imputed (changing a setting that affects some proteins does not change the values of the others).
 4. **Comparisons.** For each comparison, the same filter is applied again to the two compared conditions only, then the test is computed.
 5. **Significant proteins.** A protein is significant in a comparison when its adjusted p-value (or its raw p-value without multiple test correction) is at most `Stat.threshold.significance` and its absolute log2 fold change is at least `Stat.threshold.fc`. This single definition is used everywhere (`significant_*` columns of the output table, figures, tables of significant proteins). The volcano plot shows the raw p-values: with a multiple test correction, its horizontal line is drawn at the largest raw p-value among the proteins whose adjusted p-value passes the threshold (no line when there is none).
 
@@ -127,7 +129,7 @@ The previous parameter names `Volcano.threshold.pvalue` and `Volcano.threshold.f
 Three differents missing values imputation are available :
 - Percentile-based
 - Gaussian-based (noise model)
-- KNN-based
+- KNN-based (for the MCAR missing values, see 3.2.2.3)
 <br/>
 The percentile-based model consists in replacing missing values by a chosen percentile (`Imputation.MNAR.percentile`) of the distribution of intensities in each sample.
 <br/>
@@ -139,12 +141,20 @@ The gaussian-based model (`Imputation.MNAR.model=gaussian`) replaces missing val
 A condition where a protein is entirely missing therefore gets values with a realistic variability, and not nearly identical values.
 
 
-<br/>
-The KNN-based model consists in replacing missing values in such a way that the resulting of the imputed proteins is very close to the one of its nearest neighbours. The precise working of this model is described below: <br/>
+##### 3.2.2.3. Classes of missing values (MNAR, MCAR, left missing)
 
-![Alt text](Images/KNN_model.PNG?raw=true "Title")
-_Soit nb le nombre de protéines dans le jeu de données. Soit X le vecteur des intensités d’une protéine P dans une condition C, et μ sa médiane. Pour imputer les valeurs manquantes de X, la première étape consiste à trouver les k (=√nb) protéines dont la médiane dans la condition C est la plus proche de μ. L’écart-type médian de ces k protéines, noté σexp, est l’écart-type final espéré après imputation des valeurs manquantes de X. 
-Pour obtenir un tel résultat, les valeurs manquantes de X sont d’abord remplacées μ (A). Si l’écart-type résultant, noté σres, est supérieur à σexp, alors on ne pourra jamais obtenir un écart-type plus proche de σexp, et les valeurs manquantes sont remplacées par μ dans le tableau de données. En revanche, si σres < σexp, la valeur de remplacement des valeurs manquantes est progressivement augmentée de d=Q3-μ jusqu’à trouver deux valeurs de remplacement dont les σres correspondants encadrent σexp (B). Les valeurs manquantes sont alors remplacées dans le jeu de données par des valeurs tirées aléatoirement dans une distribution gaussienne centrée sur la médiane entre les deux valeurs de remplacement et d’écart-type 0.05 (C)._
+The missing values of a protein in a condition (k observed values in the condition) are classified as:
+- **MCAR** (missing completely at random), only with `Imputation.MCAR.model=knn`: k is at least `Imputation.MCAR.min.obs`, the protein is identified by MS/MS in at least `Imputation.MCAR.min.MSMS` samples of the condition, and, with `Imputation.MCAR.intensity.cutoff=auto` or `Q1`, its mean intensity is above a cutoff. They are imputed from the neighbours (below).
+- **MNAR** (missing because the protein is not abundant enough), if they are not MCAR and k is at most `Imputation.MNAR.max.obs`: they are imputed with the background noise (3.2.2.2). Without this parameter there is no limit, and every missing value that is not MCAR is MNAR.
+- **left missing** otherwise: the tests use the observed values of the protein only.
+
+With `knn`, `Imputation.MNAR.max.obs` must be lower than `Imputation.MCAR.min.obs`. In the example (4 replicates per condition, `Imputation.MNAR.max.obs=1`, `Imputation.MCAR.model=none`), a protein observed in 0 or 1 replicate of a condition gets noise values, and a protein observed in 2 or 3 replicates keeps its observed values only. The report gives the number of missing values in each class.
+
+The intensity cutoff is estimated on the proteins kept for the analysis: the missing-value rate of the protein/condition rows is computed in 25 bins of their mean intensity, and smoothed with a decreasing fit. The cutoff is the intensity above which this rate is within 1 percentage point of its plateau (the rate at high intensity). Missing values below the cutoff depend on the intensity, so they are not MCAR. With `Imputation.MCAR.intensity.cutoff=Q1`, the cutoff is instead the first quartile of all the observed intensities of the proteins kept (on the example both cutoffs are close). The report shows the rate against the intensity with the cutoff.
+
+The MCAR values are imputed from the neighbours (`knn`), on log2 intensities. The neighbours of a protein in a condition are the √N protein/condition rows (N: number of proteins kept) nearest in mean intensity, among the rows with at least `Imputation.knn.min.occurrences` observed values. The target standard deviation is the median standard deviation of the neighbours, multiplied by √(n/k) (n samples in the condition, k observed values), because the test then counts the imputed values as measured values. One missing value is replaced by the value that brings the standard deviation of the protein to the target, on a random side of its mean (the mean itself if the target cannot be reached). Several missing values are drawn together so that the mean of the protein is unchanged and its standard deviation equals the target.
+
+The imputation uses a fixed seed and is reproducible. With few replicates, a low `Imputation.MCAR.min.obs` (e.g. 2 observed values of 4) increases the false positives: the variability of a protein is then mostly given by its neighbours.
 
 <br/>
 

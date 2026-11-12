@@ -293,24 +293,6 @@ Vol_no_lab <- as.logical(parameters["Volcano.no.labeling",])
 # T or F for normalization
 normalization <- as.logical(parameters["Normalization",])
 
-# MCAR assumed unless MNAR set
-imputation_method <- parameters["Imputation.MCAR.model",]
-
-# Setting minimum knn occurances
-Imputation.knn.min.occurrences = as.numeric(as.character(parameters["Imputation.knn.min.occurrences",]))
-
-# Setting MCAR threshold for number of observations
-Imputation.MCAR.threshold.obs = as.numeric(as.character(parameters["Imputation.MCAR.threshold.obs",]))
-
-# Setting MCAR threshold for number of by MS/MS needed
-Imputation.MCAR.threshold.MSMS = as.numeric(as.character(parameters["Imputation.MCAR.threshold.MSMS",]))
-
-# Getting MNAR model
-Imputation.MNAR.model <- parameters["Imputation.MNAR.model",]
-
-# Setting MNAR model percentile cutoff
-Imputation.MNAR.percentage <- as.numeric(as.character(parameters["Imputation.MNAR.percentile",]))
-
 # Notes about deprecated or ignored parameters, printed below the parameters table (and on the console)
 parameter_notes <- c()
 add_parameter_note <- function(note){
@@ -329,6 +311,63 @@ get_parameter <- function(name, deprecated = NULL){
   }
   NA
 }
+
+## Classes of missing values, per protein and condition (k observed values): with Imputation.MCAR.model=knn, MCAR if k >= Imputation.MCAR.min.obs
+## and the MS/MS and intensity criteria are met (imputed from the neighbours); otherwise MNAR if k <= Imputation.MNAR.max.obs (imputed with the
+## background noise); left missing otherwise.
+
+# MCAR imputation: "none" (no MCAR imputation) or "knn" (MCAR values imputed from the neighbours). "MNAR" is the former name of "none".
+imputation_method <- trimws(as.character(parameters["Imputation.MCAR.model",]))
+if (!is.na(imputation_method) && imputation_method == "MNAR") {
+  add_parameter_note("Imputation.MCAR.model=MNAR is deprecated, please use Imputation.MCAR.model=none (same behaviour: the missing values are imputed with the background noise, within the limit of Imputation.MNAR.max.obs).")
+  imputation_method <- "none"
+}
+if (is.na(imputation_method) || !imputation_method %in% c("none", "knn")) {
+  stop("Parameter Imputation.MCAR.model must be none or knn.")
+}
+
+# Maximum number of observed values in a condition for the missing values to be MNAR (no limit if absent: all the missing values
+# that are not MCAR are imputed with the background noise)
+Imputation.MNAR.max.obs = suppressWarnings(as.numeric(get_parameter("Imputation.MNAR.max.obs")))
+if (!"Imputation.MNAR.max.obs" %in% rownames(parameters) || trimws(as.character(parameters["Imputation.MNAR.max.obs",])) == "") {
+  Imputation.MNAR.max.obs = Inf
+} else if (is.na(Imputation.MNAR.max.obs) || Imputation.MNAR.max.obs < 0) {
+  stop("Parameter Imputation.MNAR.max.obs must be a number greater than or equal to 0 (or be removed for no limit).")
+}
+
+# Setting minimum knn occurances
+Imputation.knn.min.occurrences = as.numeric(as.character(parameters["Imputation.knn.min.occurrences",]))
+
+# Minimum number of observed values and of MS/MS identifications in a condition for the missing values to be MCAR
+Imputation.MCAR.min.obs = suppressWarnings(as.numeric(get_parameter("Imputation.MCAR.min.obs", deprecated = "Imputation.MCAR.threshold.obs")))
+Imputation.MCAR.min.MSMS = suppressWarnings(as.numeric(get_parameter("Imputation.MCAR.min.MSMS", deprecated = "Imputation.MCAR.threshold.MSMS")))
+
+# Intensity criterion of the MCAR classification: "auto" (cutoff estimated from the missing-value rate against the intensity), "Q1" or "none"
+Imputation.MCAR.intensity.cutoff = if ("Imputation.MCAR.intensity.cutoff" %in% rownames(parameters)) trimws(as.character(parameters["Imputation.MCAR.intensity.cutoff",])) else "auto"
+
+if (imputation_method == "knn") {
+  if (is.na(Imputation.MCAR.min.obs) || Imputation.MCAR.min.obs < 2) {
+    stop("Parameter Imputation.MCAR.min.obs must be at least 2 (the variability of a protein needs at least 2 observed values).")
+  }
+  if (is.finite(Imputation.MNAR.max.obs) && Imputation.MNAR.max.obs >= Imputation.MCAR.min.obs) {
+    stop("Parameter Imputation.MNAR.max.obs must be lower than Imputation.MCAR.min.obs.")
+  }
+  if (is.na(Imputation.MCAR.min.MSMS) || Imputation.MCAR.min.MSMS < 0) {
+    stop("Parameter Imputation.MCAR.min.MSMS must be a number greater than or equal to 0.")
+  }
+  if (is.na(Imputation.knn.min.occurrences) || Imputation.knn.min.occurrences < 2) {
+    stop("Parameter Imputation.knn.min.occurrences must be at least 2.")
+  }
+  if (!Imputation.MCAR.intensity.cutoff %in% c("auto", "Q1", "none")) {
+    stop("Parameter Imputation.MCAR.intensity.cutoff must be auto, Q1 or none.")
+  }
+}
+
+# Getting MNAR model
+Imputation.MNAR.model <- parameters["Imputation.MNAR.model",]
+
+# Setting MNAR model percentile cutoff
+Imputation.MNAR.percentage <- as.numeric(as.character(parameters["Imputation.MNAR.percentile",]))
 
 # Removed parameters: the fold change is always the ratio of the mean intensities (fc)
 if ("Fold.Change" %in% rownames(parameters)) {
@@ -970,50 +1009,82 @@ cat(text_spec("Imputed values distribution", color="#3686D5", bold=T, font_size=
 ```{r missing_values_imputation, results='asis'}
 
 
-## If MCAR IMPUTATION parameter is not set to MNAR, MCAR data is parsed and a data frame is created ##
+## Classes of the missing values of the proteins kept for the analysis, per protein and condition (k observed values), on the log2 bio-rep means: ##
+## MNAR if k <= Imputation.MNAR.max.obs (imputed below with the background noise); MCAR if k >= Imputation.MCAR.min.obs and the protein is ##
+## identified by MS/MS in at least Imputation.MCAR.min.MSMS samples (and, with the intensity criterion, its mean intensity is above the cutoff), ##
+## handled according to Imputation.MCAR.model; left missing otherwise. ##
 
-if(imputation_method != "MNAR"){
-  
-  # MCAR processing by condition (group)
-  for(group in group_ids){
-    
-    # Select bio-reps for this group and matching identification_type columns for this group
-    group_mean_cols <- group_cols(group, "_mean", colnames(mean_abundance_repbio))
+mcar_cells <- NULL
+mcar_cutoff <- NULL
 
-    intensities_current_condition = data.frame(data$Id,mean_abundance_repbio[group_mean_cols],check.names=F)
-    intensities_current_condition <- intensities_current_condition %>% mutate(across(everything(), as.numeric))
-    identification_type_current_condition = data.frame(data[c("Id", group_cols(group, "_identification_type", names(data)))],check.names=F)
-    
-    # Run MCAR imputation method using thresholds
-    imputed_intensities = impute_mcar(intensities_current_condition,
-                                      identification_type_current_condition,
-                                      as.character(parameters["Imputation.MCAR.model",]),
-                                      Imputation.MCAR.threshold.obs,
-                                      Imputation.MCAR.threshold.MSMS,
-                                      Imputation.knn.min.occurrences,
-                                      data)
+# Bio-rep mean intensities (linear and log2), in the order of the rows of data
+mean_cols <- group_cols(group_ids, "_mean", colnames(mean_abundance_repbio))
+linear_means <- numeric_sample_matrix(mean_abundance_repbio[match(data$Id, mean_abundance_repbio$Id), mean_cols, drop = FALSE])
+log_means <- log2_intensity_matrix(data.frame(Id = data$Id, linear_means, check.names = FALSE))
+mean_groups <- group_of_cols("_mean")[mean_cols]
+mcar_ids <- data$Id
+kept_mcar_rows <- mcar_ids %in% kept_ids
 
-    # Rename imputed columns with _mcar suffix
-    colnames(imputed_intensities) = paste0(sub("_mean","",colnames(imputed_intensities)),"_mcar")
-    colnames(imputed_intensities)[1] = colnames(data)[1]
-    
-    # Add the mcar imputed columns to the main dataframe
-    data = merge.data.frame(data,imputed_intensities,by=colnames(data)[1])
-  
+# MNAR missing values: proteins with at most Imputation.MNAR.max.obs observed values in the condition
+missing_cells <- is.na(log_means) & kept_mcar_rows
+mnar_cells <- matrix(FALSE, nrow(log_means), ncol(log_means), dimnames = dimnames(log_means))
+for (g in unique(mean_groups)) {
+  s <- which(mean_groups == g)
+  k <- rowSums(!is.na(log_means[, s, drop = FALSE]))
+  mnar_cells[, s] <- missing_cells[, s, drop = FALSE] & (k <= Imputation.MNAR.max.obs)
+}
+
+if(imputation_method == "knn"){
+
+  identified_msms <-as.matrix(data[group_cols(group_ids, "_identification_type", names(data))]) == "By MS/MS"
+
+  # Intensity cutoff (estimated on the kept proteins), if the criterion is used
+  cutoff_value <- NA
+  if (Imputation.MCAR.intensity.cutoff %in% c("auto", "Q1")) {
+    # The missing-value rate against the intensity is computed in both cases (shown in the report)
+    mcar_cutoff <- estimate_mcar_intensity_cutoff(log_means[kept_mcar_rows, , drop = FALSE], mean_groups)
+    if (Imputation.MCAR.intensity.cutoff == "Q1") {
+      # Q1: first quartile of all the observed log2 intensities of the kept proteins
+      kept_log_values <- log_means[kept_mcar_rows, , drop = FALSE]
+      mcar_cutoff$cutoff <- unname(quantile(kept_log_values[!is.na(kept_log_values)], 0.25))
+    }
+    cutoff_value <- mcar_cutoff$cutoff
   }
-  
+
+  # MCAR missing values
+  mcar_cells <- matrix(FALSE, nrow(log_means), ncol(log_means), dimnames = dimnames(log_means))
+  mcar_cells[kept_mcar_rows, ] <- classify_mcar(log_means[kept_mcar_rows, , drop = FALSE], mean_groups, identified_msms[kept_mcar_rows, , drop = FALSE],
+                                                Imputation.MCAR.min.obs, Imputation.MCAR.min.MSMS, cutoff = cutoff_value)
+
+  # MCAR takes precedence over MNAR (needed when Imputation.MNAR.max.obs has no limit)
+  mnar_cells[mcar_cells] <- FALSE
+
+  # MCAR values imputed from the neighbours (the observed values are kept exactly as given)
+  mcar_values <- linear_means
+  knn_result <- impute_mcar_neighbours(log_means[kept_mcar_rows, , drop = FALSE], mean_groups, mcar_cells[kept_mcar_rows, , drop = FALSE],
+                                       Imputation.knn.min.occurrences, seed = 1)
+  imputed_part <- mcar_values[kept_mcar_rows, , drop = FALSE]
+  mcar_part <- mcar_cells[kept_mcar_rows, , drop = FALSE]
+  imputed_part[mcar_part] <- 2^knn_result$values[mcar_part]
+  mcar_values[kept_mcar_rows, ] <- imputed_part
+
+  # "_mcar" columns: intensities after the MCAR imputation, used by the MNAR imputation
+  mcar_table <- data.frame(Id = data$Id, mcar_values, check.names = FALSE)
+  colnames(mcar_table) <- c("Id", sub("_mean$", "_mcar", mean_cols))
+  data = merge.data.frame(data, mcar_table, by = "Id")
+
   # Setting pattern to _mcar for later column finding
   pattern = "_mcar"
-  
+
 }else{
-  
+
   # If no mcar imputation, set pattern to _mean
   pattern = "_mean"
 }
 
 ## MNAR IMPUTATION ##
 
-# If MCAR IMPUTATION parameter is set to MNAR, data is taken for either the Gaussian or Percentile models
+# Intensities to impute (after the MCAR step if any)
 intensities_to_impute = data[c("Id", group_cols(group_ids, pattern, colnames(data)))]
 
 # The imputation is done once, on the proteins kept by the global filter: the model is estimated on these proteins only,
@@ -1021,17 +1092,32 @@ intensities_to_impute = data[c("Id", group_cols(group_ids, pattern, colnames(dat
 kept_rows <- intensities_to_impute$Id %in% kept_ids
 percentile = Imputation.MNAR.percentage/100
 
+# Missing values not imputed by the MNAR imputation: the missing values that are neither MNAR nor MCAR (left missing).
+# The MCAR values imputed by knn are no longer missing.
+not_mnar_cells <- missing_cells & !mnar_cells
+if (imputation_method == "knn") not_mnar_cells <- not_mnar_cells & !mcar_cells
+skip_cells <- not_mnar_cells[match(intensities_to_impute$Id, mcar_ids), , drop = FALSE]
+if (!any(skip_cells)) skip_cells <- NULL
+
 # Imputing with the noise model ("gaussian") or the percentile model per parameter
 if(Imputation.MNAR.model == "gaussian"){
 
   # Noise model estimated on the kept proteins, then values drawn around the noise level of each sample, with a fixed seed
+  # (the model is estimated on the observed values only: the values imputed by the MCAR step are not used)
   sample_groups <- group_of_cols(pattern)[colnames(intensities_to_impute)[-1]]
-  noise_model = estimate_noise_model(intensities_to_impute, sample_groups, percentile, rows = kept_rows)
-  imputed_abundance = impute_using_noise_model(intensities_to_impute, sample_groups, noise_model, rows = kept_rows, seed = 1)
+  estimation_input <- intensities_to_impute
+  if (imputation_method == "knn") {
+    knn_cells <- mcar_cells[match(estimation_input$Id, mcar_ids), , drop = FALSE]
+    estimation_values <- as.matrix(estimation_input[-1]); estimation_values[knn_cells] <- NA
+    estimation_input[-1] <- as.data.frame(estimation_values)
+  }
+  noise_model = estimate_noise_model(estimation_input, sample_groups, percentile, rows = kept_rows)
+  imputed_abundance = impute_using_noise_model(intensities_to_impute, sample_groups, noise_model, rows = kept_rows, seed = 1, skip = skip_cells)
 
 }else if(Imputation.MNAR.model == "percentile"){
 
-  imputed_kept = impute_using_noise_percentile(intensities_to_impute[kept_rows, , drop = FALSE],percentile)
+  imputed_kept = impute_using_noise_percentile(intensities_to_impute[kept_rows, , drop = FALSE],percentile,
+                                               skip = if (is.null(skip_cells)) NULL else skip_cells[kept_rows, , drop = FALSE])
   imputed_abundance = intensities_to_impute
   colnames(imputed_abundance) = colnames(imputed_kept)
   imputed_abundance[kept_rows, ] = imputed_kept
@@ -1039,10 +1125,6 @@ if(Imputation.MNAR.model == "gaussian"){
 }else{
   stop("Unknown Imputation.MNAR.model: '", Imputation.MNAR.model, "' (expected: gaussian or percentile).")
 }
-
-# Replacing MCAR values with NA values (marked values)
-is_mcar <- !is.na(imputed_abundance) & imputed_abundance == "MCAR"
-imputed_abundance[is_mcar] <- NA
 
 # Add imputed abundance columns back to main dataframe
 data = merge.data.frame(data,imputed_abundance,by="Id")
@@ -1119,6 +1201,68 @@ if(Imputation.MNAR.model == "gaussian"){
 }else{
   cat(text_spec(paste0("Missing values of the ", sum(kept_rows), " proteins kept for the analysis were replaced by the ", Imputation.MNAR.percentage,
                        "% percentile of the observed intensities of each sample."),italic=T,font_size="12px"))
+}
+
+```
+
+```{r mcar_classification, results='asis'}
+
+## Classes of the missing values: missing-value rate against the intensity, intensity cutoff and number of values in each class ##
+
+n_missing_kept <- sum(missing_cells)
+n_mnar <- sum(mnar_cells)
+n_mcar <- if (is.null(mcar_cells)) 0 else sum(mcar_cells)
+n_left <- n_missing_kept - n_mnar - n_mcar
+
+# Summary of the classes (only when some missing values are not imputed with the background noise)
+if (imputation_method == "knn" || is.finite(Imputation.MNAR.max.obs)) {
+  mnar_rule <- if (is.finite(Imputation.MNAR.max.obs)) paste0("at most ", Imputation.MNAR.max.obs, " observed value(s) in the condition") else "not MCAR"
+  cat(text_spec(paste0("Missing values of the proteins kept for the analysis: ", n_missing_kept, ". MNAR (", mnar_rule, "), imputed with the background noise: ", n_mnar,
+                       if (imputation_method == "knn") paste0(". MCAR, imputed from the neighbours: ", n_mcar) else "",
+                       ". Left missing (tests on the observed values only): ", n_left, "."), italic = T, font_size = "12px"))
+  cat(text_spec("\n"))
+}
+
+if (imputation_method == "knn") {
+
+  # Missing-value rate against the mean intensity of the protein/condition rows, with the cutoff
+  if (!is.null(mcar_cutoff) && !is.null(mcar_cutoff$bins)) {
+    bins <- mcar_cutoff$bins
+    rate_plot <- ggplot(bins, aes(x = center * log10(2))) +
+      geom_point(aes(y = 100 * rate), size = 3, colour = "dodgerblue3") +
+      geom_step(aes(y = 100 * fitted), direction = "mid", colour = "dodgerblue4") +
+      geom_hline(yintercept = 100 * mcar_cutoff$plateau, linetype = "dotted") +
+      {if (is.finite(mcar_cutoff$cutoff)) geom_vline(xintercept = mcar_cutoff$cutoff * log10(2), linetype = "dashed", colour = "darkorchid4")} +
+      ggtitle("Missing values against the mean intensity (protein/condition)") +
+      xlab("log(mean intensity of the observed values)") + ylab("Missing values (%)") +
+      theme(plot.title = element_text(size=22), axis.title=element_text(size=20), axis.text=element_text(size=18))
+    if (format_svg) {
+      cat(htmltools::HTML(createPngOrSvg(rate_plot, "Missing_values_against_intensity", 12, 7)))
+    } else {
+      cat(htmltools::HTML(createPngOrSvg(rate_plot, "Missing_values_against_intensity", 1200, 700)))
+    }
+  }
+
+  # Explanation of the classification
+  criterion <- paste0("at least ", Imputation.MCAR.min.obs, " observed values and ", Imputation.MCAR.min.MSMS, " MS/MS identifications in the condition")
+  if (Imputation.MCAR.intensity.cutoff == "auto") {
+    if (is.na(mcar_cutoff$cutoff)) {
+      criterion <- paste0(criterion, " (the intensity criterion was not applied: ", mcar_cutoff$message, ")")
+    } else if (!is.finite(mcar_cutoff$cutoff)) {
+      criterion <- paste0(criterion, " (no intensity dependence of the missing values was found, so the intensity criterion does not exclude any protein)")
+    } else {
+      criterion <- paste0(criterion, ", and a mean intensity of at least ", formatC(mcar_cutoff$cutoff * log10(2), format = "f", digits = 2),
+                          " (log10). This cutoff is the intensity above which the missing-value rate (points; smoothed: line) is within 1 percentage point of its plateau (",
+                          formatC(100 * mcar_cutoff$plateau, format = "f", digits = 1), "%, dotted line)")
+    }
+  } else if (Imputation.MCAR.intensity.cutoff == "Q1") {
+    criterion <- paste0(criterion, ", and a mean intensity of at least ", formatC(mcar_cutoff$cutoff * log10(2), format = "f", digits = 2),
+                        " (log10), the first quartile of the observed intensities of the proteins kept for the analysis (dashed line)")
+  }
+  handling <- paste0("They were imputed from the ", knn_result$n_neighbours, " protein/condition rows nearest in intensity (knn model): the values keep the mean of the protein and give it the median standard deviation of its neighbours, corrected for the number of missing values.")
+  cat(text_spec(paste0("Missing values classified as MCAR (missing completely at random): ", n_mcar, " of the ", n_missing_kept,
+                       " missing values of the proteins kept for the analysis, in protein/condition rows with ", criterion, ". ", handling),
+                italic = T, font_size = "12px"))
 }
 
 

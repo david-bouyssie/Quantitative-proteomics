@@ -219,20 +219,23 @@ numeric_intensity_matrix <- function(df){
 }
 
 # This function impute missing values with background noise using a percentile.
-impute_using_noise_percentile <- function(df,per){
-  
+impute_using_noise_percentile <- function(df,per,skip = NULL){
+
   # Input :
   # df : quantification matrix whom 1rst column contains protein id
   # per : chosen percentile
+  # skip : optional logical matrix (one column per sample column of df): missing values to leave missing (MCAR values not imputed)
   # Output :
   # quantification matrix with imputed intensities
-  
-  for(col in colnames(df)[-1]){
-    current_intensities = df[col]
-    df_without_string = numeric_intensity_matrix(current_intensities)
+
+  for(j in seq_along(colnames(df))[-1]){
+    current_intensities = df[[j]]
+    df_without_string = numeric_intensity_matrix(df[j])
     percentile = as.numeric(quantile(df_without_string,per, na.rm = T))
-    current_intensities[is.na(current_intensities)] <- percentile
-    df[col] = current_intensities
+    to_impute = is.na(current_intensities)
+    if (!is.null(skip)) to_impute = to_impute & !skip[, j - 1]
+    current_intensities[to_impute] <- percentile
+    df[[j]] = current_intensities
   }
   
   colnames(df)[2:ncol(df)] = paste0(colnames(df)[2:ncol(df)],"_imputed")
@@ -240,133 +243,152 @@ impute_using_noise_percentile <- function(df,per){
   
 }
 
-########## MCAR Imputation ################
+###################
+# MCAR imputation #
+###################
 
-# This function is dedicated to MCAR imputation.
-impute_mcar <- function(intensities,identification_type,model,threshold_mcar_obs,threshold_mcar_ms,knn_min_occurrences, data_f){
-  
-  # Input :
-  # intensities : quantification matrix whom 1st column contains protein id
-  # identification_type : matrix of identification type whom 1st column contains protein id
-  # model : imputation model (KNN or none)
-  # threshold_mcar_obs : minimum number of observations in the condition to be a MCAR
-  # threshold_mcar_ms : minimum number of file identified by MS/MS in the condition to be a MCAR
-  # knn_min_occurrences : minimum number of observations in the condition to be used as a nearest neighbor
-  # filtered :filtered dataFrame for ranking
-  # Output :
-  # quantification matrix with imputed intensities
-  
-  colnames(intensities)[1] <- "Id"
-  
-  intensities_info = intensities
-  identification_type_info = identification_type
-  
-  # Compute nb of NA by protein
-  intensities_info$obs_sum = as.numeric(apply(intensities[-1],1,function(x) sum(!is.na(x))))
-  intensities_info$na_sum = as.numeric(apply(intensities[-1],1,function(x) sum(is.na(x))))
-  
-  # Compute nb of MS/MS by protein
-  identification_type_info$ms_sum = as.numeric(apply(identification_type_info[-1],1,function(x) sum(x=="By MS/MS")))
-  
-  # Order proteins by median intensity
-  intensities_info$median = Biobase::rowMedians(as.matrix(intensities[-1]), na.rm=TRUE)
-  intensities_info = intensities_info[order(intensities_info$median),]
-  intensities_info$rank = seq(1:nrow(data_f))
-  
-  write.csv(intensities_info, "intensities_info.csv", row.names = F)
-  write.csv(identification_type_info, "identification_type_info.csv", row.names = F)
-  
-  # Extract candidates for KNN
-  putative_knn = subset(intensities_info,intensities_info$obs_sum>=knn_min_occurrences)
-  putative_knn$cv = as.numeric(apply(putative_knn[,2:(ncol(putative_knn)-3)],1,function(x) sd(x,na.rm=T)/median(x,na.rm=T)))
-  putative_knn$median = as.numeric(apply(putative_knn[,2:(ncol(putative_knn)-4)],1,function(x) median(x,na.rm=T)))
-  
-  # Find MCAR
-  mcar = subset(identification_type_info,identification_type_info$ms_sum>=threshold_mcar_ms)
-  mcar = subset(intensities_info,intensities_info$Id%in%mcar$Id)
-  mcar = subset(mcar,(mcar$obs_sum>=threshold_mcar_obs & mcar$na_sum>0))
-  
-  write.csv(mcar, "mcar3.csv", row.names = F)
-  
-  # Impute MCAR
-  if(nrow(mcar)>0){
-    
-    if(model=="none"){
-      mcar[is.na(mcar)] <- "MCAR"
-      
-    }else{
-      if(model=="knn"){
-        
-        # Number of nearest neighbours to select
-        k = floor(sqrt(nrow(intensities)))
-        
-        for(row in 1:nrow(mcar)){
-          
-          current_mcar = mcar[row,]
-          
-          # Find knn
-          current_rank = current_mcar$rank
-          knn = putative_knn
-          knn$distance = abs(putative_knn$rank - current_rank)
-          knn = knn[order(knn$distance),]
-          knn = knn[1:k,]
-          
-          # Informations about current MCAR
-          aValues = as.numeric(current_mcar[,2:(ncol(current_mcar)-4)])
-          nb_na_to_impute = sum(is.na(aValues)==T)
-          median_protein_to_impute = median(aValues,na.rm=T)
-          sd_knn = median(knn$cv,na.rm=T)*median_protein_to_impute # Expected sd after imputation
-          q3 = as.numeric(quantile(aValues,na.rm=T)[4])
-          d = q3 - median_protein_to_impute
-          
-          # Find intensities to frame sd_knn
-          imputed = aValues
-          rand =as.numeric(knn$median,na.rm=T)
-          
-          X = median_protein_to_impute
-          imputed[is.na(imputed)] <- X
-          
-          while(sd(imputed)<sd_knn){
-            imputed = aValues
-            X = X+d
-            imputed[is.na(imputed)] <- X
-          }
-          
-          # Create the gaussian model
-          if(X==median_protein_to_impute){
-            gaussian = rnorm(10000, mean = median_protein_to_impute, sd = 0.05)
-          }else{
-            mean_X = (X + (X-d))/2
-            gaussian = rnorm(10000, mean = mean_X, sd = 0.05)
-          }
-          
-          # Replace NA by values sampled in the gaussian model
-          rand = sample(gaussian,nb_na_to_impute,replace=T)
-          imputed = aValues
-          
-          imputed[is.na(imputed)] <- rand
-          
-          mcar[row,2:ncol(intensities)] = imputed
-        }
-      }
-    }
-  }
-  
-  # Replace in the final table
-  write("beg_end", "beg_end")
-  write.csv(intensities, "test_intensities.csv", row.names = F)
-  intensities = subset(intensities, !intensities[,1]%in%mcar[,1])
-  intensities = rbind(intensities,mcar[,1:(ncol(mcar)-4)])
-  write("beg_endd", "beg_endd")
-  keep_col_names <- colnames(intensities)
-  # intensities[is.nan(intensities)] <- NA
-  intensities <- as.data.frame(lapply(intensities, function(x) ifelse(is.nan(x), NA, x)))
-  write("beg_enddd", "beg_enddd")
-  colnames(intensities) <- keep_col_names
-  
-  return(intensities)
+# Seed of the random draws of one protein (row) in one condition: the values imputed for a protein and a condition depend only
+# on the seed and on this protein, not on the other proteins (so that runs with different settings can be compared protein by protein)
+row_seed <- function(seed, row, group_index, n_groups){
+  seed + (row - 1) * n_groups + group_index
 }
 
+# Runs code with a fixed seed of the random generator, and restores the state of the generator afterwards
+with_fixed_seed <- function(seed, code){
+  old_seed <- if (exists(".Random.seed", envir = globalenv())) get(".Random.seed", envir = globalenv()) else NULL
+  on.exit(if (is.null(old_seed)) suppressWarnings(rm(".Random.seed", envir = globalenv())) else assign(".Random.seed", old_seed, envir = globalenv()))
+  set.seed(seed)
+  code
+}
+
+# Returns one row per protein and condition with at least one observed value: protein (row index), condition, mean, sd
+# (NA with less than 2 values), number of observed values (k) and number of samples of the condition (n), on the log2 matrix X
+condition_rows <- function(X, groups){
+  do.call(rbind, lapply(unique(groups), function(g){
+    Y <- X[, groups == g, drop = FALSE]
+    k <- rowSums(!is.na(Y)); ok <- which(k >= 1)
+    m <- rowMeans(Y[ok, , drop = FALSE], na.rm = TRUE)
+    s <- sqrt(rowSums((Y[ok, , drop = FALSE] - m)^2, na.rm = TRUE) / (k[ok] - 1)); s[k[ok] < 2] <- NA
+    data.frame(protein = ok, condition = g, mean = m, sd = s, k = k[ok], n = ncol(Y), row.names = NULL)
+  }))
+}
+
+# Estimates the intensity above which missing values are considered as missing completely at random (MCAR).
+# The missing-value rate of the protein-condition rows is computed in bins of their mean intensity (equal-count bins), and smoothed
+# with a decreasing (isotonic) fit. The plateau is the median fitted rate of the upper half of the bins. The cutoff is the upper
+# edge of the highest bin whose fitted rate exceeds the plateau by more than 'tol' (-Inf if none: no intensity dependence).
+estimate_mcar_intensity_cutoff <- function(X, groups, n_bins = 25, tol = 0.01, min_rows = 500){
+
+  # Inputs :
+  # X : log2 intensities (proteins kept for the analysis), one column per sample
+  # groups : condition of each column of X
+  # Output :
+  # list(cutoff (log2, NA if it cannot be estimated), plateau, bins (data frame), message)
+
+  r <- condition_rows(X, as.character(groups))
+  if (nrow(r) < min_rows) {
+    return(list(cutoff = NA, plateau = NA, bins = NULL,
+                message = paste0("too few protein/condition rows (", nrow(r), ", at least ", min_rows, " are needed) to estimate the intensity cutoff")))
+  }
+  breaks <- unique(quantile(r$mean, seq(0, 1, length.out = n_bins + 1), names = FALSE))
+  r$bin <- cut(r$mean, breaks, include.lowest = TRUE, labels = FALSE)
+  bins <- do.call(rbind, lapply(sort(unique(r$bin)), function(b){
+    d <- r[r$bin == b, ]
+    data.frame(bin = b, from = min(d$mean), to = max(d$mean), center = median(d$mean), rows = nrow(d), rate = sum(d$n - d$k) / sum(d$n))
+  }))
+  bins$fitted <- rev(isoreg(rev(bins$rate))$yf)
+  upper <- bins$fitted[(nrow(bins) %/% 2 + 1):nrow(bins)]
+  plateau <- median(upper)
+  above <- which(bins$fitted > plateau + tol)
+  cutoff <- if (length(above) > 0) bins$to[max(above)] else -Inf
+  list(cutoff = cutoff, plateau = plateau, bins = bins, message = NULL)
+}
+
+# Classifies the missing values as MCAR: the missing values of a protein in a condition are MCAR if the protein has at least
+# min_obs observed values and at least min_msms MS/MS identifications in this condition, and (if a cutoff is given) a mean of its
+# observed values at least equal to the cutoff. The other missing values are MNAR.
+classify_mcar <- function(X, groups, msms, min_obs, min_msms, cutoff = NA){
+
+  # Inputs :
+  # X : log2 intensities, one column per sample
+  # groups : condition of each column of X
+  # msms : logical matrix (same dimensions as X), TRUE when the protein is identified by MS/MS in the sample
+  # min_obs, min_msms : thresholds in each condition (min_obs >= 2)
+  # cutoff : log2 intensity cutoff (NA: not used)
+  # Output :
+  # logical matrix (same dimensions as X), TRUE for the MCAR missing values
+
+  if (is.na(min_obs) || min_obs < 2) stop("Imputation.MCAR.threshold.obs must be at least 2.", call. = FALSE)
+  groups <- as.character(groups)
+  msms[is.na(msms)] <- FALSE
+  mcar <- matrix(FALSE, nrow(X), ncol(X), dimnames = dimnames(X))
+  for (g in unique(groups)) {
+    s <- which(groups == g)
+    k <- rowSums(!is.na(X[, s, drop = FALSE]))
+    m <- suppressWarnings(rowMeans(X[, s, drop = FALSE], na.rm = TRUE))
+    rows <- k >= min_obs & k < length(s) & rowSums(msms[, s, drop = FALSE]) >= min_msms
+    if (!is.na(cutoff)) rows <- rows & !is.na(m) & m >= cutoff
+    mcar[rows, s] <- is.na(X[rows, s, drop = FALSE])
+  }
+  mcar
+}
+
+# Imputes the MCAR missing values from the neighbours ("knn" model), on the log2 scale.
+# - Neighbours of a protein in a condition: the sqrt(number of proteins) protein-condition rows nearest in mean intensity, among the rows
+#   with at least min_occurrences observed values.
+# - Target sd: the median sd of the neighbours, multiplied by sqrt(n/k) (n samples in the condition, k observed values), because the
+#   test then counts the imputed values as measured.
+# - One missing value: the value which brings the sd of the protein to the target (on a random side of its mean); its mean if the target
+#   cannot be reached. Several missing values: drawn jointly so that the mean of the protein is unchanged and its sd equals the target.
+impute_mcar_neighbours <- function(X, groups, mcar, min_occurrences, seed = 1, cutoff = 2){
+
+  # Inputs :
+  # X : log2 intensities (proteins kept for the analysis), one column per sample
+  # groups : condition of each column of X
+  # mcar : logical matrix of the MCAR missing values (see classify_mcar)
+  # min_occurrences : minimum number of observed values of a neighbour row (at least 2)
+  # Output :
+  # list(values (X with the MCAR values imputed), n_neighbours, n_model_rows)
+
+  if (is.na(min_occurrences) || min_occurrences < 2) stop("Imputation.knn.min.occurrences must be at least 2.", call. = FALSE)
+  groups <- as.character(groups)
+  model <- condition_rows(X, groups)
+  model <- model[model$k >= min_occurrences, ]
+  model <- model[order(model$mean), ]
+  n_nb <- floor(sqrt(nrow(X)))
+  if (nrow(model) < n_nb) {
+    stop("MCAR imputation (knn): only ", nrow(model), " protein/condition rows with at least ", min_occurrences,
+         " observed values are available as neighbours (at least ", n_nb, " are needed).", call. = FALSE)
+  }
+  neighbour_sd <- function(v){
+    p <- findInterval(v, model$mean)
+    from <- min(max(p - n_nb %/% 2, 0), nrow(model) - n_nb)
+    median(model$sd[(from + 1):(from + n_nb)])
+  }
+
+  out <- X
+  with_fixed_seed(seed, {
+    for (g in unique(groups)) {
+      s <- which(groups == g)
+      for (i in which(rowSums(mcar[, s, drop = FALSE]) > 0)) {
+        set.seed(row_seed(seed, i, match(g, unique(groups)), length(unique(groups))))
+        miss <- mcar[i, s]
+        obs <- X[i, s][!is.na(X[i, s])]
+        k <- length(obs); nm <- sum(miss); m <- mean(obs); s_own <- sd(obs)
+        target <- neighbour_sd(m) * sqrt(length(s) / k)
+        if (nm == 1) {
+          d2 <- (k * target^2 - (k - 1) * s_own^2) * (k + 1) / k
+          values <- m + sample(c(-1, 1), 1) * sqrt(max(d2, 0))
+        } else {
+          need <- (k + nm - 1) * target^2 - (k - 1) * s_own^2
+          values <- m + draw_exact_sd(nm, cutoff) * sqrt(max(need, 0) / (nm - 1))
+        }
+        out[i, s[miss]] <- values
+      }
+    }
+  })
+  list(values = out, n_neighbours = n_nb, n_model_rows = nrow(model))
+}
 
 ###############
 # Noise model #
@@ -441,7 +463,7 @@ estimate_noise_model <- function(df, groups, percentile, rows = NULL, upper_perc
 # This function imputes missing values with background noise, using a model returned by estimate_noise_model().
 # For each protein and condition with at least one missing value, a set of values is drawn for all the samples of the condition
 # around their noise levels, with a sd of exactly the noise sd (see draw_exact_sd), and the observed values are kept.
-impute_using_noise_model <- function(df, groups, noise_model, rows = NULL, seed = 1, cutoff = 2){
+impute_using_noise_model <- function(df, groups, noise_model, rows = NULL, seed = 1, cutoff = 2, skip = NULL){
 
   # Inputs :
   # df : quantification matrix (linear intensities) whom 1rst column contains protein id. Cells holding the "MCAR" marker are left missing.
@@ -449,6 +471,7 @@ impute_using_noise_model <- function(df, groups, noise_model, rows = NULL, seed 
   # noise_model : model returned by estimate_noise_model() for the same matrix
   # rows : proteins to impute (logical vector, default: all); the other proteins are returned unchanged
   # seed : seed of the random generator (the imputation is reproducible; the state of the generator is restored afterwards)
+  # skip : optional logical matrix (one column per sample column of df): missing values to leave missing (MCAR values not imputed)
   # Output :
   # quantification matrix with imputed intensities ("_imputed" columns)
 
@@ -457,23 +480,24 @@ impute_using_noise_model <- function(df, groups, noise_model, rows = NULL, seed 
   if (is.null(rows)) rows <- rep(TRUE, nrow(df))
 
   left_missing <- as.matrix(df[-1] == "MCAR"); left_missing[is.na(left_missing)] <- FALSE
+  if (!is.null(skip)) left_missing <- left_missing | skip
   X <- log2_intensity_matrix(df)
   noise_level <- noise_model$noise_level[colnames(X)]
 
-  # Imputation, with a fixed seed (the state of the random generator is restored afterwards)
-  old_seed <- if (exists(".Random.seed", envir = globalenv())) get(".Random.seed", envir = globalenv()) else NULL
-  on.exit(if (is.null(old_seed)) suppressWarnings(rm(".Random.seed", envir = globalenv())) else assign(".Random.seed", old_seed, envir = globalenv()))
-  set.seed(seed)
+  # Imputation, with a fixed seed per protein and condition (the state of the random generator is restored afterwards)
   imputed <- X
   to_impute <- is.na(X) & !left_missing
-  for (g in unique(groups)) {
-    s <- which(groups == g)
-    for (i in which(rows & rowSums(to_impute[, s, drop = FALSE]) > 0)) {
-      full <- noise_level[s] + noise_model$noise_sd * draw_exact_sd(length(s), cutoff)
-      miss <- to_impute[i, s]
-      imputed[i, s[miss]] <- full[miss]
+  with_fixed_seed(seed, {
+    for (g in unique(groups)) {
+      s <- which(groups == g)
+      for (i in which(rows & rowSums(to_impute[, s, drop = FALSE]) > 0)) {
+        set.seed(row_seed(seed, i, match(g, unique(groups)), length(unique(groups))))
+        full <- noise_level[s] + noise_model$noise_sd * draw_exact_sd(length(s), cutoff)
+        miss <- to_impute[i, s]
+        imputed[i, s[miss]] <- full[miss]
+      }
     }
-  }
+  })
 
   # Back to linear intensities; the observed values are returned exactly as given
   linear <- numeric_intensity_matrix(df[-1])
