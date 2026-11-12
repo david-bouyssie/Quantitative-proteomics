@@ -211,162 +211,160 @@ compute_cv <- function(intensity_matrix){
 ##############
 # Imputation #
 ##############
-if(TRUE){
-  # Converts a table whose cells may contain the "MCAR" marker (cells deliberately left missing) to a numeric matrix.
-  # data.matrix() must not be used here: it turns character columns into factor codes.
-  numeric_intensity_matrix <- function(df){
-    df[df=="MCAR"] <- NA
-    as.matrix(as.data.frame(lapply(df, function(x) if (is.numeric(x)) as.numeric(x) else as.numeric(as.character(x))), check.names = FALSE))
-  }
+# Converts a table whose cells may contain the "MCAR" marker (cells deliberately left missing) to a numeric matrix.
+# data.matrix() must not be used here: it turns character columns into factor codes.
+numeric_intensity_matrix <- function(df){
+  df[df=="MCAR"] <- NA
+  as.matrix(as.data.frame(lapply(df, function(x) if (is.numeric(x)) as.numeric(x) else as.numeric(as.character(x))), check.names = FALSE))
+}
 
-  # This function impute missing values with background noise using a percentile.
-  impute_using_noise_percentile <- function(df,per){
-    
-    # Input :
-    # df : quantification matrix whom 1rst column contains protein id
-    # per : chosen percentile
-    # Output :
-    # quantification matrix with imputed intensities
-    
-    for(col in colnames(df)[-1]){
-      current_intensities = df[col]
-      df_without_string = numeric_intensity_matrix(current_intensities)
-      percentile = as.numeric(quantile(df_without_string,per, na.rm = T))
-      current_intensities[is.na(current_intensities)] <- percentile
-      df[col] = current_intensities
-    }
-    
-    colnames(df)[2:ncol(df)] = paste0(colnames(df)[2:ncol(df)],"_imputed")
-    return(df)
-    
+# This function impute missing values with background noise using a percentile.
+impute_using_noise_percentile <- function(df,per){
+  
+  # Input :
+  # df : quantification matrix whom 1rst column contains protein id
+  # per : chosen percentile
+  # Output :
+  # quantification matrix with imputed intensities
+  
+  for(col in colnames(df)[-1]){
+    current_intensities = df[col]
+    df_without_string = numeric_intensity_matrix(current_intensities)
+    percentile = as.numeric(quantile(df_without_string,per, na.rm = T))
+    current_intensities[is.na(current_intensities)] <- percentile
+    df[col] = current_intensities
   }
   
-  ########## MCAR Imputation ################
+  colnames(df)[2:ncol(df)] = paste0(colnames(df)[2:ncol(df)],"_imputed")
+  return(df)
   
-  # This function is dedicated to MCAR imputation.
-  impute_mcar <- function(intensities,identification_type,model,threshold_mcar_obs,threshold_mcar_ms,knn_min_occurrences, data_f){
+}
+
+########## MCAR Imputation ################
+
+# This function is dedicated to MCAR imputation.
+impute_mcar <- function(intensities,identification_type,model,threshold_mcar_obs,threshold_mcar_ms,knn_min_occurrences, data_f){
+  
+  # Input :
+  # intensities : quantification matrix whom 1st column contains protein id
+  # identification_type : matrix of identification type whom 1st column contains protein id
+  # model : imputation model (KNN or none)
+  # threshold_mcar_obs : minimum number of observations in the condition to be a MCAR
+  # threshold_mcar_ms : minimum number of file identified by MS/MS in the condition to be a MCAR
+  # knn_min_occurrences : minimum number of observations in the condition to be used as a nearest neighbor
+  # filtered :filtered dataFrame for ranking
+  # Output :
+  # quantification matrix with imputed intensities
+  
+  colnames(intensities)[1] <- "Id"
+  
+  intensities_info = intensities
+  identification_type_info = identification_type
+  
+  # Compute nb of NA by protein
+  intensities_info$obs_sum = as.numeric(apply(intensities[-1],1,function(x) sum(!is.na(x))))
+  intensities_info$na_sum = as.numeric(apply(intensities[-1],1,function(x) sum(is.na(x))))
+  
+  # Compute nb of MS/MS by protein
+  identification_type_info$ms_sum = as.numeric(apply(identification_type_info[-1],1,function(x) sum(x=="By MS/MS")))
+  
+  # Order proteins by median intensity
+  intensities_info$median = Biobase::rowMedians(as.matrix(intensities[-1]), na.rm=TRUE)
+  intensities_info = intensities_info[order(intensities_info$median),]
+  intensities_info$rank = seq(1:nrow(data_f))
+  
+  write.csv(intensities_info, "intensities_info.csv", row.names = F)
+  write.csv(identification_type_info, "identification_type_info.csv", row.names = F)
+  
+  # Extract candidates for KNN
+  putative_knn = subset(intensities_info,intensities_info$obs_sum>=knn_min_occurrences)
+  putative_knn$cv = as.numeric(apply(putative_knn[,2:(ncol(putative_knn)-3)],1,function(x) sd(x,na.rm=T)/median(x,na.rm=T)))
+  putative_knn$median = as.numeric(apply(putative_knn[,2:(ncol(putative_knn)-4)],1,function(x) median(x,na.rm=T)))
+  
+  # Find MCAR
+  mcar = subset(identification_type_info,identification_type_info$ms_sum>=threshold_mcar_ms)
+  mcar = subset(intensities_info,intensities_info$Id%in%mcar$Id)
+  mcar = subset(mcar,(mcar$obs_sum>=threshold_mcar_obs & mcar$na_sum>0))
+  
+  write.csv(mcar, "mcar3.csv", row.names = F)
+  
+  # Impute MCAR
+  if(nrow(mcar)>0){
     
-    # Input :
-    # intensities : quantification matrix whom 1st column contains protein id
-    # identification_type : matrix of identification type whom 1st column contains protein id
-    # model : imputation model (KNN or none)
-    # threshold_mcar_obs : minimum number of observations in the condition to be a MCAR
-    # threshold_mcar_ms : minimum number of file identified by MS/MS in the condition to be a MCAR
-    # knn_min_occurrences : minimum number of observations in the condition to be used as a nearest neighbor
-    # filtered :filtered dataFrame for ranking
-    # Output :
-    # quantification matrix with imputed intensities
-    
-    colnames(intensities)[1] <- "Id"
-    
-    intensities_info = intensities
-    identification_type_info = identification_type
-    
-    # Compute nb of NA by protein
-    intensities_info$obs_sum = as.numeric(apply(intensities[-1],1,function(x) sum(!is.na(x))))
-    intensities_info$na_sum = as.numeric(apply(intensities[-1],1,function(x) sum(is.na(x))))
-    
-    # Compute nb of MS/MS by protein
-    identification_type_info$ms_sum = as.numeric(apply(identification_type_info[-1],1,function(x) sum(x=="By MS/MS")))
-    
-    # Order proteins by median intensity
-    intensities_info$median = Biobase::rowMedians(as.matrix(intensities[-1]), na.rm=TRUE)
-    intensities_info = intensities_info[order(intensities_info$median),]
-    intensities_info$rank = seq(1:nrow(data_f))
-    
-    write.csv(intensities_info, "intensities_info.csv", row.names = F)
-    write.csv(identification_type_info, "identification_type_info.csv", row.names = F)
-    
-    # Extract candidates for KNN
-    putative_knn = subset(intensities_info,intensities_info$obs_sum>=knn_min_occurrences)
-    putative_knn$cv = as.numeric(apply(putative_knn[,2:(ncol(putative_knn)-3)],1,function(x) sd(x,na.rm=T)/median(x,na.rm=T)))
-    putative_knn$median = as.numeric(apply(putative_knn[,2:(ncol(putative_knn)-4)],1,function(x) median(x,na.rm=T)))
-    
-    # Find MCAR
-    mcar = subset(identification_type_info,identification_type_info$ms_sum>=threshold_mcar_ms)
-    mcar = subset(intensities_info,intensities_info$Id%in%mcar$Id)
-    mcar = subset(mcar,(mcar$obs_sum>=threshold_mcar_obs & mcar$na_sum>0))
-    
-    write.csv(mcar, "mcar3.csv", row.names = F)
-    
-    # Impute MCAR
-    if(nrow(mcar)>0){
+    if(model=="none"){
+      mcar[is.na(mcar)] <- "MCAR"
       
-      if(model=="none"){
-        mcar[is.na(mcar)] <- "MCAR"
+    }else{
+      if(model=="knn"){
         
-      }else{
-        if(model=="knn"){
+        # Number of nearest neighbours to select
+        k = floor(sqrt(nrow(intensities)))
+        
+        for(row in 1:nrow(mcar)){
           
-          # Number of nearest neighbours to select
-          k = floor(sqrt(nrow(intensities)))
+          current_mcar = mcar[row,]
           
-          for(row in 1:nrow(mcar)){
-            
-            current_mcar = mcar[row,]
-            
-            # Find knn
-            current_rank = current_mcar$rank
-            knn = putative_knn
-            knn$distance = abs(putative_knn$rank - current_rank)
-            knn = knn[order(knn$distance),]
-            knn = knn[1:k,]
-            
-            # Informations about current MCAR
-            aValues = as.numeric(current_mcar[,2:(ncol(current_mcar)-4)])
-            nb_na_to_impute = sum(is.na(aValues)==T)
-            median_protein_to_impute = median(aValues,na.rm=T)
-            sd_knn = median(knn$cv,na.rm=T)*median_protein_to_impute # Expected sd after imputation
-            q3 = as.numeric(quantile(aValues,na.rm=T)[4])
-            d = q3 - median_protein_to_impute
-            
-            # Find intensities to frame sd_knn
+          # Find knn
+          current_rank = current_mcar$rank
+          knn = putative_knn
+          knn$distance = abs(putative_knn$rank - current_rank)
+          knn = knn[order(knn$distance),]
+          knn = knn[1:k,]
+          
+          # Informations about current MCAR
+          aValues = as.numeric(current_mcar[,2:(ncol(current_mcar)-4)])
+          nb_na_to_impute = sum(is.na(aValues)==T)
+          median_protein_to_impute = median(aValues,na.rm=T)
+          sd_knn = median(knn$cv,na.rm=T)*median_protein_to_impute # Expected sd after imputation
+          q3 = as.numeric(quantile(aValues,na.rm=T)[4])
+          d = q3 - median_protein_to_impute
+          
+          # Find intensities to frame sd_knn
+          imputed = aValues
+          rand =as.numeric(knn$median,na.rm=T)
+          
+          X = median_protein_to_impute
+          imputed[is.na(imputed)] <- X
+          
+          while(sd(imputed)<sd_knn){
             imputed = aValues
-            rand =as.numeric(knn$median,na.rm=T)
-            
-            X = median_protein_to_impute
+            X = X+d
             imputed[is.na(imputed)] <- X
-            
-            while(sd(imputed)<sd_knn){
-              imputed = aValues
-              X = X+d
-              imputed[is.na(imputed)] <- X
-            }
-            
-            # Create the gaussian model
-            if(X==median_protein_to_impute){
-              gaussian = rnorm(10000, mean = median_protein_to_impute, sd = 0.05)
-            }else{
-              mean_X = (X + (X-d))/2
-              gaussian = rnorm(10000, mean = mean_X, sd = 0.05)
-            }
-            
-            # Replace NA by values sampled in the gaussian model
-            rand = sample(gaussian,nb_na_to_impute,replace=T)
-            imputed = aValues
-            
-            imputed[is.na(imputed)] <- rand
-            
-            mcar[row,2:ncol(intensities)] = imputed
           }
+          
+          # Create the gaussian model
+          if(X==median_protein_to_impute){
+            gaussian = rnorm(10000, mean = median_protein_to_impute, sd = 0.05)
+          }else{
+            mean_X = (X + (X-d))/2
+            gaussian = rnorm(10000, mean = mean_X, sd = 0.05)
+          }
+          
+          # Replace NA by values sampled in the gaussian model
+          rand = sample(gaussian,nb_na_to_impute,replace=T)
+          imputed = aValues
+          
+          imputed[is.na(imputed)] <- rand
+          
+          mcar[row,2:ncol(intensities)] = imputed
         }
       }
     }
-    
-    # Replace in the final table
-    write("beg_end", "beg_end")
-    write.csv(intensities, "test_intensities.csv", row.names = F)
-    intensities = subset(intensities, !intensities[,1]%in%mcar[,1])
-    intensities = rbind(intensities,mcar[,1:(ncol(mcar)-4)])
-    write("beg_endd", "beg_endd")
-    keep_col_names <- colnames(intensities)
-    # intensities[is.nan(intensities)] <- NA
-    intensities <- as.data.frame(lapply(intensities, function(x) ifelse(is.nan(x), NA, x)))
-    write("beg_enddd", "beg_enddd")
-    colnames(intensities) <- keep_col_names
-    
-    return(intensities)
   }
+  
+  # Replace in the final table
+  write("beg_end", "beg_end")
+  write.csv(intensities, "test_intensities.csv", row.names = F)
+  intensities = subset(intensities, !intensities[,1]%in%mcar[,1])
+  intensities = rbind(intensities,mcar[,1:(ncol(mcar)-4)])
+  write("beg_endd", "beg_endd")
+  keep_col_names <- colnames(intensities)
+  # intensities[is.nan(intensities)] <- NA
+  intensities <- as.data.frame(lapply(intensities, function(x) ifelse(is.nan(x), NA, x)))
+  write("beg_enddd", "beg_enddd")
+  colnames(intensities) <- keep_col_names
+  
+  return(intensities)
 }
 
 
