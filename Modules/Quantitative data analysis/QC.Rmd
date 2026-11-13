@@ -315,10 +315,9 @@ if(coloring_by_group && file.exists(params$design_exp)){
   
   ######################################################################
   
-  # Colour of each sample: the colour of its group, samples ordered group by group
-  sample_colors <- unlist(lapply(seq_along(group_names), function(i){
-    rep(group_colors[i], sum(expDesign$Condition == group_names[i]))
-  }))
+  # Colour of each sample: the colour of its group, in the order of the sample columns
+  # (one sample per repBio of each condition, see sample_conditions)
+  sample_colors <- group_colors[match(sample_conditions, group_names)]
 }else{
   color_group <- FALSE
 }
@@ -473,16 +472,13 @@ for (sample in sample_names){
 
 MedianIntensitiesDF$median_intensity <- 10**median_int
 
-if(color_group){
-  MedianIntensitiesDF$color <- sample_colors
-}
-
+# Bars sorted by median intensity. The colours follow the sample (factor levels in the order of sample_names), not the row order
 MedianIntensitiesDF <- MedianIntensitiesDF[order(MedianIntensitiesDF$median_intensity), ]
 
 # Creating ggplot bar graph
 
 M_intensity_comparison <- ggplot(data = MedianIntensitiesDF) +
-  geom_bar(stat="identity",aes(x=MedianIntensitiesDF$sample, y=MedianIntensitiesDF$median_intensity, fill = sample))+
+  geom_bar(stat="identity",aes(x=sample, y=median_intensity, fill = sample))+
   scale_x_discrete(limits = MedianIntensitiesDF$sample) +
   ggtitle("Median Intensity Across Runs") +
   ylab("Median Intensity")+
@@ -525,7 +521,8 @@ if (length(sample_names)<16 & nrow(data)<5000){
   colnames(cormat) = c("Samples1","Samples2","Coefficient")
   correlogram = ggplot(data = cormat, aes(x=Samples1, y=Samples2, fill=Coefficient)) + 
     geom_tile() +
-    scale_fill_gradient2(low = "dodgerblue", mid = "white",high = "red", midpoint = 0.55) +
+    # Sequential scale over the observed coefficients (white = lowest, red = 1), so that the outlier samples stand out
+    scale_fill_gradient(low = "white", high = "red") +
     xlab("")+
     ylab("")+
     ggtitle("Sample correlation") +
@@ -798,7 +795,7 @@ if (Normalization){
 
 barPlot <-ggplot(data=na_by_sample) +
   geom_bar(stat="identity",aes(x=factor(sample_names,level=sample_names), y=na_count_by_sample,fill=sample_names))+
-  scale_y_continuous(name = expression("Count"), sec.axis = sec_axis(~ . * 1/nrow(data) *100 , name = "Frenquency (%)"))+
+  scale_y_continuous(name = expression("Count"), sec.axis = sec_axis(~ . * 1/nrow(data) *100 , name = "Frequency (%)"))+
   #viridis::scale_fill_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T)+
   ggtitle("Missing values distribution across samples") +
   ylab("Count")+
@@ -832,7 +829,7 @@ barPlot <- ggplot() +
   ggtitle("Missing values distribution across proteins") +
   ylab("NA count by proteins")+
   xlab("Number of NA values")+
-  scale_y_continuous(name = expression("Number of proteins"), sec.axis = sec_axis(~ . * 1/nrow(data) * 100 , name = "Frenquency (%)"))+
+  scale_y_continuous(name = expression("Number of proteins"), sec.axis = sec_axis(~ . * 1/nrow(data) * 100 , name = "Frequency (%)"))+
   theme(plot.title = element_text(size=22),
         axis.title=element_text(size=18),
         axis.text=element_text(size=18))
