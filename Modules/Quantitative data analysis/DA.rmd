@@ -17,6 +17,7 @@ output:
 ---
 
 <style type="text/css">
+@page { size: A4; } /* printed reports (PDF) on A4 paper */
 
 body{
       font-size: 12px;
