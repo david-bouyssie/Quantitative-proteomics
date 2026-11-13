@@ -62,6 +62,10 @@ validate_inputs <- function(data, expDesign, comparisons = NULL, derived_suffixe
     problems <- c(problems, paste0("Quantification table: missing column(s) ", paste(missing_required, collapse = ", "),
                                    " (expected in the parsed table, see Parsers)"))
   }
+  if ("Accession" %in% intersect(required_columns, colnames(data)) && anyDuplicated(data$Accession)) {
+    problems <- c(problems, paste0("Quantification table: duplicated Accession value(s) (the statistical results are joined by accession): ",
+                                   paste(head(unique(data$Accession[duplicated(data$Accession)]), 10), collapse = ", ")))
+  }
   if ("Specific_peptides" %in% intersect(required_columns, colnames(data))) {
     counts <- suppressWarnings(as.numeric(as.character(data$Specific_peptides)))
     n_bad <- sum(is.na(counts) | counts < 0)
@@ -203,7 +207,7 @@ compute_median_deviation <- function(intensity_matrix){
 
 library(matrixStats)
 
-# This function compute the median deviation for each sample of the quantification matrix. It requires the library "matrixStats".
+# This function computes the coefficient of variation (CV, in %) of each protein of the quantification matrix.
 compute_cv <- function(intensity_matrix){
   
   # Input :
@@ -211,10 +215,14 @@ compute_cv <- function(intensity_matrix){
   # Output :
   # vector containing the CV for each protein
   
-  medians = rowMedians(data.matrix(intensity_matrix), na.rm=T)
-  sd = apply(intensity_matrix,1,sd)
-  cv = sd/medians * 100
-  
+  # CV = sd / mean of the observed values of each protein (NA with fewer than 2 observed values)
+  values = data.matrix(intensity_matrix)
+  n_obs = rowSums(!is.na(values))
+  means = rowMeans(values, na.rm = TRUE)
+  sds = apply(values, 1, sd, na.rm = TRUE)
+  cv = sds/means * 100
+  cv[n_obs < 2] = NA
+
   return(cv)
   
 }

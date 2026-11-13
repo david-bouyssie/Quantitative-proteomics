@@ -102,18 +102,28 @@ check("impute_mcar_neighbours(): sd of the protein = target (or mean imputed whe
 check("impute_mcar_neighbours(): with several missing values, the mean of the protein is unchanged", all(props$mean_kept[props$nm > 1]))
 check("impute_mcar_neighbours(): min_occurrences < 2 stops", grepl("at least 2", error_message(impute_mcar_neighbours(Xm, cond, mk, 1))))
 
-## 4. with_fixed_seed()
+## 4. CV and median deviation
+toy <- data.frame(a = c(10, 10, NA, 5), b = c(20, NA, NA, 5), c = c(30, 12, 4, 5))
+cv <- compute_cv(toy)
+check("compute_cv(): sd / mean of the observed values, in %", isTRUE(all.equal(cv[1:2], c(sd(c(10, 20, 30)) / 20, sd(c(10, 12)) / 11) * 100)))
+check("compute_cv(): NA with fewer than 2 observed values, 0 for constant values", is.na(cv[3]) && cv[4] == 0)
+dev <- compute_median_deviation(toy)
+check("compute_median_deviation(): (X - median) / median per protein", isTRUE(all.equal(dev[1, ], data.frame(a = -0.5, b = 0, c = 0.5), check.attributes = FALSE)))
+
+## 5. with_fixed_seed()
 set.seed(42); before <- runif(1); set.seed(42); x <- with_fixed_seed(5, runif(1)); after <- runif(1)
 check("with_fixed_seed(): fixed result and state of the random generator restored",
       identical(x, { set.seed(5); runif(1) }) && identical(before, after))
 
-## 5. validate_inputs()
+## 6. validate_inputs()
 check("validate_inputs(): example inputs are valid",
       is.na(error_message(validate_inputs(data, design, comparisons = "50fmol/25fmol", required_columns = c("Accession", "Gene_name", "Specific_peptides")))))
 bad <- data; bad$Id[2] <- bad$Id[1]
 check("validate_inputs(): duplicated Id", grepl("duplicated Id", error_message(validate_inputs(bad, design))))
 check("validate_inputs(): missing required column", grepl("missing column\\(s\\) Specific_peptides",
       error_message(validate_inputs(data[setdiff(names(data), "Specific_peptides")], design, required_columns = "Specific_peptides"))))
+bad <- data; bad$Accession[2] <- bad$Accession[1]
+check("validate_inputs(): duplicated Accession (when Accession is required)", grepl("duplicated Accession", error_message(validate_inputs(bad, design, required_columns = "Accession"))))
 bad <- data; bad$Specific_peptides[1:2] <- c(NA, -1)
 check("validate_inputs(): invalid Specific_peptides values", grepl("2 value\\(s\\) of Specific_peptides", error_message(validate_inputs(bad, design, required_columns = "Specific_peptides"))))
 check("validate_inputs(): unknown condition in a comparison", grepl("does not match any condition", error_message(validate_inputs(data, design, comparisons = "50fmol/2fmol"))))

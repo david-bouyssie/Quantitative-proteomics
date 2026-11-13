@@ -711,7 +711,7 @@ filter_dataset <- function(data, group_ids){
   # Summary table for filtering results
   diagrammDFT <- data.frame(
     filter = c("No specific peptides",
-              paste0("Less than ",(Filter.threshold.obs * 100),"% observations in at least one group"), 
+              paste0("Less than ",(Filter.threshold.obs * 100),"% observations in every group"), 
               paste0("Less than ",Filter.threshold.ms," files identified by MS/MS"),
               "Proteins kept for analysis"),
     value = c(nb_specific, nb_obs, nb_ms, nbProteins)
@@ -722,7 +722,7 @@ filter_dataset <- function(data, group_ids){
   # Diagram to be used for the bar plot
   diagrammDF <- data.frame(
     filter = c(paste0(diagrammDFT$value[1], " (", diagrammDFT$value.percent[1], "%) No specific peptides"),
-              paste0(diagrammDFT$value[2], " (", diagrammDFT$value.percent[2],"%) Less than ",(Filter.threshold.obs * 100),"% observations in at least one group"), 
+              paste0(diagrammDFT$value[2], " (", diagrammDFT$value.percent[2],"%) Less than ",(Filter.threshold.obs * 100),"% observations in every group"), 
               paste0(diagrammDFT$value[3], " (", diagrammDFT$value.percent[3],"%) Less than ",Filter.threshold.ms," files identified by MS/MS"),
               paste0(diagrammDFT$value[4], " (", diagrammDFT$value.percent[4],"%) Proteins kept for analysis")),
     value = c(nb_specific, nb_obs, nb_ms, nbProteins)
@@ -1337,7 +1337,7 @@ mean_abundance_repbio <- as.data.frame(global_filtering[[2]])
 
 # Saving imputed unfiltered abundance, keeping only imputed abundance rows that passed filtering
 global_imputed_abundance <- imputed_abundance
-imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% filtered_data$Id, ]
+imputed_abundance <- global_imputed_abundance[match(filtered_data$Id, global_imputed_abundance$Id), ]
 
 # Saving unfiltered logged imputed abundance, keeping only imputed abundance rows that passed filtering
 global_imputed_abundance_log <- imputed_abundance_log
@@ -1413,17 +1413,19 @@ median_deviation_before_long  = reshape2::melt(df_median_deviation_before_proces
 colnames(median_deviation_before_long ) = c("Group","value")
 median_deviation_before_long $Group = sub("\\..*","",median_deviation_before_long $Group)
 
-# Filtering for 0 or na values before logging in density plot
+# The deviation (X-median)/median is shown as the log2 ratio to the median, log2(X/median) = log2(1 + deviation), so that the values
+# below the median (negative deviations) are kept; missing values are removed
 median_deviation_before_long  <- median_deviation_before_long [
   !is.na(median_deviation_before_long $value) &
-    median_deviation_before_long $value > 0,
+    median_deviation_before_long $value > -1,
 ]
 
-# Creating density plot for log2 transformed median deviation values before processing/imputation
+# Creating density plot of the log2 ratios to the median before processing/imputation
 median_deviation_density_before_processing = ggplot() +
-    geom_density(data = median_deviation_before_long , mapping = aes(x=log2(value),group=Group,color=Group), na.rm = T) +
+    geom_density(data = median_deviation_before_long , mapping = aes(x=log2(1 + value),group=Group,color=Group), na.rm = T) +
     ggtitle("Median deviation distribution before processing")+
-    xlab("log2((X-median)/median)")+
+    xlab("log2(X/median)")+
+    coord_cartesian(xlim = quantile(log2(1 + median_deviation_before_long$value), c(0.005, 0.995))) + # zoom on the central 99% of the values
     theme(plot.title = element_text(size=22),
           axis.title=element_text(size=18),
           axis.text=element_text(size=18),
@@ -1435,17 +1437,18 @@ df_median_deviation_after_long = reshape2::melt(df_median_deviation_after_proces
 colnames(df_median_deviation_after_long) = c("Group","value")
 df_median_deviation_after_long$Group = sub("\\..*","",df_median_deviation_after_long$Group)
 
-# Filtering for 0 or na values before logging in density plot
+# Same representation after processing/imputation
 df_median_deviation_after_long <- df_median_deviation_after_long[
   !is.na(df_median_deviation_after_long$value) &
-    df_median_deviation_after_long$value > 0,
+    df_median_deviation_after_long$value > -1,
 ]
 
-# Creating density plot for log2 transformed median deviation values after processing/imputation
+# Creating density plot of the log2 ratios to the median after processing/imputation
 median_deviation_density_after_processing = ggplot() +
-  geom_density(data = df_median_deviation_after_long, mapping = aes(x=log2(value),group=Group,color=Group), na.rm = T) +
+  geom_density(data = df_median_deviation_after_long, mapping = aes(x=log2(1 + value),group=Group,color=Group), na.rm = T) +
   ggtitle("Median deviation distribution after processing")+
-  xlab("log2((X-median)/median)")+
+  xlab("log2(X/median)")+
+  coord_cartesian(xlim = quantile(log2(1 + df_median_deviation_after_long$value), c(0.005, 0.995))) + # zoom on the central 99% of the values
   theme(plot.title = element_text(size=22),
             axis.title=element_text(size=22),
             axis.text=element_text(size=22),
@@ -1801,7 +1804,7 @@ for (comparison in comparisons_to_display){
   mean_abundance_repbio <- as.data.frame(cond_fltr[[2]])
 
   # Keep only imputed abundance rows that passed the comparison-specific filter
-  imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% filtered_data$Id, ]
+  imputed_abundance <- global_imputed_abundance[match(filtered_data$Id, global_imputed_abundance$Id), ]
   
   #################################### Biolding intensity tables for comparison groups #########################################################
 
