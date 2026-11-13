@@ -35,10 +35,12 @@ finish <- function(name) {
 
 # Renders a report of Modules/Quantitative data analysis in a short temporary folder (Windows paths are limited to 260 characters):
 # the knitting folder is <tmp>/k/a/b, so that the report finds the library at ../../Library as in the repository
-render_report <- function(rmd, params, output_name) {
+# output_dir_param: name of the report parameter that receives the output folder (output_dir of DA), if any
+render_report <- function(rmd, params, output_name, output_dir_param = NULL) {
   tmp <- tempfile("qp_"); dir.create(file.path(tmp, "k", "a", "b"), recursive = TRUE)
   file.copy(file.path(repo_root, "Library"), file.path(tmp, "k"), recursive = TRUE)
   out_dir <- file.path(tmp, "out"); dir.create(out_dir)
+  if (!is.null(output_dir_param)) params[[output_dir_param]] <- out_dir
   pandoc <- file.path(R.home(), "bin")
   if (file.exists(file.path(pandoc, "pandoc.exe")) || file.exists(file.path(pandoc, "pandoc"))) Sys.setenv(RSTUDIO_PANDOC = pandoc)
   # A copy of the module folder, so that the intermediate files of rmarkdown are not written into the repository
