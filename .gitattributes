@@ -1,0 +1,21 @@
+# Line endings: text files are stored with LF in the repository, whatever the platform of the commit.
+# On checkout, Git converts them to the platform convention (CRLF on Windows with core.autocrlf=true, LF elsewhere).
+* text=auto
+
+# Windows batch files must keep CRLF line endings
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files: no line-ending conversion, no textual diff
+*.xlsx binary
+*.xls binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.PNG binary
+*.gif binary
+*.svg text
+*.rds binary
+*.RData binary
+*.zip binary
