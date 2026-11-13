@@ -2120,8 +2120,9 @@ for (comparison in comparisons_to_display){
     # Creating MA plot with ggplot
     MA = ggplot(current_statDF_MA, aes(x=log10(mean_intensity), y=log2(fc))) +
       # Coloring by significance
-      {if(col_sig) geom_point(aes(color=significant, alpha = current_statDF_MA$pval),size=ifelse(current_statDF_MA$significant, 2, 1.5))}+
-      {if(!col_sig) geom_point(aes(color=-log10(pval), alpha = .7),size=pnt_sz)}+
+      # Transparency by -log10(p-value): the most significant points are the most opaque
+      {if(col_sig) geom_point(aes(color=significant, alpha = -log10(pval)),size=ifelse(current_statDF_MA$significant, 2, 1.5))}+
+      {if(!col_sig) geom_point(aes(color=-log10(pval)), alpha = .7, size=pnt_sz)}+
       {if(col_sig) scale_color_manual(values = sig_list)}+
       # If monochrome coloring
       {if(monochrome && !col_sig) scale_color_gradient(low = 'lightblue', high = 'blue4')}+
@@ -2140,6 +2141,8 @@ for (comparison in comparisons_to_display){
       ggtitle("MA plot")+
       xlab("log 10(Intensity)")+
       ylab("log2(fc)") +
+      # Legend titles: significance in color and -log10(p-value) in transparency, or -log10(p-value) in color
+      {if(col_sig) labs(color = "Significant", alpha = "-log10(pval)") else labs(color = "-log10(pval)")} +
       theme(legend.position = "right",
         plot.title = element_text(size=22),
         axis.title=element_text(size=24),
@@ -2185,8 +2188,8 @@ for (comparison in comparisons_to_display){
     Volcano = Volcano +
       # If coloring by significance
       {if(col_sig) geom_point(aes(color=cstat_noNA$significant, alpha = Intensity),size=ifelse(cstat_noNA$significant, 1.5, 1))}+
-      # If not coloring by significance
-      {if(!col_sig) geom_point(aes(color=Intensity, alpha = .7),size=pnt_sz)}+
+      # If not coloring by significance (constant transparency, set outside aes so that it has no legend)
+      {if(!col_sig) geom_point(aes(color=Intensity), alpha = .7, size=pnt_sz)}+
       # Adding pvalue and fc threshold lines
       {if(!is.na(volcano_pvalue_line)) geom_hline(yintercept=-log10(volcano_pvalue_line),linetype="dashed")}+
       # Stat.threshold.fc is already expressed as a log2 fold change
@@ -2207,7 +2210,8 @@ for (comparison in comparisons_to_display){
       ggtitle("")+
       xlab(paste0("log2(FC)"))+ 
       ylab(paste0('-log10(pval)'))+
-      labs(color='log10(Intensity)') +
+      # Legend titles: significance in color and log10 intensity in transparency, or log10 intensity in color
+      {if(col_sig) labs(color = "Significant", alpha = "log10(Intensity)") else labs(color = "log10(Intensity)")} +
       theme(plot.title = element_text(size=22),
             axis.title=element_text(size=18),
             axis.text=element_text(size=18),
