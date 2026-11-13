@@ -404,6 +404,29 @@ comparisons_to_display = strsplit(as.character(parameters["Comparisons",]),";")[
 # Setting if test is paired
 Test.paired <- as.logical(parameters["Test.paired",])
 
+# Post-hoc procedure of the anova / kruskall tests, for the pairwise comparisons: "holm" (default) or "bonferroni" (pairwise tests
+# corrected over the comparisons of each protein), or "tukey" (anova only)
+Test.posthoc.procedure <- if ("Test.posthoc.procedure" %in% rownames(parameters)) trimws(as.character(parameters["Test.posthoc.procedure",])) else "holm"
+
+# Gating of the anova / kruskall comparisons by the global test: "none" (default) or "bh" (comparisons tested only for the proteins whose
+# global test passes Stat.threshold.significance after a BH correction across proteins)
+Test.anova.gating <- if ("Test.anova.gating" %in% rownames(parameters)) trimws(as.character(parameters["Test.anova.gating",])) else "none"
+if (Test.type %in% c("anova", "kruskall")) {
+  if (!Test.posthoc.procedure %in% c("holm", "bonferroni", "tukey", "none")) stop("Parameter Test.posthoc.procedure must be holm, bonferroni, tukey or none.")
+  if (Test.type == "kruskall" && Test.posthoc.procedure == "tukey") stop("Test.posthoc.procedure=tukey requires Test.type=anova (use holm, bonferroni or none with kruskall).")
+  if (!Test.anova.gating %in% c("none", "bh")) stop("Parameter Test.anova.gating must be none or bh.")
+}
+
+# The p-value of the global test over all the conditions (anova or Kruskal-Wallis) and its q-value are exported with
+# Test.type=anova or kruskall and more than one comparison
+export_global_test <- Test.type %in% c("anova", "kruskall") && length(comparisons_to_display) > 1
+
+# Pairing of the samples in a paired test: "position" (order in the experimental design, default) or "name" (same repBio)
+Test.paired.by <- if ("Test.paired.by" %in% rownames(parameters)) trimws(as.character(parameters["Test.paired.by",])) else "position"
+if (Test.paired && !Test.paired.by %in% c("position", "name")) {
+  stop("Parameter Test.paired.by must be position or name.")
+}
+
 # Setting for equal variance
 Test.var.equal <- as.logical(parameters["Test.var.equal",])
 
@@ -507,6 +530,32 @@ group_cols <- function(groups, suffix, available = NULL){
     }
   }
   cols
+}
+
+# Paired tests: returns, for the columns of condition B (in group_cols order), the order that puts each replicate of B in front of
+# its pair in condition A (columns of A in group_cols order). With Test.paired.by=position, the i-th replicate of A (in the order of
+# the experimental design) is paired with the i-th replicate of B; with Test.paired.by=name, replicates with the same repBio are paired.
+paired_order <- function(A_name, B_name){
+  reps_A <- unique(as.character(expDesign$repBio[expDesign$Condition == A_name]))
+  reps_B <- unique(as.character(expDesign$repBio[expDesign$Condition == B_name]))
+  if (Test.paired.by == "position") {
+    if (length(reps_A) != length(reps_B)) {
+      stop("Paired test: conditions ", A_name, " and ", B_name, " must have the same number of replicates (", length(reps_A), " and ", length(reps_B), ").")
+    }
+    return(seq_along(reps_B))
+  }
+  if (length(reps_A) != length(reps_B) || !setequal(reps_A, reps_B)) {
+    stop("Paired test: conditions ", A_name, " and ", B_name, " must have the same replicate names (repBio column of the experimental design) with Test.paired.by=name. ",
+         A_name, ": ", paste(reps_A, collapse = ", "), "; ", B_name, ": ", paste(reps_B, collapse = ", "), ". Use Test.paired.by=position to pair them by their order.")
+  }
+  match(reps_A, reps_B)
+}
+
+# Paired tests: text listing the pairs of replicates used for a comparison
+paired_text <- function(A_name, B_name){
+  reps_A <- unique(as.character(expDesign$repBio[expDesign$Condition == A_name]))
+  reps_B <- unique(as.character(expDesign$repBio[expDesign$Condition == B_name]))[paired_order(A_name, B_name)]
+  paste0("Pairs (", A_name, " - ", B_name, ", by ", Test.paired.by, "): ", paste0(reps_A, " - ", reps_B, collapse = ", "), ".")
 }
 
 # Returns a lookup table giving the group of each per-sample column "<sample id><suffix>"
@@ -1576,6 +1625,33 @@ if (format_svg) {
 
 ## Pvalue calculation for Anova/Kruskall ##
 
+# Returns the filtering of a comparison (filter_dataset applied to the two conditions only): [[1]] filtered data, [[2]] bio-rep mean abundances
+comparison_filter <- function(A_name, B_name){
+
+  # Starting a comparison-specific filtering table with identifier columns
+  filtering_data <- data[c("Id", "Accession", "Gene_name", "Label", "Specific_peptides")]
+
+  # Add abundance and identification columns for each of the comparison groups
+  for(group in c(A_name, B_name)){
+
+    # Adding the mean abundance columns of the group to the filtering table
+    group_mean_cols <- group_cols(group, "_mean", colnames(global_mean_abundance_repbio))
+    sel_global_mean_abundance_repbio <- global_mean_abundance_repbio %>% select(Id, all_of(group_mean_cols))
+    filtering_data <- filtering_data %>% left_join(sel_global_mean_abundance_repbio,by="Id")
+
+    # For each raw file in this group, add raw intensity column and matching identification type column
+    for(file in expDesign[expDesign$Condition == group,]$File){
+      filtering_data <- cbind(filtering_data, data[file])
+      filtering_data <- cbind(filtering_data, data[paste0("Identification_type", sub("Intensity", "", file))])
+    }
+  }
+
+  # Add all log-transformed abundance columns
+  filtering_data <- cbind(filtering_data, data[grepl("_log$", colnames(data))])
+
+  filter_dataset(filtering_data, c(A_name, B_name))
+}
+
 # Clear pvalue_table
 pvalue_table <- NULL
 
@@ -1606,48 +1682,91 @@ if(Test.type %in% c("anova","kruskall")){
   reshape_abundance = reshape2::melt(intensity_df,id="Id")
   reshape_abundance$variable = unname(group_of_cols(col_suffix)[as.character(reshape_abundance$variable)])
   
-  # For each protein, subset the long-format abundance table and sun the global statistical test
-  for(id in unique(reshape_abundance$Id)){
-  
-    # Keeping only abundance values for the current protein
-    current_protein_intensities = subset(reshape_abundance,reshape_abundance$Id==id)
-    
-    # Anova Test
-    if(Test.type=="anova"){
-      
-      # Run the anova test and get summary results
-      anova = aov(current_protein_intensities$value~current_protein_intensities$variable)
-      pval = summary(anova)[[1]][[1,"Pr(>F)"]]
-      
-      # Tukey post-hoc correction for pairwise comparison pvalues
-      res <- t(TukeyHSD(x=anova, 'current_protein_intensities$variable', conf.level=1-Stat.threshold.significance)[[1]])[4,]
-      
-    # Kruskal-Wallis Test
-    }else if(Test.type=="kruskall"){
-      
-      # Kruskal test
-      kruskal = kruskal.test(current_protein_intensities$value~as.factor(current_protein_intensities$variable))
-      pval = kruskal$p.value
-      
-      # Wilcoxon pairwise test between groups
-      res = pairwise.wilcox.test(current_protein_intensities$value,current_protein_intensities$variable,p.adjust.method="none")$p.value
-    }
-    
-  # Checking if pvalue_table exists
-  if(is.null(pvalue_table)){
-      pvalue_table = data.frame(matrix(c(id,pval,res),nrow=1))
-      colnames(pvalue_table) = c("Id","global_pval",names(res))
-    }
-    # Else, append this proteins p-value to the existing table
-    else{ 
-      add = data.frame(matrix(c(id,pval,res),nrow=1))
-      colnames(add) = c("Id","global_pval",names(res))
-      pvalue_table = rbind(pvalue_table,add)
-    }
-  
+  # Tukey p-value of a comparison "A/B" (rows of the Tukey table named "B-A" or "A-B"); NA if the pair is absent
+  tukey_pvalue <- function(tab, A_name, B_name){
+    p <- tab[c(paste0(A_name, "-", B_name), paste0(B_name, "-", A_name))]
+    p <- p[!is.na(p)]
+    if (length(p) == 0) NA_real_ else unname(p[1])
   }
-  # Replacing "-" with "/" for column names
-  colnames(pvalue_table) = sub("-", "/", colnames(pvalue_table))
+  comparison_pairs <- strsplit(comparisons_to_display, "/")
+
+  # Proteins tested in each comparison: those passing the filter of the comparison (the post-hoc correction of a protein
+  # is computed over the comparisons in which it is tested)
+  tested_in_comparison <- sapply(comparison_pairs, function(ab) kept_ids %in% comparison_filter(ab[1], ab[2])[[1]]$Id)
+  if (is.null(dim(tested_in_comparison))) tested_in_comparison <- matrix(tested_in_comparison, ncol = length(comparison_pairs))
+  rownames(tested_in_comparison) <- as.character(kept_ids)
+
+  # For each protein kept for the analysis, run the global test and the pairwise tests of the comparisons
+  # (a protein that cannot be tested, e.g. with too few values, gets NA p-values instead of stopping the report)
+  tested_ids <- intersect(unique(reshape_abundance$Id), kept_ids)
+  observed_long <- reshape_abundance[!is.na(reshape_abundance$value), ]
+  by_protein <- split(observed_long, observed_long$Id)
+  n_cmp <- length(comparison_pairs)
+  pvalue_rows <- lapply(tested_ids, function(id){
+
+    # Keeping only the observed or imputed abundance values of the current protein
+    current <- by_protein[[as.character(id)]]
+    if (is.null(current)) return(rep(NA_real_, 2 * n_cmp + 1))
+    current$variable <- factor(current$variable)
+    tested <- tested_in_comparison[as.character(id), ]
+
+    result <- tryCatch({
+
+      # Global test over all the conditions
+      if(Test.type=="anova"){
+        anova = aov(value ~ variable, data = current)
+        pval = summary(anova)[[1]][[1,"Pr(>F)"]]
+      }else{
+        pval = kruskal.test(value ~ variable, data = current)$p.value
+      }
+
+      # Raw p-values of the comparisons in which the protein is tested: test of the two conditions of each comparison
+      # (t-test after an anova, Wilcoxon after a Kruskal-Wallis test)
+      raw <- sapply(seq_len(n_cmp), function(j){
+        if (!tested[j]) return(NA_real_)
+        a <- current$value[current$variable == comparison_pairs[[j]][1]]
+        b <- current$value[current$variable == comparison_pairs[[j]][2]]
+        tryCatch(if(Test.type=="anova") t.test(a, b, var.equal = Test.var.equal)$p.value else wilcox.test(a, b)$p.value,
+                 error = function(e) NA_real_)
+      })
+
+      # Post-hoc p-values
+      if(Test.posthoc.procedure=="tukey"){
+
+        # Tukey: all the pairs of conditions, with the residual variance pooled over all the conditions
+        tukey <- TukeyHSD(x=anova, "variable", conf.level=1-Stat.threshold.significance)$variable[, "p adj"]
+        pairwise <- sapply(comparison_pairs, function(ab) tukey_pvalue(tukey, ab[1], ab[2]))
+        pairwise[!tested] <- NA
+
+      }else{
+
+        # Holm or Bonferroni: correction over the comparisons in which the protein is tested (none: raw p-values)
+        pairwise <- raw
+        if (Test.posthoc.procedure != "none") pairwise[!is.na(raw)] <- p.adjust(raw[!is.na(raw)], method = Test.posthoc.procedure)
+      }
+      c(pval, raw, pairwise)
+    }, error = function(e) rep(NA_real_, 2 * n_cmp + 1))
+
+    result
+  })
+  pvalue_table <- data.frame(Id = tested_ids, do.call(rbind, pvalue_rows), check.names = FALSE)
+  colnames(pvalue_table) <- c("Id", "global_pval", paste0("raw_", comparisons_to_display), comparisons_to_display)
+
+  # Gating by the global test (Test.anova.gating=bh): the pairwise comparisons are only kept for the proteins whose global test passes
+  # the significance threshold after a BH correction across proteins; the other proteins get no post-hoc p-value (and no q-value)
+  gated_ids <- pvalue_table$Id
+  if (Test.anova.gating == "bh") {
+    global_q <- rep(NA_real_, nrow(pvalue_table)); defined <- !is.na(pvalue_table$global_pval)
+    global_q[defined] <- p.adjust(pvalue_table$global_pval[defined], method = "BH")
+    gated <- !is.na(global_q) & global_q <= Stat.threshold.significance
+    pvalue_table[!gated, comparisons_to_display] <- NA
+    gated_ids <- pvalue_table$Id[gated]
+    cat(text_spec(paste0("\nGating by the global test (", if (Test.type == "anova") "anova" else "Kruskal-Wallis", "): ", sum(gated), " of ", sum(defined),
+                         " proteins have a global q-value (BH) of at most ", Stat.threshold.significance,
+                         "; the comparisons are tested and corrected on these proteins only.",
+                         if (length(group_ids) < 5) paste0(" Warning: with ", length(group_ids), " conditions, this gating can make the false discovery rate of each comparison exceed its nominal level (about 6% instead of 5% in a simulation with 3 conditions).") else ""),
+                  italic = T, font_size = "12px"))
+  }
 }
 
 ```
@@ -1675,32 +1794,8 @@ for (comparison in comparisons_to_display){
   A_name = couple[1]
   B_name = couple[2]
   
-  # Starting a comparison-specific filtering table with identifier columns
-  filtering_data <- data[c("Id", "Accession", "Gene_name", "Label", "Specific_peptides")]
-  
-  # Add abundance and identification columns for each of the comparison groups
-  for(group in couple){
-    
-    # Subset for current group
-    group_mean_cols <- group_cols(group, "_mean", colnames(global_mean_abundance_repbio))
-
-    sel_global_mean_abundance_repbio <- global_mean_abundance_repbio %>% select(Id, all_of(group_mean_cols))
-    
-    # Adding the mean abundance column to the filtering table
-    filtering_data <- filtering_data %>% left_join(sel_global_mean_abundance_repbio,by="Id")
-    
-    # For each raw file in this group, add raw intensity column and matching identification type column
-    for(file in expDesign[expDesign$Condition == group,]$File){
-      filtering_data <- cbind(filtering_data, data[file])
-      filtering_data <- cbind(filtering_data, data[paste0("Identification_type", sub("Intensity", "", file))])
-    }
-  }
-  
-  # Add all log-transformed abundance columns
-  filtering_data <- cbind(filtering_data, data[grepl("_log$", colnames(data))])
-  
   # Apply filtering to only the two conditions for comparison
-  cond_fltr <- filter_dataset(filtering_data, c(A_name, B_name))
+  cond_fltr <- comparison_filter(A_name, B_name)
 
   # Extract filtered outputs
   filtered_data <- as.data.frame(cond_fltr[[1]])
@@ -1710,12 +1805,16 @@ for (comparison in comparisons_to_display){
   imputed_abundance <- global_imputed_abundance[global_imputed_abundance$Id %in% filtered_data$Id, ]
   
   #################################### Biolding intensity tables for comparison groups #########################################################
+
+  # Paired test: the pairs of replicates used for this comparison
+  if (Test.paired) cat(text_spec(paste0("\n", paired_text(A_name, B_name)), italic = T, font_size = "12px"))
   
   # Using imputed or non-imputed DFs depending on parameters
   if (imputation) {
     
     A_cols <- group_cols(A_name, paste0(pattern, "_imputed"), colnames(imputed_abundance))
     B_cols <- group_cols(B_name, paste0(pattern, "_imputed"), colnames(imputed_abundance))
+    if (Test.paired) B_cols <- B_cols[paired_order(A_name, B_name)]
 
     A <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, imputed_abundance[A_cols], check.names = FALSE)
     B <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, imputed_abundance[B_cols], check.names = FALSE)
@@ -1724,6 +1823,7 @@ for (comparison in comparisons_to_display){
     
     A_cols <- group_cols(A_name, "_mean", colnames(mean_abundance_repbio))
     B_cols <- group_cols(B_name, "_mean", colnames(mean_abundance_repbio))
+    if (Test.paired) B_cols <- B_cols[paired_order(A_name, B_name)]
 
     A <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, mean_abundance_repbio[A_cols], check.names = FALSE)
     B <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, mean_abundance_repbio[B_cols], check.names = FALSE)
@@ -1762,19 +1862,31 @@ for (comparison in comparisons_to_display){
   statDF = merge.data.frame(precv_statDF,totIntensities[,c("Accession",paste0("mean_intensity_",comparison),paste0("fc_",comparison))],by="Accession")
 
  ######################################################### Compute pvalues #########################################################
-  
+
+  # Rank tests (Wilcoxon, pairwise Wilcoxon after Kruskal-Wallis): with few replicates, the smallest possible p-value can be too large
+  # to pass a multiple testing correction
+  if(Test.type %in% c("wilcoxon", "kruskall")){
+    n_A <- length(A_cols); n_B <- length(B_cols)
+    min_p <- if (Test.paired && Test.type == "wilcoxon") 2 / 2^n_A else 2 / choose(n_A + n_B, n_A)
+    if (Test.type == "wilcoxon" && alternative != "two.sided") min_p <- min_p / 2
+    cat(text_spec(paste0("\nNote (", comparison, "): with ", n_A, " and ", n_B, " values, the smallest p-value the Wilcoxon test can give is ",
+                         formatC(min_p, format = "g", digits = 3), if (Test.adjust.procedure != "none") ", before the multiple testing correction" else "", "."),
+                  italic = T, font_size = "12px"))
+  }
+
   # If pvalue_table exists and is not NULL, use the previously calculated Anova/Kruskal pvalues
   if(!is.null(pvalue_table)){
     
-    # Merging the relevant pvalue columns for this comparison
-    pval_cols <- c("Id", comparison)
+    # Merging the p-values of this comparison: raw p-values of the pairwise test (pval_) and post-hoc p-values (posthoc_pval_,
+    # NA for the proteins not gated by the global test with Test.anova.gating=bh)
+    pval_cols <- c("Id", paste0("raw_", comparison), comparison)
 
     if (!all(pval_cols %in% colnames(pvalue_table))) {
       stop("Missing expected p-value columns: ", paste(setdiff(pval_cols, colnames(pvalue_table)), collapse = ", "))
     }
-    
+
     statDF <- merge.data.frame(statDF, pvalue_table[pval_cols], by = "Id")
-    colnames(statDF)[ncol(statDF)] <- paste0("pval_", comparison)
+    colnames(statDF)[(ncol(statDF) - 1):ncol(statDF)] <- c(paste0("pval_", comparison), paste0("posthoc_pval_", comparison))
     
   # Else, do a T, Wilcoxon, or Limma test
   }else{
@@ -1784,27 +1896,23 @@ for (comparison in comparisons_to_display){
       log_suffix <- if(imputation) paste0(pattern, "_imputed_log") else "_mean_noimpute_log"
       A_cols <- group_cols(A_name, log_suffix, colnames(filtered_data))
       B_cols <- group_cols(B_name, log_suffix, colnames(filtered_data))
+      if (Test.paired) B_cols <- B_cols[paired_order(A_name, B_name)]
 
       A <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, filtered_data[A_cols], check.names = FALSE)
       B <- data.frame(Accession = filtered_data$Accession, Label = filtered_data$Label, filtered_data[B_cols], check.names = FALSE)
-      
-      # Warning if using logged data for a Welch T Test
-      if(Test.var.equal==F){
-        cat(text_spec("\n"))
-        cat(text_spec("Warning : intensities should not be transformed by log with a Welch test (variance not equal)",italic=T,font_size="12px"))
-      }
     }
-    
+
     # Do the statistical test
     if(Test.type=="limma"){
       
       # Performing Limma test
       if(Test.paired){
-        
-        # Creating paired design
-        paired = c(seq(1,ncol(A)-2),seq(1,ncol(B)-2))
-        design <- model.matrix(~factor(c(rep(1,length(A)-2), rep(2,length(B)-2))) + paired)
-        colnames(design) <- c("Intercept","paired", "B-A")
+
+        # Paired design: the pair (replicate) is a factor; the columns of B are in the order of the replicates of A (see paired_order)
+        pair <- factor(c(seq_len(ncol(A)-2), seq_len(ncol(B)-2)))
+        group <- factor(c(rep(1,ncol(A)-2), rep(2,ncol(B)-2)))
+        design <- model.matrix(~group + pair)
+        colnames(design)[1:2] <- c("Intercept", "B-A")
       }else{
         
         # Unpaired design
@@ -1833,7 +1941,7 @@ for (comparison in comparisons_to_display){
       fit <- eBayes(fit)
   
       # Extract all Limma results
-      alllimma<-topTable(fit, coef=2,adjust.method="BH",p.value=1,"P")
+      alllimma<-topTable(fit, coef=2, number=Inf, sort.by="none")
   
       # Extracting Limma pvalues and adding them to statDF
       alllimma$Accession = row.names(alllimma)
@@ -1914,17 +2022,24 @@ for (comparison in comparisons_to_display){
   
  ######################################################### Multiple testing correction ######################################################### 
   
+  # P-values used for significance: the post-hoc p-values with anova / kruskall, the p-values of the test otherwise
+  test_p_prefix <- if (paste0("posthoc_pval_", comparison) %in% colnames(statDF)) "posthoc_pval" else "pval"
+
   # If an adjustment procedure was selected
   if(Test.adjust.procedure!="none"){
-    
-    # Significance evaluated using adjusted pvalues
+
+    # Significance evaluated using adjusted pvalues (proteins without p-value, e.g. not gated, get no q-value)
     value="qval"
-    procedure_results = mt.rawp2adjp(as.numeric(unlist(statDF[paste0("pval_",comparison)])), proc=Test.adjust.procedure, alpha=Stat.threshold.significance)
-    qval = data.frame(procedure_results$adjp,procedure_results$index)[order(procedure_results$index),2]
+    test_p <- as.numeric(unlist(statDF[paste0(test_p_prefix,"_",comparison)]))
+    qval = rep(NA_real_, nrow(statDF))
+    if (any(!is.na(test_p))) {
+      procedure_results = mt.rawp2adjp(test_p[!is.na(test_p)], proc=Test.adjust.procedure, alpha=Stat.threshold.significance)
+      qval[!is.na(test_p)] = data.frame(procedure_results$adjp,procedure_results$index)[order(procedure_results$index),2]
+    }
   }else{
-    
-    # Significance will be evaluated based on raw pvalues
-    value="pval"
+
+    # Significance will be evaluated based on raw pvalues (post-hoc p-values with anova / kruskall)
+    value=test_p_prefix
     qval = rep(NA,nrow(statDF))
   }
   
@@ -1934,7 +2049,7 @@ for (comparison in comparisons_to_display){
   ########################## Significant proteins ##########################
   
   # Ensure statistical result columns are numeric
-  stat_cols <- grep("^(mean_intensity_|fc_|pval_|qval_)", colnames(statDF), value = TRUE)
+  stat_cols <- grep("^(mean_intensity_|fc_|pval_|posthoc_pval_|qval_)", colnames(statDF), value = TRUE)
   statDF[stat_cols] <- lapply(statDF[stat_cols], as.numeric)
   statDF[paste0("significant_",comparison)]<-rep(F, nrow(statDF))
   
@@ -1947,8 +2062,8 @@ for (comparison in comparisons_to_display){
   # Only results from comparisons specified by the user
   if(comparison%in%comparisons_to_display){
     
-    # Extracting columns needed for comparison
-    current_statDF <- statDF[c("Id","Accession","Label", paste0("mean_intensity_", comparison), paste0("fc_", comparison), paste0("pval_", comparison), paste0("qval_", comparison), paste0("significant_", comparison))]
+    # Extracting columns needed for comparison (the p-values shown are the post-hoc p-values with anova / kruskall)
+    current_statDF <- statDF[c("Id","Accession","Label", paste0("mean_intensity_", comparison), paste0("fc_", comparison), paste0(test_p_prefix, "_", comparison), paste0("qval_", comparison), paste0("significant_", comparison))]
     colnames(current_statDF) = c("Id","Accession","Label","mean_intensity","fc","pval","qval","significant")
     
     # Printing comparison name
@@ -2327,8 +2442,10 @@ for (comparison in comparisons_to_display){
   
   ########################## Add results to global table  ########################## 
   
-  # Extracting the current comparison-specific statistical results from statDF
-  current_statDF <- statDF[c("Id", "Accession", "Label", paste0("mean_intensity_", comparison), paste0("fc_", comparison), paste0("pval_", comparison), paste0("qval_", comparison), paste0("significant_", comparison))]
+  # Extracting the current comparison-specific statistical results from statDF (with anova / kruskall, the raw p-values of the
+  # pairwise tests and the post-hoc p-values)
+  current_statDF <- statDF[c("Id", "Accession", "Label", paste0("mean_intensity_", comparison), paste0("fc_", comparison), paste0("pval_", comparison),
+                             intersect(paste0("posthoc_pval_", comparison), colnames(statDF)), paste0("qval_", comparison), paste0("significant_", comparison))]
   
   # Creating and filling log10 pvalue column
   current_statDF[[paste0("log10_pval_", comparison)]] <- -log10(current_statDF[[paste0("pval_", comparison)]])
@@ -2400,6 +2517,24 @@ for (comparison in comparisons_to_display){
   colnames(output_t)[column_index] <- paste0("Kept for stat analysis (", comparison, ")")
 
   cdc <- grep(".*_log", colnames(output_t))
+}
+
+# Global test over all the conditions (anova or Kruskal-Wallis): p-values, and q-values with Test.adjust.procedure
+# (with Test.type=anova or kruskall and more than one comparison)
+if (export_global_test) {
+  global_name <- if (Test.type == "anova") "anova" else "kruskal"
+  global_table <- data.frame(Id = pvalue_table$Id, pvalue = as.numeric(pvalue_table$global_pval))
+  colnames(global_table)[2] <- paste0(global_name, "_pvalue")
+  if (Test.adjust.procedure != "none") {
+    defined <- !is.na(global_table[[2]])
+    global_q <- rep(NA_real_, nrow(global_table))
+    if (any(defined)) {
+      adj <- mt.rawp2adjp(global_table[[2]][defined], proc = Test.adjust.procedure, alpha = Stat.threshold.significance)
+      global_q[defined] <- adj$adjp[order(adj$index), 2]
+    }
+    global_table[[paste0(global_name, "_qvalue")]] <- global_q
+  }
+  output_t <- merge(output_t, global_table, by = "Id", all.x = TRUE)
 }
 
 output_t <- rename(output_t, Accession_code = Accession)
@@ -2930,12 +3065,37 @@ openxlsx::addStyle(
   "R_Params",
   params_style,
   cols = 1:2,
-  rows = 1:28,
+  rows = 1:(nrow(parameters) + 1),
   gridExpand = TRUE
 )
 
 openxlsx::setColWidths(output_file, "R_Params", cols = 1, widths = 30)
 openxlsx::setColWidths(output_file, "R_Params", cols = 2, widths = 90)
+
+
+############################
+# Save experimental design sheet
+############################
+
+replaceWorksheet(output_file, "Exp_Design")
+
+openxlsx::writeData(
+  output_file,
+  "Exp_Design",
+  expDesign,
+  rowNames = FALSE
+)
+
+openxlsx::addStyle(
+  output_file,
+  "Exp_Design",
+  params_style,
+  cols = 1:ncol(expDesign),
+  rows = 1:(nrow(expDesign) + 1),
+  gridExpand = TRUE
+)
+
+openxlsx::setColWidths(output_file, "Exp_Design", cols = 1:ncol(expDesign), widths = "auto")
 
 
 ############################
