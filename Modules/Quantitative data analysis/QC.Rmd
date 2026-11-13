@@ -519,7 +519,9 @@ if (length(sample_names)<16 & nrow(data)<5000){
   #cormat = melt(cormat)
   cormat <- reshape2::melt(cormat)
   colnames(cormat) = c("Samples1","Samples2","Coefficient")
-  correlogram = ggplot(data = cormat, aes(x=Samples1, y=Samples2, fill=Coefficient)) + 
+  # Sample label size decreasing with the number of samples, so that the labels do not overlap (18 up to 16 samples, 7 for 40)
+  label_size <- max(5, min(18, 290 / length(sample_names)))
+  correlogram = ggplot(data = cormat, aes(x=Samples1, y=Samples2, fill=Coefficient)) +
     geom_tile() +
     # Sequential scale over the observed coefficients (white = lowest, red = 1), so that the outlier samples stand out
     scale_fill_gradient(low = "white", high = "red") +
@@ -529,8 +531,8 @@ if (length(sample_names)<16 & nrow(data)<5000){
     labs(fill = "Correlation coefficient") +
     theme(plot.title=element_text(size=22),
         axis.title=element_text(size=18),
-        axis.text.y=element_text(size=18),
-        axis.text.x=element_text(angle=90,size=18),
+        axis.text.y=element_text(size=label_size),
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=label_size),
         legend.title=element_text(size=16),
         legend.text = element_text(size=16))
 }

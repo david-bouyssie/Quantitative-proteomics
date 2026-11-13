@@ -11,7 +11,8 @@ library(readxl)
 if(grepl(".xlsx",quantif_file)){
   proteinGroupsInput = read_excel(quantif_file, sheet, col_names = TRUE)
 }else{
-  proteinGroupsInput <- read.table(quantif_file, header = T, stringsAsFactors = F, sep = "\t")
+  # No quote or comment character (apostrophes and # occur in protein descriptions), column names kept as in the file (as with read_excel)
+  proteinGroupsInput <- read.delim(quantif_file, header = TRUE, stringsAsFactors = FALSE, check.names = FALSE, quote = "", comment.char = "")
 }
 
 # Extract data
