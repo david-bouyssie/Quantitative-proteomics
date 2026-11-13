@@ -43,6 +43,7 @@ if (analysis == "QC") {
 
 } else if (analysis=="DA") {
 
+  dir.create(args[3], recursive = TRUE, showWarnings = FALSE)  # the output folder is created if needed
   output_dir = normalizePath(args[3])
   exp_design = normalizePath(args[4])
   parameters = normalizePath(args[5])

@@ -13,9 +13,30 @@ All of these modules generates html reports. Examples are provided in _Example/R
 
 ## 1. Launch modules with command lines
 
-All modules can be launched by command line thanks to the scripts stored in the **"Launchers"** folder. You can find working examples of command lines in the "run.bat" file of this folder (works on Windows only). So, to execute a QC on the quantification file stored at _Example/Dataset/QC-DA/Parsed_proteins_set.txt_, you can launch the following instruction in a terminal :
+All modules can be launched by command line thanks to the R scripts stored in the **"Launchers"** folder. They are meant to be run with the portable R distribution in which this repository is installed (`R-Portable_with_QP/Quantitative-proteomics`). The commands below are run in a Windows command prompt from the `R-Portable_with_QP` folder (the launchers use paths relative to it), after putting the portable R and its pandoc (in `bin`) on the PATH:
 
-_Rscript --vanilla run_proteomics_stats.R QC "../../Example/Datasets/QC-DA/Parsed_proteins_set.txt" "../../Example/Reports/QC_example.html" TRUE FALSE_
+
+Parsing of a quantification file (arguments: file to parse, output table, parser: Proline / MaxQuant / ProteomeDiscoverer, intensity type, sheet number for an xlsx file; here the "abundance" intensities of sheet 4, "Protein sets", of a Proline export):
+
+```
+Rscript --vanilla Quantitative-proteomics\Launchers\run_parsing.R "<Proline export>.xlsx" parsed_example.tsv Proline abundance 4
+```
+
+QC report (arguments: quantification file, output report, QC parameters, experimental design):
+
+```
+Rscript --vanilla Quantitative-proteomics\Launchers\run_proteomics_stats.R QC Quantitative-proteomics\Example\Datasets\QC-DA\Parsed_proteins_set.txt QC_example.html Quantitative-proteomics\Example\Datasets\QC-DA\QC_parameters.txt Quantitative-proteomics\Example\Datasets\QC-DA\exp_design.txt
+```
+
+DA report (arguments: quantification file, output folder, experimental design, DA parameters; the report `DA.html` and the table `DA_output_table.xlsx` are written in the output folder, created if needed):
+
+```
+Rscript --vanilla Quantitative-proteomics\Launchers\run_proteomics_stats.R DA Quantitative-proteomics\Example\Datasets\QC-DA\Parsed_proteins_set.txt DA_example Quantitative-proteomics\Example\Datasets\QC-DA\exp_design.txt Quantitative-proteomics\Example\Datasets\QC-DA\Parameters.txt
+```
+
+The experimental design can be omitted for the QC report (the report is then not colored by condition). For both reports, an optional last argument gives the original quantification file (e.g. the Proline export), whose name is shown in the report and with which the DA output table is combined; for the QC report, it requires the experimental design argument.
+
+The tests of the library functions and of the QC report are run with `Quantitative-proteomics\tests\run_all.bat`.
 <br/>
 
 ## 2. Instrumental QC project
@@ -39,8 +60,8 @@ You can see examples in _Example/Datasets/CytoC_.
 ### 2.2. Modules description
 
 The instrumental QC project includes 2 modules (located at _Modules/Instrumental QC_):
-- Descriptive_CytoC.rmd : this module generates a report which shows the evolution of metrics (RT, intensity, PPM) accross the acquired times (see _Descriptive_report__cytoc_ref.html_).
-- Comparative_CytoC.rmd : this module generates a report which evaluates the validity of metrics in a test serie based on observed metrics in a reference serie (see _Comparative_report__cytoc_ref.html_).
+- Descriptive_cytoc.rmd : this module generates a report which shows the evolution of metrics (RT, intensity, PPM) accross the acquired times (see _Example/Reports/Descriptive_report__cytoc_ref.html_).
+- Comparative_cytoc.rmd : this module generates a report which evaluates the validity of metrics in a test serie based on observed metrics in a reference serie (see _Example/Reports/Comparative_report_cytoc.html_).
 <br/>
 
 ## 3. Quantitative data analysis project
@@ -54,13 +75,13 @@ The QC & DA modules work with a standardized input format that can be obtain fro
 
 #### 3.2.1. QC module
 
-The QC module generates a report providing a global visualization of data quality and reproducibility (see _Example/Reports/QC_proteins_set.html_). The user can set two parameters in the command line:
+The QC module generates a report providing a global visualization of data quality and reproducibility (see _Example/Reports/QC_proteins_set.html_). Its parameters are read from a parameter file with one "Name=value" line per parameter (see _Example/Datasets/QC-DA/QC_parameters.txt_):
 
 | Parameter | Function | Values |
 | --------- | --------- | --------- |
 | Normalization | Should intensities be normalized or not ? | T / F |
 | keep_empty_rows | Should empty rows be kept in the dataset ? | T / F |
-| format_svg | Choose SVG or PNG format for figure images | SVG / PNG |
+| format_svg | Choose SVG (T) or PNG (F) format for figure images | T / F |
 | coloring_by_group | Should figures be colored by group/condition? (WARNING : need to have Experimental Design to use this function) | T / F |
 | Imputation.MNAR.percentile | Percentile (in %) of the observed intensities of each sample used as noise level to impute the missing values (noise model, see 3.2.2.2). Without experimental design, the noise standard deviation is estimated over all the samples taken as one group. 5 if absent | ]0,10] |
 
@@ -75,8 +96,8 @@ The DA module allows to process the data (filtering, normalization, missing valu
 <br/>
 
 It takes as inputs the standardized quantification file, but also:
-- The experimental design (see _Example/Datasets/QC-DA/ExpDesign.txt_)
-- A set of parameters stored in a TSV file (see _Example/Datasets/QC-DA/Parameters.txt_)
+- The experimental design, a tab-separated file with the columns File, repBio and Condition (see _Example/Datasets/QC-DA/exp_design.txt_)
+- A set of parameters stored in a parameter file with one "Name=value" line per parameter (see _Example/Datasets/QC-DA/Parameters.txt_)
 Here you can find a description of all parameters and possible values:
 
 | Parameter | Function | Values |
@@ -113,7 +134,7 @@ Here you can find a description of all parameters and possible values:
 | Color.by.group | Choose whether to have random coloring, or coloring by condition | T / F |
 
 <br/>
-The module gives as outputs a TSV table summarizing input data, intensities after each step of processing and final results of statistical results. A report containg QC figures for each processing step and figures showing the results of differential analysis is also provided (see _Example/Reports/DA_proteins__set.html_).
+The module gives as outputs an Excel table (DA_output_table.xlsx) summarizing input data, intensities after each step of processing and final results of statistical results, with the parameters and the experimental design in separate sheets. A report containg QC figures for each processing step and figures showing the results of differential analysis is also provided (see _Example/Reports/DA_proteins_set.html_).
 <br/>
 
 ##### 3.2.2.1. Processing steps
