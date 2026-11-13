@@ -125,7 +125,7 @@ Here you can find a description of all parameters and possible values:
 | Test.adjust.procedure | Choose the multiple test correction procedure | none / BH / ABH |
 | Stat.threshold.significance | Significance threshold. It is applied to the adjusted p-values (q-values, i.e. it is the FDR) when a multiple test correction is selected, and to the raw p-values otherwise (formerly Volcano.threshold.pvalue) | ]0,1] |
 | Stat.threshold.fc | Fold change threshold, expressed as an absolute log2 fold change (e.g. 0.58 for a 1.5-fold change, 1 for a 2-fold change) (formerly Volcano.threshold.fc) | ℝ+ |
-| Volcano.coloring.style | Choose coloring based on signifigance or intensity (heatmap or monochrome) | signifigance / intensity / monochrome |
+| Volcano.color.style | Coloring of the volcano plot points: significance (significant hits in red), intensity (mean intensity on a green-yellow-red scale) or monochrome (mean intensity on a blue scale). On the MA plot, intensity and monochrome color by -log10(p-value) instead | significance / intensity / monochrome |
 | Volcano.manual.accession | List of protein accession codes for manual labeling | Example : Q9JHU4;A2ASS6;Q8VDD5;Q9QXS1 |
 | Volcano.no.labeling | Choose to have no labels on volcano plot | T / F |
 | Comparisons | List of paired conditions to compare | Exemple : 50fmol/25fmol;50fmol/10fmol |

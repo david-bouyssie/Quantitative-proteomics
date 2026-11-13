@@ -263,7 +263,10 @@ if(as.character(parameters["Figure.format",]) == "SVG"){
 coloring_by_group <- as.logical(parameters["Color.by.group",])
 
 # Style of volcano plot
-Vol_colors <- as.character(parameters["Volcano.color.style",])
+Vol_colors <- trimws(as.character(parameters["Volcano.color.style",]))
+if (is.na(Vol_colors) || !Vol_colors %in% c("significance", "intensity", "monochrome")) {
+  stop("Parameter Volcano.color.style must be significance, intensity or monochrome.")
+}
 
 # Specified proteins for normalization
 Normalization_list <- as.numeric(strsplit(as.character(parameters["Proteins.for.normalization",]),";")[[1]])
