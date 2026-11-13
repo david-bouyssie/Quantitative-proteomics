@@ -13,7 +13,7 @@ All of these modules generates html reports. Examples are provided in _Example/R
 
 ## 1. Launch modules with command lines
 
-All modules can be launched by command line thanks to the R scripts stored in the **"Launchers"** folder. They are meant to be run with the portable R distribution in which this repository is installed (`R-Portable_with_QP/Quantitative-proteomics`). The commands below are run in a Windows command prompt from the `R-Portable_with_QP` folder (the launchers use paths relative to it), after putting the portable R and its pandoc (in `bin`) on the PATH:
+All modules can be launched by command line thanks to the R scripts stored in the **"Launchers"** folder. They are meant to be run with `Rscript` of the portable R distribution in which this repository is installed (`R-Portable_with_QP/Quantitative-proteomics`), with the portable R and its pandoc (in `bin`) on the PATH. The launchers find the repository files (package library, parsers, modules) from their own location, so they can be run from any folder; input and output paths are relative to the current folder. When a launcher is sourced from an R session instead, the working directory must be the `Launchers` folder. The commands below are run in a Windows command prompt from the `R-Portable_with_QP` folder:
 
 
 Parsing of a quantification file (arguments: file to parse, output table, parser: Proline / MaxQuant / ProteomeDiscoverer, intensity type, sheet number for an xlsx file; here the "abundance" intensities of sheet 4, "Protein sets", of a Proline export):
