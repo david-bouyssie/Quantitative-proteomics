@@ -5,13 +5,14 @@
 
 # This function checks that the experimental design and the quantification table are consistent and unambiguous,
 # so that per-sample columns can be selected by their exact names. It stops with the list of all the problems found.
-validate_inputs <- function(data, expDesign, comparisons = NULL, derived_suffixes = c("_mean", "_identification_type")){
+validate_inputs <- function(data, expDesign, comparisons = NULL, derived_suffixes = c("_mean", "_identification_type"), required_columns = character(0)){
 
   # Inputs :
   # data : quantification table (with an "Id" column, "Intensity_*" and "Identification_type_*" columns)
   # expDesign : experimental design (columns File, repBio, Condition)
   # comparisons : optional vector of comparisons "A/B"
   # derived_suffixes : suffixes appended to sample ids ("<repBio>_<Condition>") to create new columns
+  # required_columns : other columns the quantification table must contain ("Specific_peptides" must also hold counts: numbers >= 0, no missing value)
   # Output :
   # invisible TRUE, or an error listing the problems
 
@@ -55,6 +56,16 @@ validate_inputs <- function(data, expDesign, comparisons = NULL, derived_suffixe
   missing_id_types <- setdiff(id_type_cols, colnames(data))
   if (length(missing_id_types) > 0) {
     problems <- c(problems, paste0("Quantification table: identification type column(s) not found: ", paste(missing_id_types, collapse = ", ")))
+  }
+  missing_required <- setdiff(required_columns, colnames(data))
+  if (length(missing_required) > 0) {
+    problems <- c(problems, paste0("Quantification table: missing column(s) ", paste(missing_required, collapse = ", "),
+                                   " (expected in the parsed table, see Parsers)"))
+  }
+  if ("Specific_peptides" %in% intersect(required_columns, colnames(data))) {
+    counts <- suppressWarnings(as.numeric(as.character(data$Specific_peptides)))
+    n_bad <- sum(is.na(counts) | counts < 0)
+    if (n_bad > 0) problems <- c(problems, paste0("Quantification table: ", n_bad, " value(s) of Specific_peptides are missing, not numbers or negative"))
   }
   derived_cols <- c(outer(unique(sample_ids), derived_suffixes, paste0))
   colliding_cols <- intersect(derived_cols, colnames(data))

@@ -237,23 +237,6 @@ createPngOrSvgForGrid <- function(plot_data1, plot_data2, image_name) {
 
 data<- read.csv(params$quant_df, check.names = F, sep="\t")
 
-# Saving original accession columns before pre-processing 
-# (for later joining to original in output_file)
-og_Acc <- data[grepl("Accession",colnames(data))]
-
-# Creating a display label for each for each protein
-# Using Gene_name when available, Accession otherwise
-# Making sure Labels are unique
-data <- data %>% mutate(Label=Gene_name) %>%
-  relocate(Label,.after = "Gene_name") %>%
-  mutate(Label=if_else(is.na(Label),Accession,Label)) %>% #if gene_name is NA, use Accession
-  group_by(Label) %>% 
-   mutate(Label = case_when(
-    n() > 1 ~ paste0(Label, "_", Accession),  # Modify only duplicated labels
-    TRUE ~ Label  # Keep unique labels as they are
-  )) %>%
-  ungroup()
-
 # Importing experimental design and parameters
 expDesign <- read.csv(params$design_exp, header = T, sep="\t")
 parameters <- read.csv(params$parameters, header=T, sep="=")
@@ -444,7 +427,24 @@ Test.adjust.procedure <- as.character(parameters["Test.adjust.procedure",])
 ## Checking that the experimental design, the quantification table and the comparisons are consistent ##
 ## (per-sample columns are then selected by their exact names, see group_cols()) ##
 
-validate_inputs(data, expDesign, comparisons = comparisons_to_display)
+validate_inputs(data, expDesign, comparisons = comparisons_to_display, required_columns = c("Accession", "Gene_name", "Specific_peptides"))
+
+# Saving original accession columns before pre-processing
+# (for later joining to original in output_file)
+og_Acc <- data[grepl("Accession",colnames(data))]
+
+# Creating a display label for each for each protein
+# Using Gene_name when available, Accession otherwise
+# Making sure Labels are unique
+data <- data %>% mutate(Label=Gene_name) %>%
+  relocate(Label,.after = "Gene_name") %>%
+  mutate(Label=if_else(is.na(Label),Accession,Label)) %>% #if gene_name is NA, use Accession
+  group_by(Label) %>%
+   mutate(Label = case_when(
+    n() > 1 ~ paste0(Label, "_", Accession),  # Modify only duplicated labels
+    TRUE ~ Label  # Keep unique labels as they are
+  )) %>%
+  ungroup()
 
 ```
 
@@ -658,12 +658,10 @@ average_technical_replicates <- function(data, suffix){
 # Creating function for dataset filtering
 filter_dataset <- function(data, group_ids){
   
-  # If data contains Specific_peptides column, remove proteins with 0 specific peptides
-  if("Specific_peptides"%in%colnames(data)){
-    nb = nrow(data)
-    data = subset(data,data[,"Specific_peptides"]>0)
-    nb_specific = nb-nrow(data)
-  }
+  # Remove proteins with 0 specific peptides (Specific_peptides is a required column, see validate_inputs)
+  nb = nrow(data)
+  data = subset(data,data[,"Specific_peptides"]>0)
+  nb_specific = nb-nrow(data)
    
   ## Creates a filtered data set based in the raw data file given in the parameters. Flags and filters out any specific protein that has insufficient data. If the final filtered data set is empty, throws an error ##
   
