@@ -1267,8 +1267,10 @@ imputed_abundance_log <- global_imputed_abundance_log[global_imputed_abundance_l
 ## PCA of the samples on the log10 intensities after normalization and imputation, for the proteins kept by the global filter ##
 ## (compute_sample_pca and plot_pca_samples are in the library; the QC report also shows a scaled PCA and the loadings) ##
 
-pca_columns <- grep("_mean_imputed_log$", colnames(imputed_abundance_log), value = TRUE)
-pca_names <- sub("_mean_imputed_log$", "", pca_columns)
+# Imputed log columns: "<repBio>_<Condition><pattern>_imputed_log" (pattern: "_mean", or "_mcar" with the knn MCAR imputation)
+pca_suffix <- paste0(pattern, "_imputed_log")
+pca_columns <- colnames(imputed_abundance_log)[endsWith(colnames(imputed_abundance_log), pca_suffix)]
+pca_names <- substr(pca_columns, 1, nchar(pca_columns) - nchar(pca_suffix))
 
 # Condition and replicate of each column ("<repBio>_<Condition>"): the condition is matched on the end of the name
 pca_conditions <- sapply(pca_names, function(n) {
