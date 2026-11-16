@@ -26,25 +26,10 @@ body{
 td {  /* Table  */
   font-size: 8px;
 }
-#svgWrapper {
-display: flex;
-flex-wrap: wrap;
-justify-content: space-between;
-}
-#svgWrapper > svg {
-width: 100%;
-height: 100%;
-margin-bottom: 0px;
-}
-.pngWrapper {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-}
-.pngWrapper > img {
-  width: 100%;
-  height: 100%
-  margin-bottom: 0px;
+.figure-png > img, .figure-svg > svg { /* figures (plot_figure_as_html): shrunk to the column width if wider, never enlarged */
+  display: block; /* the "Save figure" link below the figure, for SVG as for PNG */
+  max-width: 100%;
+  height: auto;
 }
 main-container{
   right-margin: 0;
@@ -3095,8 +3080,3 @@ openxlsx::saveWorkbook(
 
 
 
-```{r echo=FALSE, warning=FALSE}
-
-unlink("temp", recursive = TRUE)
-
-```

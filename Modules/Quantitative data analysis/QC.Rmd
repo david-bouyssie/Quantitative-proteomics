@@ -19,25 +19,10 @@ body{ /* Normal  */
 td {  /* Table  */
   font-size: 8px;
 }
-#svgWrapper {
-display: flex;
-flex-wrap: wrap;
-justify-content: space-between;
-}
-#svgWrapper > svg {
-width: 100%;
-height: 100%;
-margin-bottom: 0px;
-}
-.pngWrapper {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-}
-.pngWrapper > img {
-  width: 100%;
-  height: 100%
-  margin-bottom: 0px;
+.figure-png > img, .figure-svg > svg { /* figures (plot_figure_as_html): shrunk to the column width if wider, never enlarged */
+  display: block; /* the "Save figure" link below the figure, for SVG as for PNG */
+  max-width: 100%;
+  height: auto;
 }
 h1.title {
   font-size: 20px;
@@ -1266,56 +1251,14 @@ result_scored <- cbind(matrixGrob_scored[, 1:4], result_scored, size = "last")
 result_scored$heights[7] <- unit(0.2, "null")
 result_scored$widths[5] <- unit(0.2, "null")
 
-##Plot and print heatmap to html doc (.svg or .png dependent on set parameters) with download link##
+## Heatmaps printed into the report (PNG or SVG, see plot_figure_as_html) ##
 
-# if (params$format_svg) {
-#   s <- svgstring()
-#   grid.newpage()
-#   grid.draw(result)
-#   dev.off()
-#   htmltools::HTML(paste0(s(),"<a class='no-print' href='#' onclick=\"javascript:saveSvgFromParentDiv2(this,'",image_name,".svg');\" >Save figure</a>"))
-#   
-# } else {
-#   png(filename = "Heatmap.png", width = 800, height = 800, type = "cairo")
-#   grid.newpage()
-#   grid.draw(result)
-#   dev.off()
-#   htmltools::HTML(paste0("<img src='data:image/png;base64,",png_base64,"' ><a  href='#' onclick=\"javascript:savePngFromParentDiv(this, '",image_name,".png');\" >Save figure</a>"))
-# }
-# 
-# invisible(dev.off())
-
-# if (params$format_svg) {
-#     s <- svgstring(width = 15, height = 20)
-#     grid.newpage()
-#     grid.draw(result)
-#     invisible(dev.off())
-#   
-#     htmltools::HTML(paste0(s(),"<a class='no-print' href='#' onclick=\"javascript:saveSvgFromParentDiv2(this,'heatmap.svg');\" >Save figure</a>"))
-#   } else {
-#     png_file <- paste0("./temp/heatmap.png")
-#     png(filename = png_file, width = 1200, height = 1300, type = "cairo")
-#     grid.newpage()
-#     grid.draw(result)
-#     invisible(dev.off())
-#     
-#     png_binary <- readBin(png_file, what = "raw", n = file.info(png_file)$size)
-#     png_base64 <- base64encode(png_binary)
-    
-     # htmltools::HTML(paste0("<img src='data:image/png;base64,",png_base64,"' ><a  href='#' onclick=\"javascript:savePngFromParentDiv(this, 'heatmap.png');\" >Save figure</a>"))
 cat(htmltools::HTML(plot_figure_as_html(result, "global_hcplot", 1300, 1300, svg = format_svg)))
 figure_note(paste0("Log10 intensities", if (Normalization) " after normalization" else "", " of all the proteins (columns) in each sample (rows), from green (low) to red (high); missing values that were imputed are left blank. ",
                    "Proteins and samples are ordered by hierarchical clustering (dendrograms): samples of the same condition should cluster together."))
 cat(htmltools::HTML(plot_figure_as_html(result_scored, "global_hcplot_scored", 1300, 1300, svg = format_svg)))
 figure_note("Same heatmap with the intensities of each protein z-scored (centered and scaled across the samples), so that the colors show how each protein varies between samples rather than its abundance: blocks of proteins higher (red) or lower (green) in a group of samples show the main differences between conditions.")
-  # }
 
-
-```
-
-```{r echo=FALSE, warning=FALSE}
-
-unlink("temp", recursive = TRUE)
 
 ```
 

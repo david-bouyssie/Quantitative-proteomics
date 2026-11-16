@@ -534,11 +534,16 @@ impute_using_noise_model <- function(df, groups, noise_model, rows = NULL, seed 
 ###########
 
 # Returns a figure as HTML, with a "Save figure" link: an embedded PNG image, or an inline SVG image if svg = TRUE.
-# The link calls the savePngFigure / saveSvgFigure JavaScript functions defined in the reports (QC.Rmd, DA.rmd).
+# The link calls the savePngFigure / saveSvgFigure JavaScript functions defined in the reports (QC.Rmd, DA.rmd), and the
+# figure-png / figure-svg classes are styled by the reports' CSS (shrunk to the column width if wider, never enlarged).
 # width and height are in pixels for both formats: the SVG is drawn at width/72 x height/72 inches, 72 pixels per inch being
-# the resolution of the PNG device, so that both formats have the same layout (text sizes, margins).
+# the resolution of the PNG device, so that both formats have the same layout (text sizes, margins), and its size is then
+# declared in pixels, so that it is displayed (and saved) at the same size as the PNG.
 # plot: a ggplot (or GGally ggmatrix) object, or a grid object (grob, gtable, e.g. gridExtra::arrangeGrob(p1, p2, ncol = 2)).
 plot_figure_as_html <- function(plot, name, width = 600, height = 600, svg = FALSE){
+  # The plot is evaluated before the device is opened: building grobs (e.g. arrangeGrob of ggplots) can open a page on the
+  # current device, which would add a blank page to the SVG output
+  force(plot)
   draw <- function(){
     if (inherits(plot, c("gtable", "grob", "gTree"))) {
       grid::grid.newpage()
@@ -551,7 +556,12 @@ plot_figure_as_html <- function(plot, name, width = 600, height = 600, svg = FAL
     s <- svglite::svgstring(width = width / 72, height = height / 72)
     draw()
     invisible(dev.off())
-    return(paste0("<div id='svgWrapper'>", s(), "<a class='no-print' href='javascript:void(0);' onclick=\"javascript:saveSvgFigure(this,'",
+    # svglite declares the size in points (width/72 inches = width pt): declared in pixels instead. The viewBox keeps the
+    # drawing coordinates, so only the displayed size changes (1 pt = 1.33 px).
+    svg_code <- paste(s(), collapse = "\n")
+    svg_code <- sub("(<svg[^>]*?)width=(['\"])[0-9.]+pt\\2", paste0("\\1width=\\2", width, "px\\2"), svg_code, perl = TRUE)
+    svg_code <- sub("(<svg[^>]*?)height=(['\"])[0-9.]+pt\\2", paste0("\\1height=\\2", height, "px\\2"), svg_code, perl = TRUE)
+    return(paste0("<div class='figure-svg'>", svg_code, "<a class='no-print' href='javascript:void(0);' onclick=\"javascript:saveSvgFigure(this,'",
                   name, ".svg');\" >Save figure</a></div>"))
   }
   # PNG written in a temporary file, then embedded in the HTML as base64
@@ -561,7 +571,7 @@ plot_figure_as_html <- function(plot, name, width = 600, height = 600, svg = FAL
   draw()
   invisible(dev.off())
   png_base64 <- base64enc::base64encode(png_file)
-  paste0("<div id='pngWrapper'><img src='data:image/png;base64,", png_base64, "' ><a href='javascript:void(0);' onclick=\"javascript:savePngFigure(this, '",
+  paste0("<div class='figure-png'><img src='data:image/png;base64,", png_base64, "' ><a href='javascript:void(0);' onclick=\"javascript:savePngFigure(this, '",
          name, ".png');\" >Save figure</a></div>")
 }
 
