@@ -761,7 +761,7 @@ filter_dataset <- function(data, group_ids){
 <br>
 
 
-```{r global_filter}
+```{r global_filter, results='asis'}
 
 ## The global filter is applied first: the normalization factors and the imputation model are then computed on the proteins kept for the analysis. ##
 ## The filter only depends on which values are observed, so it gives the same result on the raw and on the normalized intensities. ##
@@ -773,16 +773,19 @@ global_filtering <- filter_dataset(merge.data.frame(data, raw_replicates[[1]], b
 kept_ids <- global_filtering[[1]]$Id
 
 # Creating table for filtering summary
-kable(global_filtering[[3]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
+cat(kable(global_filtering[[3]], format="html", col.names = c("Filter", "Value", "Value_Percentage"), booktabs = T, caption = "Filtered Proteins") %>%
             kable_styling(bootstrap_options="condensed",full_width = F,position = "center") %>%
-            column_spec(1, bold = T)
+            column_spec(1, bold = T))
 
 # Printing filtering barplot into output report
 if (format_svg) {
-  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 12, 7))
+  cat(htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 12, 7)))
 } else {
-  htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 1200, 800))
+  cat(htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 1200, 800)))
 }
+figure_note(paste0("Proteins removed by each filter, applied in this order, and proteins kept for the analysis: proteins without specific peptide, proteins identified by MS/MS in less than ",
+                   as.character(parameters["Filter.threshold.ms",]), " files, and proteins observed in less than ", as.numeric(as.character(parameters["Filter.threshold.obs",])) * 100,
+                   "% of the replicates of every condition. Each protein is counted at the first filter that removes it. The normalization, the imputation and the tests use the proteins kept."))
 
 ```
 
@@ -1022,7 +1025,7 @@ cat(text_spec("Distribution of NA values across median intensities", color="#368
 <div class="row">
 <div class = "col-md-6">
 
-```{r boxplot_na_distribution}
+```{r boxplot_na_distribution, results='asis'}
 
 ## Comparing median intensity to number of missing values ##
 
@@ -1047,10 +1050,11 @@ boxplot <- ggplot(na_distribution) +
 
 # Prints 'Median intensity / # NA' violin graph to final report (SVG or PNG)
 if (format_svg) {
-  htmltools::HTML(createPngOrSvg(boxplot,"Median_intensity_NA", 10, 10))
+  cat(htmltools::HTML(createPngOrSvg(boxplot,"Median_intensity_NA", 10, 10)))
 } else {
-  htmltools::HTML(createPngOrSvg(boxplot,"Median_intensity_NA", 800, 800))
+  cat(htmltools::HTML(createPngOrSvg(boxplot,"Median_intensity_NA", 800, 800)))
 }
+figure_note("For each protein and condition: median log10 intensity of the observed replicates, grouped by the number of missing replicates. When the median intensity decreases as the number of missing values increases, the missing values are mostly due to the detection limit (missing not at random), which the imputation by low values assumes.")
 ```
 
 </div>
@@ -1512,7 +1516,8 @@ median_deviation_density_after_processing = ggplot() +
             legend.title=element_text(size=22))
 
 # Printing the 'Median deviation before processing' and 'Median deviation after processing' plots into html doc (SVG or PNG)
-htmltools::HTML(createPngOrSvgForGrid(median_deviation_density_before_processing,median_deviation_density_after_processing,"Median_deviation"))
+cat(htmltools::HTML(createPngOrSvgForGrid(median_deviation_density_before_processing,median_deviation_density_after_processing,"Median_deviation")))
+figure_note("Deviation of each replicate from the median of its condition, protein by protein, as log2(X/median), one curve per condition (central 99% of the values shown), before (raw intensities, observed values only) and after processing (normalization and imputation). A narrow peak at 0 means reproducible replicates; the curves after processing should not be wider than before, otherwise the imputation adds too much variability.")
 
 ```
 
@@ -1574,7 +1579,8 @@ cv_density_after_processing = ggplot() +
             legend.title=element_text(size=18))
 
 # Printing the 'Median deviation before processing' and 'Median deviation after processing' plots into html doc (SVG or PNG)
-htmltools::HTML(createPngOrSvgForGrid(cv_density_before_processing, cv_density_after_processing, "CV_density_plot"))
+cat(htmltools::HTML(createPngOrSvgForGrid(cv_density_before_processing, cv_density_after_processing, "CV_density_plot")))
+figure_note("Coefficient of variation (CV = standard deviation / mean of the replicates, in %) of each protein in each condition, one curve per condition, before (raw intensities, proteins with at least 2 observed values) and after processing (normalization and imputation); CVs above 100% are not shown. Most proteins should have a low CV (peak on the left); a condition with a curve shifted to the right has less reproducible replicates.")
 
 ```
 
@@ -1612,10 +1618,11 @@ cv_boxplot_after_processing = ggplot() +
 
 # Printing boxplot into output report (SVG or PNG)
 if (format_svg) {
-  htmltools::HTML(createPngOrSvg(cv_boxplot_after_processing,"CV_distribution_2", 12, 10))
+  cat(htmltools::HTML(createPngOrSvg(cv_boxplot_after_processing,"CV_distribution_2", 12, 10)))
 } else {
-  htmltools::HTML(createPngOrSvg(cv_boxplot_after_processing,"CV_distribution_2", 800, 800))
+  cat(htmltools::HTML(createPngOrSvg(cv_boxplot_after_processing,"CV_distribution_2", 800, 800)))
 }
+figure_note("CV of the proteins in each condition after processing (box: median and quartiles; points: proteins beyond the whiskers). The conditions should have similar CVs; a condition with a higher median CV has less reproducible replicates, which reduces the power of the tests that involve it.")
 
 ```
 
@@ -1662,10 +1669,11 @@ bio_error_barplot <- ggplot(data = df_cv_after_processing_outliers) +
 
 # Printing bio_error_barplot into output report (SVG or PNG)
 if (format_svg) {
-  htmltools::HTML(createPngOrSvg(bio_error_barplot,"Extreme_biological_errors_(boxplot_outliers)", 10, 10))
+  cat(htmltools::HTML(createPngOrSvg(bio_error_barplot,"Extreme_biological_errors_(boxplot_outliers)", 10, 10)))
 } else {
-  htmltools::HTML(createPngOrSvg(bio_error_barplot,"Extreme_biological_errors_(boxplot_outliers)", 800, 800))
+  cat(htmltools::HTML(createPngOrSvg(bio_error_barplot,"Extreme_biological_errors_(boxplot_outliers)", 800, 800)))
 }
+figure_note("Number of proteins of each condition whose CV after processing is above the upper whisker of the boxplot on the left (extreme variability between replicates). A condition with many more such proteins than the others may contain an outlier replicate.")
 
 ```
 
@@ -2283,6 +2291,11 @@ for (comparison in comparisons_to_display){
     } else {
       cat(htmltools::HTML(createPngOrSvg(Volcano,"Volcano", 1200, 1200)))
     }
+    figure_note(paste0("Volcano plot: log2 fold change between ", couple[1], " and ", couple[2], " (x; positive: higher in ", couple[1], ") against the significance of the test (y, -log10 p-value), one point per protein. ",
+                       "The vertical dashed lines are the fold change threshold (|log2 FC| = ", Stat.threshold.fc, "); ",
+                       if (Test.adjust.procedure != "none") paste0("the horizontal line is at the largest p-value among the proteins with a q-value (", Test.adjust.procedure, ") at most ", Stat.threshold.significance, ". ")
+                       else paste0("the horizontal line is the p-value threshold (", Stat.threshold.significance, "). "),
+                       "Significant proteins are in the upper corners, beyond both thresholds."))
     
     # Plotting and printing MA plot into html doc (.svg or .png dependent on set parameters) with download link
     if (format_svg) {
@@ -2290,6 +2303,8 @@ for (comparison in comparisons_to_display){
     } else {
       cat(htmltools::HTML(createPngOrSvg(MA,"MA_plot", 1200, 800)))
     }
+    figure_note(paste0("MA plot: log2 fold change between ", couple[1], " and ", couple[2], " (y) against the mean log10 intensity of the protein (x). The dashed lines are the fold change threshold. ",
+                       "Most proteins should lie around 0 at all intensities; the spread is usually larger at low intensities, where the quantification is less precise, so that fold changes of weak proteins need more replicates to be significant."))
     
   ########################## Volcano comparisons   ########################## 
     
@@ -2398,6 +2413,9 @@ for (comparison in comparisons_to_display){
           } else {
             cat(htmltools::HTML(createPngOrSvg(heatmap_plot,"Heatmap", 1200, 1000)))
           }
+          figure_note(paste0("Log10 intensities of the significant proteins of the comparison in the replicates of ", A_name, " and ", B_name,
+                             ", from green (low) to red (high); imputed values are left blank. Proteins and replicates are ordered by hierarchical clustering: ",
+                             "the replicates should cluster by condition. The colors mostly reflect the abundance of the proteins; see the z-scored heatmap for their changes."))
         }else{
           cat(text_spec(
             "Heatmap skipped: fewer than two proteins remained after filtering invalid heatmap values.",
@@ -2448,6 +2466,8 @@ for (comparison in comparisons_to_display){
           } else {
             cat(htmltools::HTML(createPngOrSvg(heatmap_plot_scored, "Heatmap_scored", 1200, 1000)))
           }
+          figure_note(paste0("Same heatmap with the intensities of each protein z-scored (centered and scaled across the replicates of ", A_name, " and ", B_name,
+                             "): red means higher and green lower than the protein's mean, so that proteins up in one condition and down in the other form two blocks."))
           
         } else {
           cat(text_spec(

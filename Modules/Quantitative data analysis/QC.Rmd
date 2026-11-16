@@ -411,12 +411,12 @@ htmltools::HTML(paste0(createPngOrSvg(density,"Intensity_distribution_over_all_s
 ```
 
 ```{r Intensity_dist_discription, results='asis'}
-cat(text_spec("\n Plots density over the log intensity of each sample",italic=T,font_size="12px"))
+figure_note("Distribution of the log10 intensities of each sample (one curve per sample), before normalization; the dashed line is the median over all samples. The curves should have similar shapes and positions: a curve shifted to the left (lower intensities) or with a different shape points to a sample with less material, a failed injection or a different quantification.")
 ```
 </div>
 
 <div class = "col-md-6">
-```{r boxplots}
+```{r boxplots, results='asis'}
 ##Framing 'Intensity distribution in each sample' violin plot using ggplot##
 
 violinPlot <- ggplot() +
@@ -434,7 +434,8 @@ violinPlot <- ggplot() +
 
 ##Plotting and printing 'Intensity distribution in each sample' violin plot into html (.svg or .png dependent on set parameters) with download link##
 
-htmltools::HTML(createPngOrSvg(violinPlot,"Intensity_distribution_in_each_sample"))
+cat(htmltools::HTML(createPngOrSvg(violinPlot,"Intensity_distribution_in_each_sample")))
+figure_note("Distribution of the log10 intensities in each sample, before normalization (violin: density; box: median and quartiles). The medians and the spreads should be similar between samples; differences of the medians are corrected by the normalization.")
 
 ```
 </div>
@@ -446,7 +447,7 @@ htmltools::HTML(createPngOrSvg(violinPlot,"Intensity_distribution_in_each_sample
 <div class = "col-md-6">
 
 
-```{r bar graph}
+```{r bar graph, results='asis'}
 # Parsing together the DF and unlogging the figures
 
 MedianIntensitiesDF <- data.frame(matrix(nrow = length(unique(logIntensitiesDF$sample)), 
@@ -483,7 +484,8 @@ M_intensity_comparison <- ggplot(data = MedianIntensitiesDF) +
 
 ##Plotting and printing 'Intensity distribution in each sample' violin plot into html (.svg or .png dependent on set parameters) with download link##
 
-htmltools::HTML(createPngOrSvg(M_intensity_comparison,"Median Intensity Across Runs"))
+cat(htmltools::HTML(createPngOrSvg(M_intensity_comparison,"Median Intensity Across Runs")))
+figure_note("Median intensity of each sample before normalization, sorted from the lowest to the highest. It shows the differences of total measured signal between samples: a sample with a lower median can come from a lower protein amount (biological sample collection), a sample preparation issue or a loss of sensitivity of the mass spectrometer. Moderate differences are corrected by the normalization.")
 
 ```
 
@@ -496,7 +498,7 @@ htmltools::HTML(createPngOrSvg(M_intensity_comparison,"Median Intensity Across R
 <div class="row">
 <div class = "col-md-6">
 
-```{r correlation_plot, fig.cap="Correlation coefficient were computed with pearson method."}
+```{r correlation_plot, results='asis'}
 ##If the number of samples < 16 AND the data for each sample is < 5000 rows, a scatterplot of pairwise comparisons is framed##
 ##Else, a heatplot of correlated coefficients is framed##
 
@@ -530,7 +532,12 @@ if (length(sample_names)<16 & nrow(data)<5000){
 
 ##Plotting and printing the 'sample correlation' plot into html (.svg or .png dependent on set parameters) with download link##
 
-htmltools::HTML(createPngOrSvg(correlogram,"Sample_correlation", grob=TRUE))
+cat(htmltools::HTML(createPngOrSvg(correlogram,"Sample_correlation", grob=TRUE)))
+if (length(sample_names)<16 & nrow(data)<5000){
+  figure_note("Pairwise comparison of the samples on the log10 intensities: scatter plots (below the diagonal), Pearson correlation coefficients (above) and intensity distributions (diagonal). Replicates of the same condition should have the highest correlations; a sample less correlated with all the others is a possible outlier.")
+} else {
+  figure_note("Pearson correlation coefficients between the samples, computed on the log10 intensities of the proteins quantified in every sample (white: lowest coefficient, red: 1). Replicates of the same condition should have the highest correlations; a light row and column point to a sample less correlated with all the others, a possible outlier.")
+}
 
 ```
 </div>
@@ -685,8 +692,11 @@ if(Normalization){
   
   ##Plotting and printing 'Ratio distribution for each sample' ratio plot (.svg or .png dependent on set parameters) with download link##
   
-  htmltools::HTML(createPngOrSvg(ratioPlot,"Ratio_distribution_for_each_sample"))
-  
+  cat(htmltools::HTML(createPngOrSvg(ratioPlot,"Ratio_distribution_for_each_sample")))
+  figure_note(paste0("Distribution of the log2 ratios of the intensities of each sample to those of the reference sample (", reference_sample,
+                     ", the sample with the fewest missing values), protein by protein, before normalization. The median of each box is the shift ",
+                     "removed by the normalization; a wide box means that the sample differs from the reference for many proteins."))
+
 }
 
 ```
@@ -779,7 +789,9 @@ if (Normalization){
 ##Explanation of normalization method printed into html doc##
 
 if (Normalization){
-  cat(text_spec("\n Normalization method : each intensity is expressed relatively to a reference intensity, as a ratio of intensities. Intensities of the sample with the lowest number of missing values are used as reference intensities. Intensities are then centered by substracting the median of the ratios for each sample.",italic=T,font_size="12px"))
+  figure_note(paste0("Normalization method: each sample is divided by the median of its ratios to a reference sample (equivalently, the median log2 ratio is subtracted on the log2 scale). ",
+                     "The reference is the sample with the fewest missing values. The two plots above show the log10 intensities after normalization ",
+                     "(distribution of each sample, and its median and quartiles): the samples should now be aligned, with similar medians."))
 }else{
   cat(text_spec("Intensities were not normalized.",italic=T,font_size="12px"))
 }
@@ -795,7 +807,7 @@ if (Normalization){
 
 <div class="row">
 <div class = "col-md-6">
-```{r na_count_by_sample, echo=FALSE}
+```{r na_count_by_sample, echo=FALSE, results='asis'}
 ##Framing 'Missing values distribution across samples' bar graph using ggplot##
 
 barPlot <-ggplot(data=na_by_sample) +
@@ -815,13 +827,14 @@ barPlot <-ggplot(data=na_by_sample) +
 ##Plotting and printing 'Missing values distribution across samples' bar graph into html (.svg or .png dependent on set parameters)##
 ##with download link##
 
-  htmltools::HTML(createPngOrSvg(barPlot,"Missing_values_distribution_across_samples"))
+  cat(htmltools::HTML(createPngOrSvg(barPlot,"Missing_values_distribution_across_samples")))
+  figure_note("Number (left axis) and percentage (right axis) of the proteins of the table without intensity in each sample. The samples should have similar numbers of missing values; a sample with many more is less deep (fewer proteins quantified), which can come from a loading or injection problem.")
 
 ```
 </div>
 
 <div class = "col-md-6">
-```{r na_count_by_protein, echo=FALSE}
+```{r na_count_by_protein, echo=FALSE, results='asis'}
 ##Creating data frame for 'Missing values distribution across proteins' bar plot##
 
 na_count_by_protein <- apply(log_abundance, 1, function(x) sum(is.na(x)))
@@ -842,7 +855,8 @@ barPlot <- ggplot() +
 ##Plotting and printing 'Missing values distribution across proteins' bar plot into html doc (.svg or .png dependent on set parameters)##
 ##with download link##
 
-  htmltools::HTML(createPngOrSvg(barPlot,"Missing_values_distribution_across_proteins"))
+  cat(htmltools::HTML(createPngOrSvg(barPlot,"Missing_values_distribution_across_proteins")))
+  figure_note("Number of proteins (left axis) and percentage of the proteins (right axis) by number of samples in which they have no intensity. The bar at 0 gives the proteins quantified in every sample; proteins missing in most samples are usually close to the detection limit.")
 
 ```
 </div>
@@ -1049,7 +1063,8 @@ scree_plot <- ggplot(scree_df, aes(x = factor(component), y = variance)) +
         axis.text = element_text(size = 14),
         strip.text = element_text(size = 14))
 
-htmltools::HTML(createPngOrSvg(scree_plot, "PCA_variance_explained", 700, 700))
+cat(htmltools::HTML(createPngOrSvg(scree_plot, "PCA_variance_explained", 700, 700)))
+figure_note("Percentage of the variance of the samples explained by each of the first components, for both PCAs. A first component well above the others means that one main effect (e.g. the conditions, or a technical effect) dominates the differences between samples.")
 ```
 </div>
 </div>
@@ -1104,7 +1119,7 @@ hClustSamples <- fastcluster::hclust(distMatrixSamples)
 ```
 
 
-```{r echo=FALSE, warning=FALSE}
+```{r heatmaps, echo=FALSE, warning=FALSE, results='asis'}
 
 # Create data frame
 nProteins = nrow(data)
@@ -1343,8 +1358,11 @@ result_scored$widths[5] <- unit(0.2, "null")
 #     png_base64 <- base64encode(png_binary)
     
      # htmltools::HTML(paste0("<img src='data:image/png;base64,",png_base64,"' ><a  href='#' onclick=\"javascript:savePngFromParentDiv(this, 'heatmap.png');\" >Save figure</a>"))
-htmltools::HTML(createPngOrSvg(result,"global_hcplot", 1300, 1300))
-htmltools::HTML(createPngOrSvg(result_scored,"global_hcplot_scored", 1300, 1300))
+cat(htmltools::HTML(createPngOrSvg(result,"global_hcplot", 1300, 1300)))
+figure_note(paste0("Log10 intensities", if (Normalization) " after normalization" else "", " of all the proteins (columns) in each sample (rows), from green (low) to red (high); missing values that were imputed are left blank. ",
+                   "Proteins and samples are ordered by hierarchical clustering (dendrograms): samples of the same condition should cluster together."))
+cat(htmltools::HTML(createPngOrSvg(result_scored,"global_hcplot_scored", 1300, 1300)))
+figure_note("Same heatmap with the intensities of each protein z-scored (centered and scaled across the samples), so that the colors show how each protein varies between samples rather than its abundance: blocks of proteins higher (red) or lower (green) in a group of samples show the main differences between conditions.")
   # }
 
 

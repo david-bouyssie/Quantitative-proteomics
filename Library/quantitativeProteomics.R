@@ -529,6 +529,15 @@ impute_using_noise_model <- function(df, groups, noise_model, rows = NULL, seed 
   return(table)
 }
 
+###################
+# Figure captions #
+###################
+
+# Prints the description of a figure under it (italic, small font). To be called in a chunk with results='asis'.
+figure_note <- function(text){
+  cat(kableExtra::text_spec(paste0("\n ", text), italic = TRUE, font_size = "12px"))
+}
+
 #######
 # PCA #
 #######
