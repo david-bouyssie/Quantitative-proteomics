@@ -83,6 +83,7 @@ for (cm in comparisons) {
         paste0(s["spike_ins"], "/", s["ups"], " spike-ins, ", s["yeast"], " yeast"))
 }
 check("filtering summary describes the observation filter per group", grepl("observations in every group", report_text(r$html)))
+check("PCA of the samples present, with its description", grepl("PCA_samples.png", r$html, fixed = TRUE) && grepl("Samples projected on the first two principal components", report_text(r$html)))
 
 ## 2. Paired t-test: pairs by position (default) and by name
 # In the experimental design the 500amol replicates are listed as inj1, inj3, inj2, inj4: the two pairings differ for 50fmol/500amol

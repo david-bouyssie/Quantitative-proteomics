@@ -948,7 +948,6 @@ cat(text_spec(paste0("\n ", imputation_text),italic=T,font_size="12px"))
 # Log10 intensities after normalization (if enabled) and imputation, one column per sample
 pca_matrix <- as.matrix(imputed_abundance)
 colnames(pca_matrix) <- sample_names
-pca_matrix <- pca_matrix[apply(pca_matrix, 1, function(x) all(is.finite(x))), , drop = FALSE]
 
 # Values that were missing before imputation, and number of quantified proteins per sample (proteome depth)
 missing_before_imputation <- is.na(as.matrix(raw_abundance[sample_names]))
@@ -956,13 +955,14 @@ n_quantified <- colSums(!missing_before_imputation)
 pct_imputed <- round(100 * mean(missing_before_imputation), 1)
 
 # Main PCA: each protein centered, not scaled (more variable proteins weigh more)
-pca_main <- prcomp(t(pca_matrix), center = TRUE, scale. = FALSE)
+pca_main <- compute_sample_pca(pca_matrix)
 
-# Scaled PCA: each protein centered and scaled to unit variance (every protein weighs the same).
-# Proteins with a constant profile cannot be scaled and are left out.
-pca_scaled <- prcomp(t(pca_matrix[apply(pca_matrix, 1, sd) > 0, , drop = FALSE]), center = TRUE, scale. = TRUE)
+# Scaled PCA: each protein centered and scaled to unit variance (every protein weighs the same)
+pca_scaled <- compute_sample_pca(pca_matrix, scale = TRUE)
 
-pca_subtitle <- paste0(nrow(pca_matrix), " proteins, ", pct_imputed, "% of the values imputed")
+# Proteins with a non-finite value are left out of the PCA (see compute_sample_pca)
+pca_matrix <- pca_matrix[apply(pca_matrix, 1, function(x) all(is.finite(x))), , drop = FALSE]
+pca_subtitle <- paste0(pca_main$n_proteins, " proteins, ", pct_imputed, "% of the values imputed")
 
 # Sample annotations (condition and replicate are known only when an experimental design is given)
 pca_samples <- data.frame(sample = sample_names, n_quantified = n_quantified, row.names = NULL)
@@ -972,49 +972,22 @@ if (has_design) {
   pca_samples$replicate <- factor(sample_replicates, levels = unique(sample_replicates))
 }
 
-# Percentage of variance explained by each component
-variance_explained <- function(p) 100 * p$sdev^2 / sum(p$sdev^2)
-
-# Samples projected on the first two components
-plot_pca_samples <- function(p, title) {
-  ve <- variance_explained(p)
-  df <- data.frame(pca_samples, PC1 = p$x[, 1], PC2 = p$x[, 2])
-  g <- ggplot(df, aes(x = PC1, y = PC2)) +
-    geom_hline(yintercept = 0, linetype = 2, colour = "grey60") +
-    geom_vline(xintercept = 0, linetype = 2, colour = "grey60")
-  if (has_design) {
-    use_shapes <- nlevels(df$replicate) <= 6
-    g <- g +
-      {if (use_shapes) geom_point(aes(colour = condition, shape = replicate), size = 3.5) else geom_point(aes(colour = condition), size = 3.5)} +
-      {if (color_group) scale_colour_manual(values = setNames(group_colors, group_names))}
-  } else {
-    g <- g + geom_point(size = 3.5)
-  }
-  g +
-    ggrepel::geom_text_repel(aes(label = sample), size = 3, colour = "grey30", max.overlaps = 20) +
-    labs(title = title, subtitle = pca_subtitle,
-         x = paste0("PC1 (", round(ve[1], 1), "%)"), y = paste0("PC2 (", round(ve[2], 1), "%)")) +
-    theme(plot.title = element_text(size = 20),
-          plot.subtitle = element_text(size = 14),
-          axis.title = element_text(size = 18),
-          axis.text = element_text(size = 16),
-          legend.title = element_text(size = 16),
-          legend.text = element_text(size = 14))
-}
+# Colors of the conditions (variance_explained and plot_pca_samples are in the library)
+pca_colors <- if (color_group) setNames(group_colors, group_names) else NULL
 
 ```
 
 <div class="row">
 <div class = "col-md-6">
 ```{r pca_main_plot, echo=FALSE, results='asis'}
-htmltools::HTML(createPngOrSvg(plot_pca_samples(pca_main, "PCA of the samples"), "PCA_samples", 700, 700))
+htmltools::HTML(createPngOrSvg(plot_pca_samples(pca_main, pca_samples, "PCA of the samples", pca_subtitle, pca_colors), "PCA_samples", 700, 700))
 cat(text_spec("\n Log10 intensities, each protein centered. Proteins vary in weight according to their variance, so the components reflect the largest changes between samples.", italic = T, font_size = "12px"))
 ```
 </div>
 
 <div class = "col-md-6">
 ```{r pca_scaled_plot, echo=FALSE, results='asis'}
-htmltools::HTML(createPngOrSvg(plot_pca_samples(pca_scaled, "PCA of the samples, proteins scaled (technical view)"), "PCA_samples_scaled", 700, 700))
+htmltools::HTML(createPngOrSvg(plot_pca_samples(pca_scaled, pca_samples, "PCA of the samples, proteins scaled (technical view)", pca_subtitle, pca_colors), "PCA_samples_scaled", 700, 700))
 cat(text_spec("\n Each protein is also scaled to unit variance, so all proteins weigh the same, including the many proteins that do not change. Their technical noise then has as much weight as the biological changes: this view helps to detect technical effects (injection order, batches), not biological ones.", italic = T, font_size = "12px"))
 ```
 </div>

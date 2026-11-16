@@ -529,6 +529,56 @@ impute_using_noise_model <- function(df, groups, noise_model, rows = NULL, seed 
   return(table)
 }
 
+#######
+# PCA #
+#######
+
+# PCA of the samples: the samples are the observations, the proteins the variables. log_matrix has one row per protein and one
+# column per sample (log intensities); proteins with a non-finite value are left out. Each protein is centered, and scaled to unit
+# variance if scale = TRUE (proteins with a constant profile cannot be scaled and are then left out too).
+# The number of proteins used is returned in the "n_proteins" element.
+compute_sample_pca <- function(log_matrix, scale = FALSE){
+  m <- as.matrix(log_matrix)
+  m <- m[apply(m, 1, function(x) all(is.finite(x))), , drop = FALSE]
+  if (scale) m <- m[apply(m, 1, sd) > 0, , drop = FALSE]
+  p <- prcomp(t(m), center = TRUE, scale. = scale)
+  p$n_proteins <- nrow(m)
+  p
+}
+
+# Percentage of variance explained by each component of a prcomp result
+variance_explained <- function(p) 100 * p$sdev^2 / sum(p$sdev^2)
+
+# Plot of the samples projected on the first two components of a prcomp result.
+# samples: one row per sample, in the order of the PCA rows, with a "sample" column (labels) and optionally "condition" and
+# "replicate" factors (points colored by condition, shaped by replicate when there are at most 6 replicates).
+# colors: optional colors of the conditions, named by condition.
+plot_pca_samples <- function(p, samples, title, subtitle = NULL, colors = NULL){
+  ve <- variance_explained(p)
+  df <- data.frame(samples, PC1 = p$x[, 1], PC2 = p$x[, 2])
+  g <- ggplot(df, aes(x = PC1, y = PC2)) +
+    geom_hline(yintercept = 0, linetype = 2, colour = "grey60") +
+    geom_vline(xintercept = 0, linetype = 2, colour = "grey60")
+  if ("condition" %in% names(df)) {
+    use_shapes <- "replicate" %in% names(df) && nlevels(df$replicate) <= 6
+    g <- g +
+      {if (use_shapes) geom_point(aes(colour = condition, shape = replicate), size = 3.5) else geom_point(aes(colour = condition), size = 3.5)} +
+      {if (!is.null(colors)) scale_colour_manual(values = colors)}
+  } else {
+    g <- g + geom_point(size = 3.5)
+  }
+  g +
+    ggrepel::geom_text_repel(aes(label = sample), size = 3, colour = "grey30", max.overlaps = 20) +
+    labs(title = title, subtitle = subtitle,
+         x = paste0("PC1 (", round(ve[1], 1), "%)"), y = paste0("PC2 (", round(ve[2], 1), "%)")) +
+    theme(plot.title = element_text(size = 20),
+          plot.subtitle = element_text(size = 14),
+          axis.title = element_text(size = 18),
+          axis.text = element_text(size = 16),
+          legend.title = element_text(size = 16),
+          legend.text = element_text(size = 14))
+}
+
 ###########
 # Heatmap #
 ###########

@@ -1360,6 +1360,50 @@ imputed_abundance_log <- global_imputed_abundance_log[global_imputed_abundance_l
 
 <br>
 <div id="banner">
+# **Dimension reduction**
+</div>
+<br>
+
+```{r pca_samples, echo=FALSE, results='asis'}
+
+## PCA of the samples on the log10 intensities after normalization and imputation, for the proteins kept by the global filter ##
+## (compute_sample_pca and plot_pca_samples are in the library; the QC report also shows a scaled PCA and the loadings) ##
+
+pca_columns <- grep("_mean_imputed_log$", colnames(imputed_abundance_log), value = TRUE)
+pca_names <- sub("_mean_imputed_log$", "", pca_columns)
+
+# Condition and replicate of each column ("<repBio>_<Condition>"): the condition is matched on the end of the name
+pca_conditions <- sapply(pca_names, function(n) {
+  matches <- group_ids[endsWith(n, paste0("_", group_ids))]
+  if (length(matches) == 0) NA_character_ else matches[which.max(nchar(matches))]
+})
+pca_samples <- data.frame(sample = pca_names, row.names = NULL)
+if (!anyNA(pca_conditions)) {
+  pca_samples$condition <- factor(pca_conditions, levels = group_ids)
+  pca_samples$replicate <- factor(substr(pca_names, 1, nchar(pca_names) - nchar(pca_conditions) - 1))
+}
+
+pca_da <- compute_sample_pca(imputed_abundance_log[pca_columns])
+pca_colors <- if (coloring_by_group) setNames(group_colors, group_ids) else NULL
+pca_subtitle <- paste0(pca_da$n_proteins, " proteins")
+
+pca_plot <- plot_pca_samples(pca_da, pca_samples, "PCA of the samples", pca_subtitle, pca_colors)
+if (format_svg) {
+  cat(htmltools::HTML(createPngOrSvg(pca_plot, "PCA_samples", 7, 7)))
+} else {
+  cat(htmltools::HTML(createPngOrSvg(pca_plot, "PCA_samples", 700, 700)))
+}
+cat(text_spec(paste0("\n Samples projected on the first two principal components, computed on the log10 intensities (mean of the technical replicates, after normalization and imputation) of the proteins kept by the global filter, each protein centered. ",
+                     "Samples of the same condition should group together, and the conditions should separate along the components that explain the most variance. ",
+                     if (!imputation) "The imputed values are used here even though the statistical tests use the observed values only (No.imputed.values=T). " else "",
+                     "The QC report also shows a PCA with scaled proteins, the link with the proteome depth and the proteins that contribute most."),
+              italic = T, font_size = "12px"))
+
+```
+
+
+<br>
+<div id="banner">
 # **CV distribution**
 </div>
 <br>
