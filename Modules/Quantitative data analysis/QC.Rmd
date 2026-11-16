@@ -448,32 +448,22 @@ figure_note("Distribution of the log10 intensities in each sample, before normal
 
 
 ```{r bar graph, results='asis'}
-# Parsing together the DF and unlogging the figures
+# Total intensity of each sample: sum of all its observed intensities, before normalization
+TotalIntensitiesDF <- data.frame(
+  sample = factor(sample_names, levels = sample_names),
+  total_intensity = sapply(sample_names, function(s) sum(as.numeric(data[[s]]), na.rm = TRUE)),
+  row.names = NULL)
 
-MedianIntensitiesDF <- data.frame(matrix(nrow = length(unique(logIntensitiesDF$sample)), 
-                                  ncol = 2))
-colnames(MedianIntensitiesDF) <- c("sample", "median_intensity")
-MedianIntensitiesDF$sample <- unique(logIntensitiesDF$sample)
-
-median_int <- c()
-
-for (sample in sample_names){
-  median_int <- append(median_int, median(logIntensitiesDF["log_intensity"][logIntensitiesDF["sample"] == sample
-                                                                              & !(is.na(logIntensitiesDF["log_intensity"]))]))
-}
-
-MedianIntensitiesDF$median_intensity <- 10**median_int
-
-# Bars sorted by median intensity. The colours follow the sample (factor levels in the order of sample_names), not the row order
-MedianIntensitiesDF <- MedianIntensitiesDF[order(MedianIntensitiesDF$median_intensity), ]
+# Bars sorted by total intensity. The colours follow the sample (factor levels in the order of sample_names), not the row order
+TotalIntensitiesDF <- TotalIntensitiesDF[order(TotalIntensitiesDF$total_intensity), ]
 
 # Creating ggplot bar graph
 
-M_intensity_comparison <- ggplot(data = MedianIntensitiesDF) +
-  geom_bar(stat="identity",aes(x=sample, y=median_intensity, fill = sample))+
-  scale_x_discrete(limits = MedianIntensitiesDF$sample) +
-  ggtitle("Median Intensity Across Runs") +
-  ylab("Median Intensity")+
+M_intensity_comparison <- ggplot(data = TotalIntensitiesDF) +
+  geom_bar(stat="identity",aes(x=sample, y=total_intensity, fill = sample))+
+  scale_x_discrete(limits = as.character(TotalIntensitiesDF$sample)) +
+  ggtitle("Total intensity across runs") +
+  ylab("Total intensity")+
   xlab("")+
   {if(color_group) scale_fill_manual(values = sample_colors)} +
   theme(legend.position="none",
@@ -484,8 +474,8 @@ M_intensity_comparison <- ggplot(data = MedianIntensitiesDF) +
 
 ##Plotting and printing 'Intensity distribution in each sample' violin plot into html (.svg or .png dependent on set parameters) with download link##
 
-cat(htmltools::HTML(createPngOrSvg(M_intensity_comparison,"Median Intensity Across Runs")))
-figure_note("Median intensity of each sample before normalization, sorted from the lowest to the highest. It shows the differences of total measured signal between samples: a sample with a lower median can come from a lower protein amount (biological sample collection), a sample preparation issue or a loss of sensitivity of the mass spectrometer. Moderate differences are corrected by the normalization.")
+cat(htmltools::HTML(createPngOrSvg(M_intensity_comparison,"Total_intensity_across_runs")))
+figure_note("Total intensity of each sample (sum of all its observed intensities) before normalization, sorted from the lowest to the highest. It shows the differences of total measured signal between samples: a sample with a lower total can come from a lower protein amount (biological sample collection), a sample preparation issue or a loss of sensitivity of the mass spectrometer. It also decreases with the number of proteins quantified, and is dominated by the most abundant proteins. Moderate differences are corrected by the normalization.")
 
 ```
 
