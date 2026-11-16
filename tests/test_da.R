@@ -88,7 +88,8 @@ check("PCA of the samples present, with its description", grepl("PCA_samples.png
 ## 2. Paired t-test: pairs by position (default) and by name
 # In the experimental design the 500amol replicates are listed as inj1, inj3, inj2, inj4: the two pairings differ for 50fmol/500amol
 cm <- "50fmol/500amol"
-paired_t <- function(a, b) t.test(a, b, paired = TRUE)$p.value
+# NA when the test cannot be computed (fewer than 2 complete pairs, e.g. with values left missing), as in the report
+paired_t <- function(a, b) tryCatch(t.test(a, b, paired = TRUE)$p.value, error = function(e) NA_real_)
 r <- da_render(list(Test.paired = "TRUE"))
 check("paired t-test renders (pairs by position)", is.na(r$error), r$error)
 check("paired by position: pairs listed in the report", grepl("by position): inj1 - inj1, inj2 - inj3, inj3 - inj2, inj4 - inj4", report_text(r$html), fixed = TRUE))
