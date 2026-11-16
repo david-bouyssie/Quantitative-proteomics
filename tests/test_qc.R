@@ -50,4 +50,26 @@ check("QC renders without Imputation.MNAR.percentile (5 by default)", is.na(r$er
 r <- qc_render(parameters = qc_params_with(list(Imputation.MNAR.percentile = "20")))
 check("Imputation.MNAR.percentile = 20 stops with a clear message", grepl("Imputation.MNAR.percentile must be greater than 0 and at most 10", r$error), r$error)
 
+## 5. Sample names over 15 characters: shortened to S1, S2... without design, to <Condition>_<index> with a design
+long_quant <- read.delim(quant, check.names = FALSE, stringsAsFactors = FALSE)
+names(long_quant) <- sub("^(Intensity|Identification_type)_(.*)$", "\\1_\\2_long_sample_name", names(long_quant))
+long_quant_file <- tempfile(fileext = ".txt")
+write.table(long_quant, long_quant_file, sep = "\t", quote = FALSE, row.names = FALSE, na = "")
+r <- qc_render(quantif_file = long_quant_file, design_exp = "")
+txt <- report_text(r$html)
+check("long sample names without design: QC renders, samples numbered S1 to S40", is.na(r$error) && grepl("10amol_1_long_sample_name\\s+S1\\s", txt) && grepl("\\sS40\\s", txt), r$error)
+
+# Design with long replicate names and its rows shuffled (the conditions are interleaved)
+long_design <- read.delim(design, stringsAsFactors = FALSE)
+long_design$File <- paste0(long_design$File, "_long_sample_name")
+long_design$repBio <- paste0("injection_", long_design$repBio)
+set.seed(1); long_design <- long_design[sample(nrow(long_design)), ]
+long_design_file <- tempfile(fileext = ".txt")
+write.table(long_design, long_design_file, sep = "\t", quote = FALSE, row.names = FALSE)
+r <- qc_render(quantif_file = long_quant_file, design_exp = long_design_file)
+txt <- report_text(r$html)
+short_names <- regmatches(txt, gregexpr("\\b[0-9]+(amol|fmol)_[0-9]+\\b", txt))[[1]]
+check("long sample names with a shuffled design: QC renders, names <Condition>_<index> from 1 to 4 in each condition",
+      is.na(r$error) && all(paste0(rep(unique(long_design$Condition), each = 4), "_", 1:4) %in% short_names) && !any(grepl("_[5-9]$", short_names)), r$error)
+
 finish("QC report tests")

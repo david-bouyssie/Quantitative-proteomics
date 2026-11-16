@@ -333,32 +333,23 @@ max_lenght_sample_name = nchar(sample_names_parsed[nchar(sample_names_parsed)==m
 
 if (max_lenght_sample_name>15){
   if(file.exists(params$design_exp)){
-    sample_numero <- c()
-    counter <- 1
-    
-    for (condition in 1:length(expDesign$Condition)){
-      if(condition > 1 && expDesign$Condition[condition] != expDesign$Condition[condition - 1]){
-        counter <- 1
-      }
-      sample_numero <- append(sample_numero, paste0(expDesign$Condition[condition], "_", counter))
-      counter <- counter + 1
-    }
-    setnames(data, old=as.character(sample_names),new=sample_numero)
-    sample_names = sample_numero
+    # "<Condition>_<index>": the samples (one per repBio of each condition, see sample_conditions) are numbered within their
+    # condition, in the order of the columns, so that the names are unique whatever the order of the design rows
+    sample_number <- paste0(sample_conditions, "_", ave(seq_along(sample_conditions), sample_conditions, FUN = seq_along))
   }else{
-    #Replace sample names by numbers
-    sample_numero = paste0(rep("S",length(sample_names)),as.character(1:length(sample_names)))
-    setnames(data, old=as.character(sample_names),new=sample_numero)
-    sample_names = sample_numero
-    #Print new names
-    kable(data.frame(sample_names_parsed,sample_numero),format="html",caption="Samples id") %>% kable_styling() %>% scroll_box(height = "200px")
+    # Without experimental design, the samples are numbered: S1, S2...
+    sample_number = paste0("S", seq_along(sample_names))
   }
+  setnames(data, old=as.character(sample_names),new=sample_number)
+  sample_names = sample_number
+  # Correspondence between the original and the short names
+  cat(kable(data.frame(Sample = sample_names_parsed, Id = sample_number),format="html",caption="Samples id") %>% kable_styling() %>% scroll_box(height = "200px"))
 }else{
-  sample_numero = sample_names_parsed
+  sample_number = sample_names_parsed
   setnames(data, old=as.character(sample_names),new=sample_names_parsed)
   sample_names = sample_names_parsed
 }
-namesDF = data.frame(sample_names_parsed,sample_numero)
+namesDF = data.frame(sample_names_parsed,sample_number)
 colnames(namesDF)=c("Sample","Id")
 
 ```
