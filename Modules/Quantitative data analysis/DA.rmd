@@ -85,24 +85,8 @@ th {
 
 
 <script>
-function saveSvgFromParentDiv(divElId, name) {
-  var divSvgWrapperEl = document.getElementById(divElId);
-
-  var svgEl = divSvgWrapperEl.firstElementChild;
-  svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-  var svgData = svgEl.outerHTML;
-  var preface = '<?xml version="1.0" standalone="no"?>\r\n';
-  var svgBlob = new Blob([preface, svgData], {type:"image/svg+xml;charset=utf-8"});
-  var svgUrl = URL.createObjectURL(svgBlob);
-  var downloadLink = document.createElement("a");
-  downloadLink.href = svgUrl;
-  downloadLink.download = name;
-  document.body.appendChild(downloadLink);
-  downloadLink.click();
-  document.body.removeChild(downloadLink);
-}
-
-function saveSvgFromParentDiv2(clickedEl, downloadName) {
+// "Save figure" links (see plot_figure_as_html in the library): the figure is the element just before the clicked link
+function saveSvgFigure(clickedEl, downloadName) {
 
   var svgEl = clickedEl.previousElementSibling;
   svgEl.setAttribute("xmlns", "http://www.w3.org/2000/svg");
@@ -114,7 +98,7 @@ function saveSvgFromParentDiv2(clickedEl, downloadName) {
   _createThenClickImageLink(svgUrl, downloadName);
 }
 
-function savePngFromParentDiv(clickedEl, downloadName) {
+function savePngFigure(clickedEl, downloadName) {
   var imgEl = clickedEl.previousElementSibling;
   
   _createThenClickImageLink(imgEl.src, downloadName);
@@ -165,72 +149,6 @@ library(tidyr)
 source("../../Library/quantitativeProteomics.R")
 ``` 
 
-```{r helpers_png_svg, include=FALSE}
-
-## Creating helper functions for PNG or SVG files ##
-
-#Creating a temp file to load images, to be deleted at the end
-if(dir.exists("temp") == FALSE){
-  dir.create("temp")
-}
-
-# Function createPngOrSvg for creating images from plots
-createPngOrSvg <- function(plot_data, image_name, w, h) {
-  
-  if (format_svg) {
-    
-    # Code for creating svg images (no temp file)
-    s <- svgstring(width=w,height=h)
-    plot(plot_data)
-    invisible(dev.off())
-  
-    return(paste0("<div id='svgWrapper'>",s(),"<a class='no-print' href='javascript:void(0);' onclick=\"javascript:saveSvgFromParentDiv2(this,'",image_name,".svg');\" >Save figure</a></div>"))
-    
-  } else {
-    
-    # Code for saving png images (temp file used)
-    png_file <- paste0("./temp/",image_name, ".png")
-    png(filename = png_file, width = w, height = h, type = "cairo")
-    plot(plot_data)
-    invisible(dev.off())
-    
-    png_binary <- readBin(png_file, what = "raw", n = file.info(png_file)$size)
-    png_base64 <- base64encode(png_binary)
-    
-     return(paste0("<div id='pngWrapper'> <img src='data:image/png;base64,",png_base64,"' ><a  href='javascript:void(0);' onclick=\"javascript:savePngFromParentDiv(this, '",image_name,".png');\" >Save figure</a></div>"))
-    
-  }
-}
-
-# Function createPngOrSvgForGrid for creating images from grids (heatmaps, for example)
-createPngOrSvgForGrid <- function(plot_data1, plot_data2, image_name) {
-  
-  if (format_svg) {
-    
-    # Code for creating svg image (no temp file)
-    s <- svgstring(width=20,height=10)
-    grid.arrange(arrangeGrob(plot_data1), arrangeGrob(plot_data2), ncol=2,nrow=1)
-    invisible(dev.off())
-  
-    return(paste0("<div id='svgWrapper'>",s(),"<a class='no-print' href='javascript:void(0);' onclick=\"javascript:saveSvgFromParentDiv2(this,'",image_name,".svg');\" >Save figure</a></div>"))
-    
-  } else {
-    
-    # Code for creating png image (temp file used)
-    png_file <- paste0("./temp/",image_name, ".png")
-    png(filename = png_file, width = 1200, height = 600, type = "cairo")
-    grid.arrange(arrangeGrob(plot_data1), arrangeGrob(plot_data2), ncol=2,nrow=1)
-    invisible(dev.off())
-    
-    png_binary <- readBin(png_file, what = "raw", n = file.info(png_file)$size)
-    png_base64 <- base64encode(png_binary)
-    
-     return(paste0("<div id=pngWrapper><img src='data:image/png;base64,",png_base64,"' ><a  href='javascript:void(0);' onclick=\"javascript:savePngFromParentDiv(this, '",image_name,".png');\" >Save figure</a></div>"))
-    
-  }
-}
-
-```
 
 ```{r file_import, echo=FALSE}
 
@@ -778,11 +696,7 @@ cat(kable(global_filtering[[3]], format="html", col.names = c("Filter", "Value",
             column_spec(1, bold = T))
 
 # Printing filtering barplot into output report
-if (format_svg) {
-  cat(htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 12, 7)))
-} else {
-  cat(htmltools::HTML(createPngOrSvg(global_filtering[[4]],"Proteins_filtered", 1200, 800)))
-}
+cat(htmltools::HTML(plot_figure_as_html(global_filtering[[4]], "Proteins_filtered", 1200, 800, svg = format_svg)))
 figure_note(paste0("Proteins removed by each filter, applied in this order, and proteins kept for the analysis: proteins without specific peptide, proteins identified by MS/MS in less than ",
                    as.character(parameters["Filter.threshold.ms",]), " files, and proteins observed in less than ", as.numeric(as.character(parameters["Filter.threshold.obs",])) * 100,
                    "% of the replicates of every condition. Each protein is counted at the first filter that removes it. The normalization, the imputation and the tests use the proteins kept."))
@@ -889,11 +803,7 @@ if (normalization){
           legend.title=element_text(size=18))
   
   # Printing density plot to report output (SVG or PNG)
-  if (format_svg) {
-    cat(htmltools::HTML(createPngOrSvg(density1,"Intensity_distribution_before_normalization", 12, 8)))
-  } else {
-    cat(htmltools::HTML(createPngOrSvg(density1,"Intensity_distribution_before_normalization", 1600, 800)))
-  }
+  cat(htmltools::HTML(plot_figure_as_html(density1, "Intensity_distribution_before_normalization", 1600, 800, svg = format_svg)))
     
   cat(text_spec("\n"))  
   
@@ -921,11 +831,7 @@ if (normalization){
           legend.title=element_text(size=18))
   
   # Printing normalized density plot to report output (SVG or PNG)
-  if (format_svg) {
-    cat(htmltools::HTML(createPngOrSvg(density2,"Intensity_distribution_after_normalization", 12, 8)))
-  } else {
-    cat(htmltools::HTML(createPngOrSvg(density2,"Intensity_distribution_after_normalization", 1600, 800)))
-  }
+  cat(htmltools::HTML(plot_figure_as_html(density2, "Intensity_distribution_after_normalization", 1600, 800, svg = format_svg)))
 
   # Printing explanation of normalization methods into html doc
   cat(text_spec(paste0("\n Normalization method : each sample is divided by the median of its ratios to a reference sample (equivalently, the median log2 ratio is subtracted on the log2 scale). The reference is the sample with the lowest number of missing values (",
@@ -1049,11 +955,7 @@ boxplot <- ggplot(na_distribution) +
           legend.title=element_text(size=18))
 
 # Prints 'Median intensity / # NA' violin graph to final report (SVG or PNG)
-if (format_svg) {
-  cat(htmltools::HTML(createPngOrSvg(boxplot,"Median_intensity_NA", 10, 10)))
-} else {
-  cat(htmltools::HTML(createPngOrSvg(boxplot,"Median_intensity_NA", 800, 800)))
-}
+cat(htmltools::HTML(plot_figure_as_html(boxplot, "Median_intensity_NA", 800, 800, svg = format_svg)))
 figure_note("For each protein and condition: median log10 intensity of the observed replicates, grouped by the number of missing replicates. When the median intensity decreases as the number of missing values increases, the missing values are mostly due to the detection limit (missing not at random), which the imputation by low values assumes.")
 ```
 
@@ -1249,11 +1151,7 @@ histogram <- ggplot() +
           legend.title=element_text(size=22))
 
 # Printing 'Log intensities distribution with imputed values' histogram into html document (.svg or .png dependent on set parameters) with download link
-if (format_svg) {
-  htmltools::HTML(createPngOrSvg(histogram,"Log_intensities_distribution_with_imputed_values", 12, 10))
-} else {
-  htmltools::HTML(createPngOrSvg(histogram,"Log_intensities_distribution_with_imputed_values", 1600, 600))
-}
+htmltools::HTML(plot_figure_as_html(histogram, "Log_intensities_distribution_with_imputed_values", 1600, 600, svg = format_svg))
 
 # Prints the explanation of the imputation model used
 if(Imputation.MNAR.model == "gaussian"){
@@ -1300,11 +1198,7 @@ if (imputation_method == "knn") {
       ggtitle("Missing values against the mean intensity (protein/condition)") +
       xlab("log(mean intensity of the observed values)") + ylab("Missing values (%)") +
       theme(plot.title = element_text(size=22), axis.title=element_text(size=20), axis.text=element_text(size=18))
-    if (format_svg) {
-      cat(htmltools::HTML(createPngOrSvg(rate_plot, "Missing_values_against_intensity", 12, 7)))
-    } else {
-      cat(htmltools::HTML(createPngOrSvg(rate_plot, "Missing_values_against_intensity", 1200, 700)))
-    }
+    cat(htmltools::HTML(plot_figure_as_html(rate_plot, "Missing_values_against_intensity", 1200, 700, svg = format_svg)))
   }
 
   # Explanation of the classification
@@ -1392,11 +1286,7 @@ pca_colors <- if (coloring_by_group) setNames(group_colors, group_ids) else NULL
 pca_subtitle <- paste0(pca_da$n_proteins, " proteins")
 
 pca_plot <- plot_pca_samples(pca_da, pca_samples, "PCA of the samples", pca_subtitle, pca_colors)
-if (format_svg) {
-  cat(htmltools::HTML(createPngOrSvg(pca_plot, "PCA_samples", 7, 7)))
-} else {
-  cat(htmltools::HTML(createPngOrSvg(pca_plot, "PCA_samples", 700, 700)))
-}
+cat(htmltools::HTML(plot_figure_as_html(pca_plot, "PCA_samples", 700, 700, svg = format_svg)))
 cat(text_spec(paste0("\n Samples projected on the first two principal components, computed on the log10 intensities (mean of the technical replicates, after normalization and imputation) of the proteins kept by the global filter, each protein centered. ",
                      "Samples of the same condition should group together, and the conditions should separate along the components that explain the most variance. ",
                      if (!imputation) "The imputed values are used here even though the statistical tests use the observed values only (No.imputed.values=T). " else "",
@@ -1516,7 +1406,7 @@ median_deviation_density_after_processing = ggplot() +
             legend.title=element_text(size=22))
 
 # Printing the 'Median deviation before processing' and 'Median deviation after processing' plots into html doc (SVG or PNG)
-cat(htmltools::HTML(createPngOrSvgForGrid(median_deviation_density_before_processing,median_deviation_density_after_processing,"Median_deviation")))
+cat(htmltools::HTML(plot_figure_as_html(gridExtra::arrangeGrob(median_deviation_density_before_processing, median_deviation_density_after_processing, ncol = 2), "Median_deviation", 1200, 600, svg = format_svg)))
 figure_note("Deviation of each replicate from the median of its condition, protein by protein, as log2(X/median), one curve per condition (central 99% of the values shown), before (raw intensities, observed values only) and after processing (normalization and imputation). A narrow peak at 0 means reproducible replicates; the curves after processing should not be wider than before, otherwise the imputation adds too much variability.")
 
 ```
@@ -1579,7 +1469,7 @@ cv_density_after_processing = ggplot() +
             legend.title=element_text(size=18))
 
 # Printing the 'Median deviation before processing' and 'Median deviation after processing' plots into html doc (SVG or PNG)
-cat(htmltools::HTML(createPngOrSvgForGrid(cv_density_before_processing, cv_density_after_processing, "CV_density_plot")))
+cat(htmltools::HTML(plot_figure_as_html(gridExtra::arrangeGrob(cv_density_before_processing, cv_density_after_processing, ncol = 2), "CV_density_plot", 1200, 600, svg = format_svg)))
 figure_note("Coefficient of variation (CV = standard deviation / mean of the replicates, in %) of each protein in each condition, one curve per condition, before (raw intensities, proteins with at least 2 observed values) and after processing (normalization and imputation); CVs above 100% are not shown. Most proteins should have a low CV (peak on the left); a condition with a curve shifted to the right has less reproducible replicates.")
 
 ```
@@ -1617,11 +1507,7 @@ cv_boxplot_after_processing = ggplot() +
           legend.title=element_text(size=18))
 
 # Printing boxplot into output report (SVG or PNG)
-if (format_svg) {
-  cat(htmltools::HTML(createPngOrSvg(cv_boxplot_after_processing,"CV_distribution_2", 12, 10)))
-} else {
-  cat(htmltools::HTML(createPngOrSvg(cv_boxplot_after_processing,"CV_distribution_2", 800, 800)))
-}
+cat(htmltools::HTML(plot_figure_as_html(cv_boxplot_after_processing, "CV_distribution_2", 800, 800, svg = format_svg)))
 figure_note("CV of the proteins in each condition after processing (box: median and quartiles; points: proteins beyond the whiskers). The conditions should have similar CVs; a condition with a higher median CV has less reproducible replicates, which reduces the power of the tests that involve it.")
 
 ```
@@ -1668,11 +1554,7 @@ bio_error_barplot <- ggplot(data = df_cv_after_processing_outliers) +
           legend.title=element_text(size=18))
 
 # Printing bio_error_barplot into output report (SVG or PNG)
-if (format_svg) {
-  cat(htmltools::HTML(createPngOrSvg(bio_error_barplot,"Extreme_biological_errors_(boxplot_outliers)", 10, 10)))
-} else {
-  cat(htmltools::HTML(createPngOrSvg(bio_error_barplot,"Extreme_biological_errors_(boxplot_outliers)", 800, 800)))
-}
+cat(htmltools::HTML(plot_figure_as_html(bio_error_barplot, "Extreme_biological_errors_(boxplot_outliers)", 800, 800, svg = format_svg)))
 figure_note("Number of proteins of each condition whose CV after processing is above the upper whisker of the boxplot on the left (extreme variability between replicates). A condition with many more such proteins than the others may contain an outlier replicate.")
 
 ```
@@ -2286,11 +2168,7 @@ for (comparison in comparisons_to_display){
              label = couple[1], hjust = 1, vjust = 1, size = 6, font_face = "bold")
     
     # Plotting and printing of Volcano plot into html (.svg or .png dependent on set parameters) with download link
-    if (format_svg) {
-      cat(htmltools::HTML(createPngOrSvg(Volcano,"Volcano", 12, 12)))
-    } else {
-      cat(htmltools::HTML(createPngOrSvg(Volcano,"Volcano", 1200, 1200)))
-    }
+    cat(htmltools::HTML(plot_figure_as_html(Volcano, "Volcano", 1200, 1200, svg = format_svg)))
     figure_note(paste0("Volcano plot: log2 fold change between ", couple[1], " and ", couple[2], " (x; positive: higher in ", couple[1], ") against the significance of the test (y, -log10 p-value), one point per protein. ",
                        "The vertical dashed lines are the fold change threshold (|log2 FC| = ", Stat.threshold.fc, "); ",
                        if (Test.adjust.procedure != "none") paste0("the horizontal line is at the largest p-value among the proteins with a q-value (", Test.adjust.procedure, ") at most ", Stat.threshold.significance, ". ")
@@ -2298,11 +2176,7 @@ for (comparison in comparisons_to_display){
                        "Significant proteins are in the upper corners, beyond both thresholds."))
     
     # Plotting and printing MA plot into html doc (.svg or .png dependent on set parameters) with download link
-    if (format_svg) {
-      cat(htmltools::HTML(createPngOrSvg(MA,"MA_plot", 12, 12)))
-    } else {
-      cat(htmltools::HTML(createPngOrSvg(MA,"MA_plot", 1200, 800)))
-    }
+    cat(htmltools::HTML(plot_figure_as_html(MA, "MA_plot", 1200, 800, svg = format_svg)))
     figure_note(paste0("MA plot: log2 fold change between ", couple[1], " and ", couple[2], " (y) against the mean log10 intensity of the protein (x). The dashed lines are the fold change threshold. ",
                        "Most proteins should lie around 0 at all intensities; the spread is usually larger at low intensities, where the quantification is less precise, so that fold changes of weak proteins need more replicates to be significant."))
     
@@ -2408,11 +2282,7 @@ for (comparison in comparisons_to_display){
           )
   
           # Plotting and printing 'Heatmap' plot into html doc (.svg or .png dependent on set parameters) with download link
-          if (format_svg) {
-            cat(htmltools::HTML(createPngOrSvg(heatmap_plot,"Heatmap", 15, 15)))
-          } else {
-            cat(htmltools::HTML(createPngOrSvg(heatmap_plot,"Heatmap", 1200, 1000)))
-          }
+          cat(htmltools::HTML(plot_figure_as_html(heatmap_plot, "Heatmap", 1200, 1000, svg = format_svg)))
           figure_note(paste0("Log10 intensities of the significant proteins of the comparison in the replicates of ", A_name, " and ", B_name,
                              ", from green (low) to red (high); imputed values are left blank. Proteins and replicates are ordered by hierarchical clustering: ",
                              "the replicates should cluster by condition. The colors mostly reflect the abundance of the proteins; see the z-scored heatmap for their changes."))
@@ -2461,11 +2331,7 @@ for (comparison in comparisons_to_display){
             "Log Intensities Heatmap (Z-scored)"
           )
           
-          if (format_svg) {
-            cat(htmltools::HTML(createPngOrSvg(heatmap_plot_scored, "Heatmap_scored", 15, 15)))
-          } else {
-            cat(htmltools::HTML(createPngOrSvg(heatmap_plot_scored, "Heatmap_scored", 1200, 1000)))
-          }
+          cat(htmltools::HTML(plot_figure_as_html(heatmap_plot_scored, "Heatmap_scored", 1200, 1000, svg = format_svg)))
           figure_note(paste0("Same heatmap with the intensities of each protein z-scored (centered and scaled across the replicates of ", A_name, " and ", B_name,
                              "): red means higher and green lower than the protein's mean, so that proteins up in one condition and down in the other form two blocks."))
           

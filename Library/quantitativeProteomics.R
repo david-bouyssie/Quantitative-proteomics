@@ -529,6 +529,42 @@ impute_using_noise_model <- function(df, groups, noise_model, rows = NULL, seed 
   return(table)
 }
 
+###########
+# Figures #
+###########
+
+# Returns a figure as HTML, with a "Save figure" link: an embedded PNG image, or an inline SVG image if svg = TRUE.
+# The link calls the savePngFigure / saveSvgFigure JavaScript functions defined in the reports (QC.Rmd, DA.rmd).
+# width and height are in pixels for both formats: the SVG is drawn at width/72 x height/72 inches, 72 pixels per inch being
+# the resolution of the PNG device, so that both formats have the same layout (text sizes, margins).
+# plot: a ggplot (or GGally ggmatrix) object, or a grid object (grob, gtable, e.g. gridExtra::arrangeGrob(p1, p2, ncol = 2)).
+plot_figure_as_html <- function(plot, name, width = 600, height = 600, svg = FALSE){
+  draw <- function(){
+    if (inherits(plot, c("gtable", "grob", "gTree"))) {
+      grid::grid.newpage()
+      grid::grid.draw(plot)
+    } else {
+      print(plot)
+    }
+  }
+  if (isTRUE(svg)) {
+    s <- svglite::svgstring(width = width / 72, height = height / 72)
+    draw()
+    invisible(dev.off())
+    return(paste0("<div id='svgWrapper'>", s(), "<a class='no-print' href='javascript:void(0);' onclick=\"javascript:saveSvgFigure(this,'",
+                  name, ".svg');\" >Save figure</a></div>"))
+  }
+  # PNG written in a temporary file, then embedded in the HTML as base64
+  png_file <- tempfile(fileext = ".png")
+  on.exit(unlink(png_file), add = TRUE)
+  png(filename = png_file, width = width, height = height, type = "cairo")
+  draw()
+  invisible(dev.off())
+  png_base64 <- base64enc::base64encode(png_file)
+  paste0("<div id='pngWrapper'><img src='data:image/png;base64,", png_base64, "' ><a href='javascript:void(0);' onclick=\"javascript:savePngFigure(this, '",
+         name, ".png');\" >Save figure</a></div>")
+}
+
 ###################
 # Figure captions #
 ###################
