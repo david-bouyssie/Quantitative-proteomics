@@ -103,7 +103,7 @@ Here you can find a description of all parameters and possible values:
 | Parameter | Function | Values |
 | --------- | --------- | --------- |
 | Normalisation | Should intensities be normalized or not ? | T / F |
-| Proteins.for.normalization | List of protein IDs of interest for the data to be normalized to | Example : 1556122;1552942;1551169;1550971;1556987 |
+| Proteins.for.normalization | Proteins on which the normalization factors are computed, given by accession or Id and separated by ";" (e.g. a background proteome or housekeeping proteins). Entries not found are listed in the report and ignored; the report stops if none is found. Empty: the proteins kept for the analysis are used | Example : 2A5D_YEAST;2AAA_YEAST;1556122 |
 | Filter.threshold.ms | Minimum number of file identified by MS/MS to keep the protein for the analysis | ℕ |
 | Filter.threshold.obs | Minimum percentage of observed intensities in one condition at least to keep the protein for the analysis | {0,100} |
 | Imputation.MNAR.model | Which model should be used to impute MNAR ? | percentile / gaussian |

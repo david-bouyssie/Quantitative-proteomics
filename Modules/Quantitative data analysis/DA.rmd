@@ -268,8 +268,9 @@ if (is.na(Vol_colors) || !Vol_colors %in% c("significance", "intensity", "monoch
   stop("Parameter Volcano.color.style must be significance, intensity or monochrome.")
 }
 
-# Specified proteins for normalization
-Normalization_list <- as.numeric(strsplit(as.character(parameters["Proteins.for.normalization",]),";")[[1]])
+# Specified proteins for normalization: accessions or Ids separated by ";" (empty: the proteins kept for the analysis are used)
+Normalization_list <- trimws(strsplit(as.character(parameters["Proteins.for.normalization",]),";")[[1]])
+Normalization_list <- Normalization_list[!is.na(Normalization_list) & Normalization_list != ""]
 
 # Specified proteins for labeling on volcano plot
 Vol_labels <- strsplit(as.character(parameters["Volcano.manual.accession",]),";")[[1]]
@@ -796,12 +797,19 @@ if (normalization){
   raw_abundance = data[c("Id",as.character(expDesign$File))]
   kept_rows <- raw_abundance$Id %in% kept_ids
 
-  # Proteins used to compute the normalization factors
-  Normalization_list <- Normalization_list[!is.na(Normalization_list)]
+  # Proteins used to compute the normalization factors: each entry of Proteins.for.normalization is matched on the Accession or on the Id
   if(length(Normalization_list) > 0){
-    normalization_rows <- raw_abundance$Id %in% Normalization_list
+    normalization_rows <- data$Accession %in% Normalization_list | as.character(data$Id) %in% Normalization_list
+    not_found <- setdiff(Normalization_list, c(data$Accession, as.character(data$Id)))
     if(!any(normalization_rows)){
-      stop("None of the proteins given in Proteins.for.normalization was found in the Id column of the quantification table.")
+      stop("None of the proteins given in Proteins.for.normalization was found in the Accession or Id column of the quantification table.")
+    }
+    if(length(not_found) > 0){
+      not_found_message <- paste0("Proteins.for.normalization: ", length(not_found), " of the ", length(Normalization_list),
+                                  " proteins given were not found and are ignored: ", paste(head(not_found, 20), collapse = ", "),
+                                  if (length(not_found) > 20) ", ..." else "", ".")
+      # Printed in the normalization section of the report (normalization_plots chunk)
+      warning(not_found_message, call. = FALSE)
     }
   }else{
     normalization_rows <- kept_rows
@@ -921,6 +929,7 @@ if (normalization){
                        reference_sample,"). The medians were computed on ", sum(normalization_rows),
                        ifelse(length(Normalization_list) > 0, " proteins given in Proteins.for.normalization", " proteins kept for the analysis"),
                        ". Normalization factors range from ", formatC(min(normalization_factors), format = "f", digits = 3), " to ", formatC(max(normalization_factors), format = "f", digits = 3), "."),italic=T,font_size="12px"))
+  if (exists("not_found_message")) cat(text_spec(paste0("\n\nWarning: ", not_found_message), italic = T, font_size = "12px"))
 
 }else{
 

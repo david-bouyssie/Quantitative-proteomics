@@ -157,4 +157,17 @@ dup_file <- tempfile(fileext = ".txt"); write.table(dup, dup_file, sep = "\t", q
 r <- da_render(quant_df = dup_file)
 check("duplicated Accession stops with a clear message", grepl("duplicated Accession", r$error), r$error)
 
+## 7. Normalization on a list of proteins (Proteins.for.normalization): accessions or Ids, entries not found listed
+quant_table <- read.delim(quant, check.names = FALSE, stringsAsFactors = FALSE)
+yeast <- head(quant_table[grepl("_YEAST$", quant_table$Accession), ], 300)
+norm_list <- c(yeast$Accession[1:200], as.character(yeast$Id[201:300]), "NOT_A_PROTEIN")
+r <- da_render(list(Proteins.for.normalization = paste(norm_list, collapse = ";")))
+check("normalization on a list of accessions and Ids renders", is.na(r$error), r$error)
+txt <- report_text(r$html)
+check("normalization: medians computed on the 300 proteins found (200 accessions, 100 Ids)",
+      grepl("medians were computed on 300 proteins given in Proteins.for.normalization", txt))
+check("normalization: the entry not found is listed in the report", grepl("1 of the 301 proteins given were not found and are ignored: NOT_A_PROTEIN", txt, fixed = TRUE))
+r <- da_render(list(Proteins.for.normalization = "NOT_A_PROTEIN;OTHER"))
+check("normalization: no protein found stops with a clear message", grepl("None of the proteins given in Proteins.for.normalization was found", r$error), r$error)
+
 finish("DA report tests")
