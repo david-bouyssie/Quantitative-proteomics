@@ -537,62 +537,74 @@ htmltools::HTML(createPngOrSvg(correlogram,"Sample_correlation", grob=TRUE))
 
 <div class = "col-md-6">
 
-```{r identification_type_plot}
+```{r identification_type_plot, results='asis'}
 
-##Parsing data to find identification type names##
-identification_type = data[,grepl("Identification_type_",names(data))]
+## Number of proteins identified (by MS/MS) and quantified (by MS/MS or by matching) in each sample ##
 
-##If the identification type name list > 0, creation of a data frame for the 'Identification types distribution across samples' geo. bar graph##
+identification_type = data[,grepl("Identification_type_",names(data)), drop = FALSE]
 
-if(length(identification_type)>0){
-  
-  identifications = c()
-  samples = c()
-  for(sample in colnames(identification_type)){
-    sample_name = as.character(subset(namesDF,namesDF$Sample==sub(".*_type_", "", sample))$Id)
-    samples = c(samples, rep(sample_name,nrow(identification_type)))
-    identifications = c(identifications,as.vector(unlist(identification_type[sample])))
-  }
-  IdentificationTypeDF = data.frame(samples,identifications)
-  IdentificationTypeDF$samples <- factor(IdentificationTypeDF$samples, as.character(namesDF$Id))
-  
-  # Colour of each identification type (a missing value means that the protein was not observed in the sample)
-  IdentificationTypeDF$identifications[is.na(IdentificationTypeDF$identifications)] <- "Not observed"
-  id_type_colors <- c("By MS/MS" = "dodgerblue4", "By matching" = "dodgerblue1", "Not observed" = "gray80")
+if(ncol(identification_type)>0){
 
-  # Any other value (unexpected) is shown in dark grey
-  other_types <- setdiff(unique(IdentificationTypeDF$identifications), names(id_type_colors))
-  id_type_colors <- c(id_type_colors, setNames(rep("gray40", length(other_types)), other_types))
+  # Short sample name of each identification type column (same order as the sample columns)
+  id_samples <- sapply(colnames(identification_type), function(col) as.character(namesDF$Id[namesDF$Sample == sub("^Identification_type_", "", col)]))
 
-  # Stacking order: "By MS/MS" at the bottom of the bars, "Not observed" at the top
-  IdentificationTypeDF$identifications <- factor(IdentificationTypeDF$identifications, levels = rev(names(id_type_colors)))
+  # Counts per sample, among the proteins quantified in the sample (with an intensity): identified = by MS/MS, the others are
+  # quantified without MS/MS identification. The identification type alone is not used for "quantified", as it can be given
+  # for a protein without intensity (e.g. Proline derives it from the PSM count).
+  quantified <- sapply(id_samples, function(s) { x <- suppressWarnings(as.numeric(data[[s]])); !is.na(x) & x > 0 })
+  msms <- as.matrix(identification_type) == "By MS/MS"
+  msms[is.na(msms)] <- FALSE
+  id_counts <- data.frame(
+    sample = factor(id_samples, levels = id_samples),
+    msms = colSums(quantified & msms),
+    total = colSums(quantified),
+    row.names = NULL)
+  id_counts$other <- id_counts$total - id_counts$msms
 
-  ##Framing for 'Indentification type distribution across samples' plot using ggplot##
+  # One row per sample and type for the stacked bars (identified by MS/MS at the bottom)
+  id_long <- rbind(data.frame(sample = id_counts$sample, type = "Identified (by MS/MS)", count = id_counts$msms),
+                   data.frame(sample = id_counts$sample, type = "Quantified without MS/MS identification", count = id_counts$other))
+  id_long$type <- factor(id_long$type, levels = c("Quantified without MS/MS identification", "Identified (by MS/MS)"))
+  id_type_colors <- c("Identified (by MS/MS)" = "dodgerblue4", "Quantified without MS/MS identification" = "dodgerblue1")
 
-  # Smaller sample labels when there are many samples, so that they do not overlap
-  n_id_samples <- nlevels(IdentificationTypeDF$samples)
+  # Condition of each sample, when an experimental design is given (a colored mark under each bar)
+  id_has_design <- length(sample_conditions) == nrow(id_counts)
+  if (id_has_design) id_counts$condition <- factor(sample_conditions, levels = unique(sample_conditions))
+  id_max <- max(id_counts$total)
+
+  # Smaller labels when there are many samples, so that they do not overlap
+  n_id_samples <- nrow(id_counts)
   id_label_size <- if (n_id_samples > 20) 11 else 16
+  id_count_size <- if (n_id_samples > 20) 2.6 else 4
 
-  identification_type_plot = ggplot(data = IdentificationTypeDF, mapping = aes(x=samples, fill = identifications)) +
-  geom_bar(width=0.9) +
-  xlab("")+
-  ylab("Number of proteins")+
-  scale_fill_manual("", values = id_type_colors, breaks = names(id_type_colors))+
-  scale_y_continuous(expand = expansion(mult = c(0, 0.02)))+
-  ggtitle("Identification types distribution across samples") +
-   theme(plot.title = element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=id_label_size),
-        axis.text.y=element_text(size=16),
-        legend.position="bottom",
-        legend.text=element_text(size=16))
+  identification_type_plot = ggplot(id_long, aes(x = sample, y = count)) +
+    geom_col(aes(fill = type), width = 0.9) +
+    scale_fill_manual("", values = id_type_colors, breaks = rev(names(id_type_colors))) +
+    # Number identified by MS/MS, inside the MS/MS segment, and number quantified, above the bar
+    geom_text(data = id_counts, aes(x = sample, y = msms, label = msms), angle = 90, hjust = 1.1, colour = "white", size = id_count_size) +
+    geom_text(data = id_counts, aes(x = sample, y = total, label = total), angle = 90, hjust = -0.1, colour = "grey20", size = id_count_size) +
+    {if (id_has_design) geom_point(data = id_counts, aes(x = sample, y = -0.03 * id_max, colour = condition), shape = 15, size = 3)} +
+    {if (id_has_design && color_group) scale_colour_manual("Condition", values = setNames(group_colors, group_names))} +
+    {if (id_has_design) labs(colour = "Condition")} +
+    scale_y_continuous(expand = expansion(mult = c(0.01, 0.1))) +
+    xlab("") +
+    ylab("Number of proteins") +
+    ggtitle("Identified and quantified proteins per sample") +
+    theme(plot.title = element_text(size=22),
+          axis.title=element_text(size=18),
+          axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=id_label_size),
+          axis.text.y=element_text(size=16),
+          legend.position="bottom",
+          legend.box="vertical",
+          legend.title=element_text(size=16),
+          legend.text=element_text(size=16))
 
-}
-
-##Plotting and printing 'Identification type distribution across samples' plot (.svg or .png dependent on set parameters) with download link##
-
-if (exists("identification_type_plot")) {
-  htmltools::HTML(createPngOrSvg(identification_type_plot,"Identification_types_distribution_across_samples", 650, max(600, 22 * n_id_samples)))
+  cat(htmltools::HTML(createPngOrSvg(identification_type_plot,"Identification_types_distribution_across_samples", 650, max(600, 22 * n_id_samples))))
+  cat(text_spec(paste0("\n Number of proteins quantified in each sample (with an intensity: bar height, number above the bar), and among them the proteins ",
+                       "identified by MS/MS in that sample (dark blue, number inside the bar). The others (light blue) are quantified without MS/MS identification ",
+                       "in the sample (e.g. by matching). A sample with clearly fewer identifications than the other samples of its condition may indicate a problem with that injection.",
+                       if (id_has_design) " The colored mark under each bar gives the condition of the sample." else ""),
+                italic = T, font_size = "12px"))
 }
 
 ```
