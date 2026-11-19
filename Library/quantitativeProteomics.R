@@ -582,6 +582,18 @@ sample_axis_text_size <- function(n_samples, axis_px = 520){
   max(6, min(18, axis_px / n_samples / 1.25))
 }
 
+# Label "<arrow> <text>" (or "<text> <arrow>" with arrow_after = TRUE) as a plotmath expression, for annotate(..., parse = TRUE).
+# arrow: "up", "down", "left" or "right". The arrows of plotmath (operators %up%, %down%, %<-% and %->%, drawn here between an empty
+# string and the text) come from the symbol font: unlike Unicode arrow characters, they do not depend on the native encoding of R
+# (non-UTF-8 Windows systems print "<U+2191>" instead of the arrow). The text is bold, and quoted with deparse() so that it may
+# contain any character.
+arrow_label <- function(arrow, text, arrow_after = FALSE){
+  operator <- c(up = "%up%", down = "%down%", left = "%<-%", right = "%->%")[[arrow]]
+  # (a space between the arrow and the text)
+  text_part <- paste0("bold(", deparse(if (arrow_after) paste0(text, " ") else paste0(" ", text)), ")")
+  if (arrow_after) paste(text_part, operator, '""') else paste('""', operator, text_part)
+}
+
 # Legend of the samples drawn as a figure of its own, shared by several plots (e.g. the density and the box plots of the QC report),
 # when an inner legend would take too much room: one coloured square and the name of each sample, filled by columns, the number of
 # columns depending on the longest name. Returns the ggplot and the height (pixels) it needs for the given width.

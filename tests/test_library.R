@@ -155,4 +155,10 @@ check("plot_clustered_heatmap(): rendered as a PNG figure (300 proteins, 8 sampl
 check("heatmap_proteins_in_rows(): proteins in rows with thousands of proteins and 40 samples, not with 500 proteins and 300 samples",
       heatmap_proteins_in_rows(2898, 40) && !heatmap_proteins_in_rows(500, 300))
 
+## 9. arrow_label(): plotmath labels with an arrow, whatever the characters of the text
+check("arrow_label(): valid plotmath expressions, also with quotes and backslashes in the text",
+      all(sapply(c(arrow_label("up", "higher in A"), arrow_label("right", 'higher in "B" \\ C', arrow_after = TRUE)),
+                 function(l) !inherits(try(parse(text = l), silent = TRUE), "try-error"))) &&
+        grepl("%up%", arrow_label("up", "A")) && grepl("%->%", arrow_label("right", "A", arrow_after = TRUE)))
+
 finish("Library tests")

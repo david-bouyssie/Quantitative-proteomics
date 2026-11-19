@@ -2080,12 +2080,13 @@ for (comparison in comparisons_to_display){
         legend.text=element_text(size=16),
         # Right margin for the group labels drawn on the right of the panel (they take no room in the layout): about 0.36 cm per
         # character of the longest label, beyond the width of the legend (about 4.5 cm)
-        plot.margin = unit(c(2, max(0.5, 0.36 * (nchar("↑ higher in ") + max(nchar(couple))) - 4.5), 2, 0), "cm"),
+        plot.margin = unit(c(2, max(0.5, 0.36 * (nchar("^ higher in ") + max(nchar(couple))) - 4.5), 2, 0), "cm"),
         legend.title=element_text(size=18)) +
       # Group labels on the right of the panel, in the column of the legend, horizontal, level with the top and the bottom of the panel,
-      # so that they do not overlap the proteins and their labels (positive log2 fold change: higher in couple[1])
-      annotate("text", x = Inf, y = Inf, label = paste0("↑ higher in ", couple[1]), hjust = -0.05, vjust = 1, size = 6, fontface = "bold") +
-      annotate("text", x = Inf, y = -Inf, label = paste0("↓ higher in ", couple[2]), hjust = -0.05, vjust = 0, size = 6, fontface = "bold") +
+      # so that they do not overlap the proteins and their labels (positive log2 fold change: higher in couple[1]).
+      # Plotmath arrows (arrow_label in the library), which do not depend on the native encoding of R
+      annotate("text", x = Inf, y = Inf, label = arrow_label("up", paste0("higher in ", couple[1])), parse = TRUE, hjust = -0.05, vjust = 1, size = 6) +
+      annotate("text", x = Inf, y = -Inf, label = arrow_label("down", paste0("higher in ", couple[2])), parse = TRUE, hjust = -0.05, vjust = 0, size = 6) +
       coord_cartesian(clip = "off")
     
     # Adding a line break after the plot
@@ -2152,9 +2153,10 @@ for (comparison in comparisons_to_display){
             plot.margin = unit(c(2,0,2,0), "cm"),
             legend.title=element_text(size=18)) +
       # Group labels above the panel (in the top margin), at its left and right ends, so that they do not overlap the most significant
-      # proteins and their labels (positive log2 fold change: higher in couple[1])
-      annotate("text", x = -Inf, y = Inf, label = paste0("← higher in ", couple[2]), hjust = 0, vjust = -0.6, size = 6, fontface = "bold") +
-      annotate("text", x = Inf, y = Inf, label = paste0("higher in ", couple[1], " →"), hjust = 1, vjust = -0.6, size = 6, fontface = "bold") +
+      # proteins and their labels (positive log2 fold change: higher in couple[1]). Plotmath arrows (arrow_label in the library),
+      # which do not depend on the native encoding of R
+      annotate("text", x = -Inf, y = Inf, label = arrow_label("left", paste0("higher in ", couple[2])), parse = TRUE, hjust = 0, vjust = -0.6, size = 6) +
+      annotate("text", x = Inf, y = Inf, label = arrow_label("right", paste0("higher in ", couple[1]), arrow_after = TRUE), parse = TRUE, hjust = 1, vjust = -0.6, size = 6) +
       coord_cartesian(clip = "off")
     
     # Plotting and printing of Volcano plot into html (.svg or .png dependent on set parameters) with download link
