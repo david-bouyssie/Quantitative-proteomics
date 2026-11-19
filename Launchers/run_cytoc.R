@@ -23,8 +23,8 @@ if (!dir.exists(renv_library)) {
 
 args <- commandArgs(trailingOnly = TRUE)
 # The report is knitted in its own folder: input and output paths are made absolute
-input_file = normalizePath(args[1])
-output_file = file.path(normalizePath(dirname(args[2])), basename(args[2]))
+input_file = normalizePath(args[1], winslash = "/")
+output_file = file.path(normalizePath(dirname(args[2]), winslash = "/"), basename(args[2]))
 
 rmarkdown::render(file.path(repo_root, "Modules", "Instrumental QC", "Descriptive_cytoc.rmd"),
                   output_file = output_file,

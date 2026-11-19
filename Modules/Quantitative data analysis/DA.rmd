@@ -287,7 +287,7 @@ if (is.na(Stat.threshold.fc) || Stat.threshold.fc < 0) {
 Test.type <- parameters["Test.type",]
 
 # If using logged values for significance test (T/F)
-Test.log <- parameters["Test.log",]
+Test.log <- as.logical(parameters["Test.log",])
 
 # Setting conditions for DA comparison
 comparisons_to_display = strsplit(as.character(parameters["Comparisons",]),";")[[1]]

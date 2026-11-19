@@ -172,4 +172,20 @@ check("normalization: the entry not found is listed in the report", grepl("1 of 
 r <- da_render(list(Proteins.for.normalization = "NOT_A_PROTEIN;OTHER"))
 check("normalization: no protein found stops with a clear message", grepl("None of the proteins given in Proteins.for.normalization was found", r$error), r$error)
 
+## 8. Launcher (Launchers/run_proteomics_stats.R), as called by the webserver
+launcher_dir <- file.path(tempfile("da_launcher_"), "DA output")  # output folder created by the launcher, with a space in its name
+l <- run_launcher("run_proteomics_stats.R", c("DA", quant, launcher_dir, design, da_parameters, quant))
+html <- file.path(launcher_dir, "DA.html")
+txt <- if (file.exists(html)) report_text(paste(readLines(html, warn = FALSE, encoding = "UTF-8"), collapse = "\n")) else ""
+check("launcher: DA renders in the output folder it creates, with the report and the output table",
+      l$status == 0 && file.exists(html) && file.exists(file.path(launcher_dir, "DA_output_table.xlsx")), tail(l$output, 3))
+check("launcher: paths with forward slashes in the report, complete report (pandoc reads backslashes as LaTeX commands)",
+      grepl(normalizePath(quant, winslash = "/"), txt, fixed = TRUE) && grepl("Differential analysis", txt))
+# Failure: non-zero exit status, the R error and the position in the report in the output (read by the webserver for the task message)
+l <- run_launcher("run_proteomics_stats.R", c("DA", quant, file.path(dirname(launcher_dir), "DA error"), design, da_params_with(list(Volcano.color.style = "rainbow"))))
+check("launcher: a DA error gives a non-zero exit status, the error message and the report position",
+      l$status != 0 && any(grepl("^Error", l$output)) && any(grepl("Volcano.color.style must be significance, intensity or monochrome", l$output)) &&
+        any(grepl("^Quitting from .*DA.rmd", l$output)),
+      paste(tail(l$output, 4), collapse = " | "))
+
 finish("DA report tests")

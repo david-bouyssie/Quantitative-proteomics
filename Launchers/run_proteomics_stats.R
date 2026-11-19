@@ -31,17 +31,22 @@ library(stringr)
 
 args <- commandArgs(trailingOnly = TRUE)
 analysis = args[1]
-quantif_file = normalizePath(args[2])
+quantif_file = normalizePath(args[2], winslash = "/")
 
 if (analysis == "QC") {
 
-  output_file = file.path(normalizePath(dirname(args[3])), basename(args[3]))
-  parameters = normalizePath(args[4])
-  exp_design = normalizePath(args[5])
-  if (length(args) >= 6){
-    origin_file = normalizePath(args[6])
+  output_file = file.path(normalizePath(dirname(args[3]), winslash = "/"), basename(args[3]))
+  parameters = normalizePath(args[4], winslash = "/")
+  # Optional original quantification file (absent, or "" to give an experimental design without it), then optional experimental design
+  if (length(args) >= 5 && nzchar(args[5])){
+    origin_file = normalizePath(args[5], winslash = "/")
   }else{
     origin_file = ""
+  }
+  if (length(args) >= 6){
+    exp_design = normalizePath(args[6], winslash = "/", mustWork = FALSE)  # QC without experimental design if the file does not exist
+  }else{
+    exp_design = ""
   }
 
   rmarkdown::render(
@@ -58,11 +63,11 @@ if (analysis == "QC") {
 } else if (analysis=="DA") {
 
   dir.create(args[3], recursive = TRUE, showWarnings = FALSE)  # the output folder is created if needed
-  output_dir = normalizePath(args[3])
-  exp_design = normalizePath(args[4])
-  parameters = normalizePath(args[5])
+  output_dir = normalizePath(args[3], winslash = "/")
+  exp_design = normalizePath(args[4], winslash = "/")
+  parameters = normalizePath(args[5], winslash = "/")
   if (length(args) >= 6){
-    origin_file = normalizePath(args[6])
+    origin_file = normalizePath(args[6], winslash = "/")
   }else{
     origin_file = ""
   }

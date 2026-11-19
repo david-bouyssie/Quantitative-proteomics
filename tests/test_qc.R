@@ -72,4 +72,26 @@ short_names <- regmatches(txt, gregexpr("\\b[0-9]+(amol|fmol)_[0-9]+\\b", txt))[
 check("long sample names with a shuffled design: QC renders, names <Condition>_<index> from 1 to 4 in each condition",
       is.na(r$error) && all(paste0(rep(unique(long_design$Condition), each = 4), "_", 1:4) %in% short_names) && !any(grepl("_[5-9]$", short_names)), r$error)
 
+## 6. Launcher (Launchers/run_proteomics_stats.R), as called by the webserver
+launcher_dir <- tempfile("qc_launcher_"); dir.create(launcher_dir)
+# Original file, then experimental design as last argument
+html <- file.path(launcher_dir, "QC.html")
+l <- run_launcher("run_proteomics_stats.R", c("QC", quant, html, qc_parameters, quant, design))
+txt <- if (file.exists(html)) report_text(paste(readLines(html, warn = FALSE, encoding = "UTF-8"), collapse = "\n")) else ""
+check("launcher: QC renders with the original file and the experimental design", l$status == 0 && file.exists(html), tail(l$output, 3))
+check("launcher: paths with forward slashes in the report, complete report (pandoc reads backslashes as LaTeX commands)",
+      grepl(normalizePath(quant, winslash = "/"), txt, fixed = TRUE) && grepl("Dimension reduction", txt))
+check("launcher: experimental design used", nzchar(txt) && !grepl("over all the samples taken as one group", txt))
+# No original file ("") and an experimental design file that does not exist (webserver without a valid design): QC without design
+html <- file.path(launcher_dir, "QC_no_design.html")
+l <- run_launcher("run_proteomics_stats.R", c("QC", quant, html, qc_parameters, "", file.path(launcher_dir, "missing_exp_design.txt")))
+txt <- if (file.exists(html)) report_text(paste(readLines(html, warn = FALSE, encoding = "UTF-8"), collapse = "\n")) else ""
+check("launcher: QC renders without original file and with a missing experimental design file", l$status == 0 && grepl("over all the samples taken as one group", txt), tail(l$output, 3))
+# Failure: non-zero exit status, the R error and the position in the report in the output (read by the webserver for the task message)
+l <- run_launcher("run_proteomics_stats.R", c("QC", quant, file.path(launcher_dir, "QC_error.html"), qc_params_with(list(Imputation.MNAR.percentile = "20")), "", design))
+check("launcher: a QC error gives a non-zero exit status, the error message and the report position",
+      l$status != 0 && any(grepl("^Error", l$output)) && any(grepl("Imputation.MNAR.percentile must be greater than 0", l$output)) &&
+        any(grepl("^Quitting from .*QC.Rmd", l$output)),
+      paste(tail(l$output, 4), collapse = " | "))
+
 finish("QC report tests")

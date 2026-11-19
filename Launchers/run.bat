@@ -8,7 +8,7 @@
 :: # Parsing modules #
 :: ###################
 
-:: Command line format : Rscript --vanilla Quantitative-proteomics\Launchers\run_parsing.R [file to parse] [output] [parser option : Proline/MaxQuant/ProteomeDiscoverer] [abundance type option : LFQ/iBAQ/raw_abundance/abundance] [if xlsx file, sheet number]
+:: Command line format : Rscript --vanilla Quantitative-proteomics\Launchers\run_parsing.R [file to parse] [output] [parser option : Proline/MaxQuant/ProteomeDiscoverer] [abundance type option : LFQ/iBAQ/raw_abundance/abundance] [if xlsx file, sheet number (Proline: used only without "Protein sets" sheet)] [Proline only, optional: T for the iBAQ conversion]
 :: Example (abundance intensities of sheet 4, "Protein sets", of a Proline export) :
 Rscript --vanilla Quantitative-proteomics\Launchers\run_parsing.R "<Proline export>.xlsx" parsed_example.tsv Proline abundance 4
 
@@ -17,9 +17,9 @@ Rscript --vanilla Quantitative-proteomics\Launchers\run_parsing.R "<Proline expo
 :: # Quantitative data QC module #
 :: ###############################
 
-:: Command line format : Rscript --vanilla Quantitative-proteomics\Launchers\run_proteomics_stats.R QC [input (standardized format)] [output report] [parameters] [experimental design (optional)] [original quantification file (optional)]
+:: Command line format : Rscript --vanilla Quantitative-proteomics\Launchers\run_proteomics_stats.R QC [input (standardized format)] [output report] [parameters] [original quantification file (optional, "" to skip it)] [experimental design (optional)]
 :: Example :
-Rscript --vanilla Quantitative-proteomics\Launchers\run_proteomics_stats.R QC Quantitative-proteomics\Example\Datasets\QC-DA\Parsed_proteins_set.txt QC_example.html Quantitative-proteomics\Example\Datasets\QC-DA\QC_parameters.txt Quantitative-proteomics\Example\Datasets\QC-DA\exp_design.txt
+Rscript --vanilla Quantitative-proteomics\Launchers\run_proteomics_stats.R QC Quantitative-proteomics\Example\Datasets\QC-DA\Parsed_proteins_set.txt QC_example.html Quantitative-proteomics\Example\Datasets\QC-DA\QC_parameters.txt "" Quantitative-proteomics\Example\Datasets\QC-DA\exp_design.txt
 
 :: ################################
 :: # Differential analysis module #

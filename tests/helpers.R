@@ -52,5 +52,18 @@ render_report <- function(rmd, params, output_name, output_dir_param = NULL) {
   list(error = error, html = if (file.exists(html)) paste(readLines(html, warn = FALSE, encoding = "UTF-8"), collapse = "\n") else "", dir = out_dir)
 }
 
+# Runs a launcher of the Launchers folder as the webserver does (run_script.bat): Rscript of the bin folder of the portable R,
+# with this folder, which has pandoc, on the PATH, and R messages in English. Returns the exit status and the console output (stdout and stderr)
+run_launcher <- function(launcher, args) {
+  bin_dir <- file.path(R.home(), "bin")
+  rscript <- file.path(bin_dir, if (.Platform$OS.type == "windows") "Rscript.exe" else "Rscript")
+  old_env <- Sys.getenv(c("PATH", "LANGUAGE"))
+  Sys.setenv(PATH = paste(bin_dir, old_env[["PATH"]], sep = .Platform$path.sep), LANGUAGE = "en")
+  on.exit(do.call(Sys.setenv, as.list(old_env)))
+  output <- suppressWarnings(system2(rscript, c("--vanilla", shQuote(file.path(repo_root, "Launchers", launcher)), shQuote(args)),
+                                     stdout = TRUE, stderr = TRUE))
+  list(status = if (is.null(attr(output, "status"))) 0 else attr(output, "status"), output = output)
+}
+
 # Returns the text of a report without its HTML tags and embedded images
 report_text <- function(html) gsub("<[^>]+>", " ", gsub("data:image/[^\"']+", "", html))

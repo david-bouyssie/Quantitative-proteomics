@@ -3,11 +3,21 @@ library(readxl)
 # Parameters set in launcher script (see "Lauchers" section)
 # quantif_file = quantification file to parse (Proline export: xlsx, or tab-separated text)
 # output_file = output table
-# intensities_type = abundance/raw_abundance
-# sheet = sheet number if quantif_file is a xlsx file ("Protein sets" sheet)
+# intensities_type = abundance (normalized by Proline) or raw_abundance
+# sheet = sheet number if quantif_file is a xlsx file, used only if there is no "Protein sets" sheet
+# ibaq = TRUE to convert the intensities to iBAQ (intensity divided by the number of observable peptides)
 
 # Load data, keeping the column names as they are (sample names may contain spaces or other characters)
 if(grepl("\\.xlsx?$", quantif_file, ignore.case = TRUE)){
+  # The "Protein sets" sheet is found by its name, its position depends on the sheets selected in the export
+  sheets = excel_sheets(quantif_file)
+  protein_sets_sheet = which(tolower(gsub("[ _]", "", sheets)) == "proteinsets")
+  if (length(protein_sets_sheet) == 1) {
+    sheet = protein_sets_sheet
+  } else if (is.na(sheet) || sheet < 1 || sheet > length(sheets)) {
+    stop("Proline parser: no \"Protein sets\" sheet found (sheets: ", paste(sheets, collapse = ", "), ") and no valid sheet number given.")
+  }
+  cat("Proline export: sheet", sheet, "(", sheets[sheet], ")\n")
   proteinGroupsInput = as.data.frame(read_excel(quantif_file, sheet, col_names = TRUE), check.names = FALSE)
 }else{
   # quote = "" and comment.char = "": quotes or "#" in protein descriptions must not shift or drop rows
@@ -46,6 +56,25 @@ samples = names(intensities)
 intensities[] = lapply(intensities, function(x) { x = as.numeric(x); x[!is.na(x) & x <= 0] = NA; x })
 names(intensities) = paste0("Intensity_", samples)
 
+# iBAQ: intensities divided by the number of observable peptides. Proline fills the #observable_peptides column (-1 otherwise)
+# only after the task retrieving the protein sequences from the FASTA files.
+if (ibaq) {
+  if (!"#observable_peptides" %in% names(proteinGroupsInput)) {
+    stop("Proline parser: iBAQ conversion impossible, no #observable_peptides column found.")
+  }
+  observable = as.numeric(proteinGroupsInput[["#observable_peptides"]])
+  valid = !is.na(observable) & observable > 0
+  if (!any(valid)) {
+    stop("Proline parser: iBAQ conversion impossible, the number of observable peptides is unknown for all the proteins (#observable_peptides = -1). ",
+         "Retrieve the protein sequences from the FASTA files in Proline, then export the dataset again.")
+  }
+  if (any(!valid)) {
+    cat("Warning: number of observable peptides unknown for", sum(!valid), "proteins (", paste(head(Accession$Accession[!valid], 5), collapse = ", "),
+        if (sum(!valid) > 5) "..." , "), their iBAQ intensities are missing.\n")
+  }
+  intensities[] = lapply(intensities, function(x) x / ifelse(valid, observable, NA))
+}
+
 # Identification types from the "psm_count_<sample>" columns: at least one PSM = "By MS/MS", none = "By matching", empty = not observed
 psm_counts = prefixed_columns("psm_count_")
 missing_samples = setdiff(samples, names(psm_counts))
@@ -67,4 +96,4 @@ specific_peptides = data.frame(Specific_peptides = as.numeric(proteinGroupsInput
 # Build dataframe
 proteinGroupsOutput = cbind(Id, Accession, Gene_name, identification_types, specific_peptides, intensities)
 write.table(proteinGroupsOutput, output_file, row.names = FALSE, sep = "\t")
-cat("Parsed:", nrow(proteinGroupsOutput), "proteins,", length(samples), "samples (", intensities_type, "intensities), written to", output_file, "\n")
+cat("Parsed:", nrow(proteinGroupsOutput), "proteins,", length(samples), "samples (", intensities_type, if (ibaq) "converted to iBAQ", "intensities), written to", output_file, "\n")

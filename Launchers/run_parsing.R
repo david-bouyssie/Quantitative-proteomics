@@ -19,13 +19,15 @@ if (!dir.exists(renv_library)) {
 .libPaths(c(renv_library, .libPaths()))
 
 ## Usage (input and output paths are relative to the current directory):
-## Rscript --vanilla <path to>/Launchers/run_parsing.R quantification_file output quantification_file_source intensity_type sheet
+## Rscript --vanilla <path to>/Launchers/run_parsing.R quantification_file output quantification_file_source intensity_type sheet [iBAQ]
+## iBAQ (Proline only): T to convert the intensities to iBAQ (F if absent)
 
 args <- commandArgs(trailingOnly = TRUE)
 quantif_file = args[1]
 output_file = args[2]
 source = args[3]
 intensities_type = args[4]
-sheet = as.numeric(args[5])
+sheet = suppressWarnings(as.numeric(args[5]))
+ibaq = length(args) >= 6 && toupper(args[6]) %in% c("T", "TRUE")
 
 source(file.path(repo_root, "Parsers", paste0("parse_", source, ".R")))

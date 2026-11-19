@@ -23,9 +23,9 @@ if (!dir.exists(renv_library)) {
 
 args <- commandArgs(trailingOnly = TRUE)
 # The report is knitted in its own folder: input and output paths are made absolute
-repository = paste0(normalizePath(args[1]), "/")
-variants = normalizePath(args[2])
-output_file = file.path(normalizePath(dirname(args[3])), basename(args[3]))
+repository = paste0(normalizePath(args[1], winslash = "/"), "/")
+variants = normalizePath(args[2], winslash = "/")
+output_file = file.path(normalizePath(dirname(args[3]), winslash = "/"), basename(args[3]))
 nb_tests = as.numeric(args[4])
 min_ratio = as.numeric(args[5])
 max_ratio = as.numeric(args[6])

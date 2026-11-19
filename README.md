@@ -16,16 +16,18 @@ All of these modules generates html reports. Examples are provided in _Example/R
 All modules can be launched by command line thanks to the R scripts stored in the **"Launchers"** folder. They are meant to be run with `Rscript` of the portable R distribution in which this repository is installed (`R-Portable_with_QP/Quantitative-proteomics`), with the portable R and its pandoc (in `bin`) on the PATH. The launchers find the repository files (package library, parsers, modules) from their own location, so they can be run from any folder; input and output paths are relative to the current folder. When a launcher is sourced from an R session instead, the working directory must be the `Launchers` folder. The commands below are run in a Windows command prompt from the `R-Portable_with_QP` folder:
 
 
-Parsing of a quantification file (arguments: file to parse, output table, parser: Proline / MaxQuant / ProteomeDiscoverer, intensity type, sheet number for an xlsx file; here the "abundance" intensities of sheet 4, "Protein sets", of a Proline export):
+Parsing of a quantification file (arguments: file to parse, output table, parser: Proline / MaxQuant / ProteomeDiscoverer, intensity type, sheet number for an xlsx file, and for Proline an optional T to convert the intensities to iBAQ; here the "abundance" intensities of sheet 4, "Protein sets", of a Proline export):
 
 ```
 Rscript --vanilla Quantitative-proteomics\Launchers\run_parsing.R "<Proline export>.xlsx" parsed_example.tsv Proline abundance 4
 ```
 
-QC report (arguments: quantification file, output report, QC parameters, experimental design):
+Proline intensity types: `raw_abundance` (raw intensities) or `abundance` (normalized by Proline). The "Protein sets" sheet is found by its name, the sheet number is used only if there is none. The iBAQ conversion divides the intensities by the number of observable peptides (`#observable_peptides`). Proline computes it only after retrieving the protein sequences from the FASTA files, and the parser stops with an error if it is unknown for all the proteins.
+
+QC report (arguments: quantification file, output report, QC parameters, original quantification file (optional, "" to skip it), experimental design (optional)):
 
 ```
-Rscript --vanilla Quantitative-proteomics\Launchers\run_proteomics_stats.R QC Quantitative-proteomics\Example\Datasets\QC-DA\Parsed_proteins_set.txt QC_example.html Quantitative-proteomics\Example\Datasets\QC-DA\QC_parameters.txt Quantitative-proteomics\Example\Datasets\QC-DA\exp_design.txt
+Rscript --vanilla Quantitative-proteomics\Launchers\run_proteomics_stats.R QC Quantitative-proteomics\Example\Datasets\QC-DA\Parsed_proteins_set.txt QC_example.html Quantitative-proteomics\Example\Datasets\QC-DA\QC_parameters.txt "" Quantitative-proteomics\Example\Datasets\QC-DA\exp_design.txt
 ```
 
 DA report (arguments: quantification file, output folder, experimental design, DA parameters; the report `DA.html` and the table `DA_output_table.xlsx` are written in the output folder, created if needed):
