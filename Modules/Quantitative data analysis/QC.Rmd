@@ -214,7 +214,7 @@ if (is.na(Imputation.MNAR.percentile) || Imputation.MNAR.percentile <= 0 || Impu
 ```{r date, results='asis'}
 ##Parsing to create a data frame in html formatting##
 
-kable(data.frame(c("R-Analysis Version", "File", "Origin File", "Date"),c(2.11,params$quantif_file,params$origin_file,format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
+kable(data.frame(c("R-Analysis Version", "File", "Origin File", "Date"),c("2.60",params$quantif_file,params$origin_file,format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
           kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
           column_spec(1, bold = T)
 ```
