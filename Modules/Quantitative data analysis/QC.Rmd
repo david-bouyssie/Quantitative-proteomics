@@ -238,10 +238,7 @@ if(coloring_by_group && file.exists(params$design_exp)){
   
   color_group <- TRUE
 
-  kable(expDesign,format="html",col.names = NULL,booktabs = T, caption = "Experimental design") %>%
-          kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
-          column_spec(1, bold = T)
-  
+  # (the experimental design is shown in the table of the samples, chunk colname_parsing)
   group_names <- unique(expDesign$Condition)
 
   ######################################################################
@@ -282,8 +279,6 @@ if (max_lenght_sample_name>15){
   }
   setnames(data, old=as.character(sample_names),new=sample_number)
   sample_names = sample_number
-  # Correspondence between the original and the short names
-  cat(kable(data.frame(Sample = sample_names_parsed, Id = sample_number),format="html",caption="Samples id") %>% kable_styling() %>% scroll_box(height = "200px"))
 }else{
   sample_number = sample_names_parsed
   setnames(data, old=as.character(sample_names),new=sample_names_parsed)
@@ -291,6 +286,22 @@ if (max_lenght_sample_name>15){
 }
 namesDF = data.frame(sample_names_parsed,sample_number)
 colnames(namesDF)=c("Sample","Id")
+
+# Table of the samples: name, name in the figures (when shortened), and with an experimental design, the condition, the replicate (repBio)
+# and the intensity column(s) of the design (the files of a replicate are combined into one sample)
+samples_table <- data.frame(Sample = sample_names_parsed, check.names = FALSE)
+if (max_lenght_sample_name > 15) samples_table[["Name in the figures"]] <- sample_number
+if (length(sample_conditions) == length(sample_names_parsed)) {
+  samples_table$Condition <- sample_conditions
+  samples_table$Replicate <- sample_replicates
+  samples_table[["File(s)"]] <- mapply(function(condition, replicate) {
+    paste(sub("^Intensity_", "", expDesign$File[expDesign$Condition == condition & expDesign$repBio == replicate]), collapse = ", ")
+  }, sample_conditions, sample_replicates, USE.NAMES = FALSE)
+}
+samples_kable <- kable(samples_table, format = "html", caption = "Samples", row.names = FALSE) %>%
+  kable_styling(bootstrap_options = "condensed", full_width = F, position = "left")
+# Scroll box when the table is long
+cat(if (nrow(samples_table) > 12) scroll_box(samples_kable, height = "300px") else samples_kable)
 
 ```
 
@@ -328,21 +339,34 @@ colnames(logIntensitiesDF) = c("sample","log_intensity")
 
 logIntensitiesDF$sample <- factor(logIntensitiesDF$sample, as.character(sample_names))
 
+# Legends of the density plots (before and after normalization), one curve per sample:
+# - coloured by condition (color_group: coloring_by_group parameter and an experimental design), the curves have a legend of the
+#   conditions (short, whatever the number of samples);
+# - otherwise (no design, or coloring_by_group=F), each sample has its own colour: above 12 samples, an inner legend of the samples
+#   would take most of the figure, so the density plots have no legend, and a legend panel shared with the box plots is shown under
+#   them, with ggplot's default colours (those of the plots)
+shared_legend <- !color_group && length(sample_names) > 12
+sample_palette <- scales::hue_pal()(length(sample_names))
+if (color_group) logIntensitiesDF$condition <- factor(sample_conditions[match(logIntensitiesDF$sample, sample_names)], levels = group_names)
+
 ##Framing 'Intensity distribution over all samples' line graph with ggplots##
 
 density <- ggplot() +
-  geom_density(data = logIntensitiesDF, mapping = aes(x=log_intensity,group=sample,color=sample), na.rm = T) +
+  {if (color_group) geom_density(data = logIntensitiesDF, mapping = aes(x=log_intensity,group=sample,color=condition), na.rm = T)
+   else geom_density(data = logIntensitiesDF, mapping = aes(x=log_intensity,group=sample,color=sample), na.rm = T)} +
   ggtitle("Intensity distribution over all samples")+
   xlab("log(intensity)")+
   #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T,breaks=sample_names)+
   geom_vline(aes(xintercept=median(na.omit(logIntensitiesDF$log_intensity))), linetype="dashed", size=1)+
   geom_text(mapping=aes(x=median(na.omit(logIntensitiesDF$log_intensity)), y=0, label="median"), size=6, angle=90, vjust=-0.4, hjust=0) +
-  {if(color_group) scale_color_manual(values = sample_colors)} +
+  {if(color_group) scale_color_manual("Condition", values = setNames(group_colors, group_names))} +
   theme(plot.title = element_text(size=22),
         axis.title=element_text(size=18),
         axis.text=element_text(size=18),
         legend.text=element_text(size=16),
-        legend.title=element_text(size=18))
+        legend.title=element_text(size=18)) +
+  {if (color_group) theme(legend.position = "bottom")} +
+  {if (shared_legend) theme(legend.position = "none")}
 
 ##Plotting and printing 'Intensity distribution over all samples' line graph (.svg or .png dependent on set parameters) with download link##
 
@@ -351,7 +375,8 @@ htmltools::HTML(paste0(plot_figure_as_html(density, "Intensity_distribution_over
 ```
 
 ```{r Intensity_dist_discription, results='asis'}
-figure_note("Distribution of the log10 intensities of each sample (one curve per sample), before normalization; the dashed line is the median over all samples. The curves should have similar shapes and positions: a curve shifted to the left (lower intensities) or with a different shape points to a sample with less material, a failed injection or a different quantification.")
+figure_note(paste0("Distribution of the log10 intensities of each sample (one curve per sample), before normalization; the dashed line is the median over all samples. The curves should have similar shapes and positions: a curve shifted to the left (lower intensities) or with a different shape points to a sample with less material, a failed injection or a different quantification.",
+                   if (shared_legend) " The colours of the samples are given by the legend under this figure and the next one." else ""))
 ```
 </div>
 
@@ -359,18 +384,23 @@ figure_note("Distribution of the log10 intensities of each sample (one curve per
 ```{r boxplots, results='asis'}
 ##Framing 'Intensity distribution in each sample' violin plot using ggplot##
 
+# Coloured by condition (color_group), with a legend of the conditions as the density plot; otherwise one colour per sample, no legend.
+# In both cases the sample names are on the x axis (smaller with many samples)
+violin_color <- if (color_group) "condition" else "sample"
 violinPlot <- ggplot() +
-    geom_violin(data = logIntensitiesDF, mapping = aes(x = factor(sample,level=sample_names), y = log_intensity, color=sample), na.rm = T) +
-    geom_boxplot(data = logIntensitiesDF, mapping = aes(x = factor(sample,level=sample_names), y = log_intensity, color=sample), width = 0.5, na.rm = T) +
+    geom_violin(data = logIntensitiesDF, mapping = aes(x = factor(sample,level=sample_names), y = log_intensity, color=.data[[violin_color]], group=sample), na.rm = T) +
+    geom_boxplot(data = logIntensitiesDF, mapping = aes(x = factor(sample,level=sample_names), y = log_intensity, color=.data[[violin_color]], group=sample), width = 0.5, na.rm = T) +
     ggtitle("Intensity distribution in each sample") +
     xlab("")+
     ylab("log(intensity)")+
-    {if(color_group) scale_color_manual(values = sample_colors)} +
-    theme(legend.position="none", 
+    {if(color_group) scale_color_manual("Condition", values = setNames(group_colors, group_names))} +
+    theme(legend.position = if (color_group) "bottom" else "none",
         plot.title=element_text(size=22),
         axis.title=element_text(size=18),
-        axis.text.x=element_text(angle=90,size=18),
-        axis.text.y = element_text(size=18))
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names))),
+        axis.text.y = element_text(size=18),
+        legend.title=element_text(size=18),
+        legend.text=element_text(size=16))
 
 ##Plotting and printing 'Intensity distribution in each sample' violin plot into html (.svg or .png dependent on set parameters) with download link##
 
@@ -381,10 +411,18 @@ figure_note("Distribution of the log10 intensities in each sample, before normal
 </div>
 </div>
 
+```{r density_legend, results='asis'}
+# Legend panel shared by the density and violin plots above (many samples)
+if (shared_legend) {
+  sample_legend <- plot_sample_legend(sample_names, sample_palette)
+  cat(htmltools::HTML(plot_figure_as_html(sample_legend$plot, "Samples_legend", 1200, sample_legend$height, svg = format_svg)))
+}
+```
+
 <br/>
 
 <div class="row">
-<div class = "col-md-6">
+<div class = "col-md-12">
 
 
 ```{r bar graph, results='asis'}
@@ -394,27 +432,33 @@ TotalIntensitiesDF <- data.frame(
   total_intensity = sapply(sample_names, function(s) sum(as.numeric(data[[s]]), na.rm = TRUE)),
   row.names = NULL)
 
-# Bars sorted by total intensity. The colours follow the sample (factor levels in the order of sample_names), not the row order
+# Bars sorted by total intensity. The colours follow the sample (factor levels in the order of sample_names), not the row order:
+# coloured by condition (color_group), with a legend of the conditions as in the identification plot, one colour per sample otherwise
+if (color_group) TotalIntensitiesDF$condition <- factor(sample_conditions, levels = group_names)
 TotalIntensitiesDF <- TotalIntensitiesDF[order(TotalIntensitiesDF$total_intensity), ]
 
-# Creating ggplot bar graph
+# Creating ggplot bar graph, on a full-width row: its width grows with the number of samples (25 px per bar), so that the sample
+# names keep a readable size (shrunk to the page width beyond about 40 samples)
+total_intensity_width <- max(600, 25 * length(sample_names) + 100)
 
 M_intensity_comparison <- ggplot(data = TotalIntensitiesDF) +
-  geom_bar(stat="identity",aes(x=sample, y=total_intensity, fill = sample))+
+  geom_bar(stat="identity",aes(x=sample, y=total_intensity, fill = .data[[if (color_group) "condition" else "sample"]]))+
   scale_x_discrete(limits = as.character(TotalIntensitiesDF$sample)) +
   ggtitle("Total intensity across runs") +
   ylab("Total intensity")+
   xlab("")+
-  {if(color_group) scale_fill_manual(values = sample_colors)} +
-  theme(legend.position="none",
+  {if(color_group) scale_fill_manual("Condition", values = setNames(group_colors, group_names))} +
+  theme(legend.position = if (color_group) "bottom" else "none",
+        legend.title=element_text(size=16),
+        legend.text=element_text(size=16),
         plot.title = element_text(size=22),
         axis.title=element_text(size=18),
         axis.text=element_text(size=18),
-        axis.text.x=element_text(angle=90))
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names), total_intensity_width - 80)))
 
-##Plotting and printing 'Intensity distribution in each sample' violin plot into html (.svg or .png dependent on set parameters) with download link##
+##Plotting and printing 'Total intensity across runs' bar graph into html (.svg or .png dependent on set parameters) with download link##
 
-cat(htmltools::HTML(plot_figure_as_html(M_intensity_comparison, "Total_intensity_across_runs", svg = format_svg)))
+cat(htmltools::HTML(plot_figure_as_html(M_intensity_comparison, "Total_intensity_across_runs", total_intensity_width, 600, svg = format_svg)))
 figure_note("Total intensity of each sample (sum of all its observed intensities) before normalization, sorted from the lowest to the highest. It shows the differences of total measured signal between samples: a sample with a lower total can come from a lower protein amount (biological sample collection), a sample preparation issue or a loss of sensitivity of the mass spectrometer. It also decreases with the number of proteins quantified, and is dominated by the most abundant proteins. Moderate differences are corrected by the normalization.")
 
 ```
@@ -426,24 +470,28 @@ figure_note("Total intensity of each sample (sum of all its observed intensities
 <br/>
 
 <div class="row">
-<div class = "col-md-6">
+<div class = "col-md-12">
 
 ```{r correlation_plot, results='asis'}
 ##If the number of samples < 16 AND the data for each sample is < 5000 rows, a scatterplot of pairwise comparisons is framed##
 ##Else, a heatplot of correlated coefficients is framed##
 
-if (length(sample_names)<16 & nrow(data)<5000){
-  correlogram = ggpairs(log_abundance,title="Sample correlation",upper=list(continuous=wrap("cor",size=3)),lower=list(continuous=wrap("points",size=0.15))) +
-    theme(axis.text = element_text(size = 6),
-        strip.text = element_text(size = 6),
+# Full-width row: square figure growing with the number of samples (shrunk to the page width if wider)
+use_ggpairs <- length(sample_names)<16 & nrow(data)<5000
+correlation_size <- if (use_ggpairs) max(600, 60 * length(sample_names)) else max(700, 25 * length(sample_names) + 250)
+
+if (use_ggpairs){
+  correlogram = ggpairs(log_abundance,title="Sample correlation",upper=list(continuous=wrap("cor",size=4)),lower=list(continuous=wrap("points",size=0.15))) +
+    theme(axis.text = element_text(size = 10),
+        strip.text = element_text(size = 10),
         plot.title = element_text(size = 22))
 }else{
   cormat <- round(cor(log_abundance,use = "complete.obs"),2)
   #cormat = melt(cormat)
   cormat <- reshape2::melt(cormat)
   colnames(cormat) = c("Samples1","Samples2","Coefficient")
-  # Sample label size decreasing with the number of samples, so that the labels do not overlap (18 up to 16 samples, 7 for 40)
-  label_size <- max(5, min(18, 290 / length(sample_names)))
+  # Sample label size from the room per sample (the labels and the legend take about 250 px of the figure), so that they do not overlap
+  label_size <- sample_axis_text_size(length(sample_names), correlation_size - 250)
   correlogram = ggplot(data = cormat, aes(x=Samples1, y=Samples2, fill=Coefficient)) +
     geom_tile() +
     # Sequential scale over the observed coefficients (white = lowest, red = 1), so that the outlier samples stand out
@@ -462,8 +510,8 @@ if (length(sample_names)<16 & nrow(data)<5000){
 
 ##Plotting and printing the 'sample correlation' plot into html (.svg or .png dependent on set parameters) with download link##
 
-cat(htmltools::HTML(plot_figure_as_html(correlogram, "Sample_correlation", svg = format_svg)))
-if (length(sample_names)<16 & nrow(data)<5000){
+cat(htmltools::HTML(plot_figure_as_html(correlogram, "Sample_correlation", correlation_size, correlation_size, svg = format_svg)))
+if (use_ggpairs){
   figure_note("Pairwise comparison of the samples on the log10 intensities: scatter plots (below the diagonal), Pearson correlation coefficients (above) and intensity distributions (diagonal). Replicates of the same condition should have the highest correlations; a sample less correlated with all the others is a possible outlier.")
 } else {
   figure_note("Pearson correlation coefficients between the samples, computed on the log10 intensities of the proteins quantified in every sample (white: lowest coefficient, red: 1). Replicates of the same condition should have the highest correlations; a light row and column point to a sample less correlated with all the others, a possible outlier.")
@@ -471,8 +519,12 @@ if (length(sample_names)<16 & nrow(data)<5000){
 
 ```
 </div>
+</div>
 
-<div class = "col-md-6">
+<br/>
+
+<div class="row">
+<div class = "col-md-12">
 
 ```{r identification_type_plot, results='asis'}
 
@@ -504,26 +556,39 @@ if(ncol(identification_type)>0){
   id_long$type <- factor(id_long$type, levels = c("Quantified without MS/MS identification", "Identified (by MS/MS)"))
   id_type_colors <- c("Identified (by MS/MS)" = "dodgerblue4", "Quantified without MS/MS identification" = "dodgerblue1")
 
-  # Condition of each sample, when an experimental design is given (a colored mark under each bar)
+  # Condition of each sample, when an experimental design is given
   id_has_design <- length(sample_conditions) == nrow(id_counts)
   if (id_has_design) id_counts$condition <- factor(sample_conditions, levels = unique(sample_conditions))
   id_max <- max(id_counts$total)
+  # Coloured by condition (color_group): the bars take the colour of their condition, the MS/MS segment solid and the other one lighter,
+  # with an outline. Otherwise: one blue per type, and a colored mark under each bar for the condition when a design is given.
+  id_by_condition <- id_has_design && color_group
+  if (id_by_condition) id_long$condition <- id_counts$condition[match(id_long$sample, id_counts$sample)]
 
-  # Smaller labels when there are many samples, so that they do not overlap
+  # Width growing with the number of samples (25 px per bar), so that the sample names and the counts keep a readable size
   n_id_samples <- nrow(id_counts)
-  id_label_size <- if (n_id_samples > 20) 11 else 16
-  id_count_size <- if (n_id_samples > 20) 2.6 else 4
+  id_width <- max(600, 25 * n_id_samples + 100)
+  id_label_size <- sample_axis_text_size(n_id_samples, id_width - 80)
+  id_count_size <- if (n_id_samples > 20) 4.5 else 5
 
   identification_type_plot = ggplot(id_long, aes(x = sample, y = count)) +
-    geom_col(aes(fill = type), width = 0.9) +
-    scale_fill_manual("", values = id_type_colors, breaks = rev(names(id_type_colors))) +
-    # Number identified by MS/MS, inside the MS/MS segment, and number quantified, above the bar
-    geom_text(data = id_counts, aes(x = sample, y = msms, label = msms), angle = 90, hjust = 1.1, colour = "white", size = id_count_size) +
-    geom_text(data = id_counts, aes(x = sample, y = total, label = total), angle = 90, hjust = -0.1, colour = "grey20", size = id_count_size) +
-    {if (id_has_design) geom_point(data = id_counts, aes(x = sample, y = -0.03 * id_max, colour = condition), shape = 15, size = 3)} +
-    {if (id_has_design && color_group) scale_colour_manual("Condition", values = setNames(group_colors, group_names))} +
-    {if (id_has_design) labs(colour = "Condition")} +
-    scale_y_continuous(expand = expansion(mult = c(0.01, 0.1))) +
+    {if (id_by_condition) geom_col(aes(fill = condition, alpha = type, colour = condition), width = 0.9, linewidth = 0.3)
+     else geom_col(aes(fill = type), width = 0.9)} +
+    {if (id_by_condition) list(scale_fill_manual("Condition", values = setNames(group_colors, group_names)),
+                               scale_colour_manual(values = setNames(group_colors, group_names), guide = "none"),
+                               scale_alpha_manual("", values = c("Identified (by MS/MS)" = 1, "Quantified without MS/MS identification" = 0.3),
+                                                  breaks = rev(names(id_type_colors)),
+                                                  guide = guide_legend(override.aes = list(fill = "grey30", colour = "grey30"))))
+     else scale_fill_manual("", values = id_type_colors, breaks = rev(names(id_type_colors)))} +
+    # Number identified by MS/MS, inside the MS/MS segment, and number quantified, above the bar (on a white background, readable on
+    # any bar colour)
+    geom_label(data = id_counts, aes(x = sample, y = msms, label = msms), angle = 90, hjust = 1.05, colour = "grey10", fill = "white",
+               alpha = 0.8, label.size = 0, label.padding = unit(0.1, "lines"), size = id_count_size, inherit.aes = FALSE) +
+    geom_text(data = id_counts, aes(x = sample, y = total, label = total), angle = 90, hjust = -0.1, colour = "grey20", size = id_count_size,
+              inherit.aes = FALSE) +
+    {if (id_has_design && !id_by_condition) geom_point(data = id_counts, aes(x = sample, y = -0.03 * id_max, colour = condition), shape = 15, size = 3, inherit.aes = FALSE)} +
+    {if (id_has_design && !id_by_condition) labs(colour = "Condition")} +
+    scale_y_continuous(expand = expansion(mult = c(0.01, 0.12))) +
     xlab("") +
     ylab("Number of proteins") +
     ggtitle("Identified and quantified proteins per sample") +
@@ -536,11 +601,12 @@ if(ncol(identification_type)>0){
           legend.title=element_text(size=16),
           legend.text=element_text(size=16))
 
-  cat(htmltools::HTML(plot_figure_as_html(identification_type_plot, "Identification_types_distribution_across_samples", max(600, 22 * n_id_samples), 650, svg = format_svg)))
+  cat(htmltools::HTML(plot_figure_as_html(identification_type_plot, "Identification_types_distribution_across_samples", id_width, 650, svg = format_svg)))
   cat(text_spec(paste0("\n Number of proteins quantified in each sample (with an intensity: bar height, number above the bar), and among them the proteins ",
-                       "identified by MS/MS in that sample (dark blue, number inside the bar). The others (light blue) are quantified without MS/MS identification ",
+                       "identified by MS/MS in that sample (", if (id_by_condition) "solid part" else "dark blue", ", number inside the bar). The others (",
+                       if (id_by_condition) "light part" else "light blue", ") are quantified without MS/MS identification ",
                        "in the sample (e.g. by matching). A sample with clearly fewer identifications than the other samples of its condition may indicate a problem with that injection.",
-                       if (id_has_design) " The colored mark under each bar gives the condition of the sample." else ""),
+                       if (id_by_condition) " The bars have the colour of the condition of the sample." else if (id_has_design) " The colored mark under each bar gives the condition of the sample." else ""),
                 italic = T, font_size = "12px"))
 }
 
@@ -588,7 +654,7 @@ if (Normalization){
 
 
 <div class="row">
-<div class = "col-md-6">
+<div class = "col-md-12">
 
 ```{r plot_ratios, messages=FALSE, results='asis'}
 ##If normalization parameter set to TRUE, creating a data frame for 'Ratio distribution for each sample' ratio plot##
@@ -598,31 +664,39 @@ if(Normalization){
   ratiosDF = data.table::melt.data.table(data.table(ratiosDF))
   colnames(ratiosDF) = c("samples","ratio")
   
-  ratiosDF$sample <- factor(sub("_ratio_.*","",ratiosDF$sample), as.character(sample_names))
-  
-  if(color_group){
-    ref <- which(sample_names == reference_sample)
-    sample_colors_2 <- sample_colors[-ref]
-  }
-  
+  # Sample of each ratio (the column names are "<sample>_ratio_<reference sample>"): the plain sample names are shown on the axis,
+  # the reference sample in the title
+  ratiosDF$sample <- droplevels(factor(sub("_ratio_.*","",ratiosDF$samples), as.character(sample_names)))
+
+  # Coloured by condition (color_group), with a legend of the conditions; otherwise one colour per sample, no legend
+  if (color_group) ratiosDF$condition <- factor(sample_conditions[match(ratiosDF$sample, sample_names)], levels = group_names)
+
+  # Full-width row: the width grows with the number of samples (25 px per box), so that the sample names keep a readable size
+  n_ratio_samples <- nlevels(ratiosDF$sample)
+  ratio_width <- max(600, 25 * n_ratio_samples + 100)
+
   ##Framing 'Ratio distribution for each sample' ratio plot using ggplot##
-  
+
   ratioPlot <- ggplot() +
-    geom_boxplot(data = ratiosDF, mapping = aes(x=factor(samples,level=unique(samples)), y=log2(ratio),color=samples), na.rm = T) +
-    ggtitle("Ratio distribution for each sample")+
-    #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T)+
+    geom_boxplot(data = ratiosDF, mapping = aes(x=sample, y=log2(ratio), color=.data[[if (color_group) "condition" else "sample"]], group=sample), na.rm = T) +
+    ggtitle(paste0("Ratio distribution for each sample (to the reference sample ", reference_sample, ")"))+
     ylab("log2(ratio)") +
     xlab("") +
-    {if(color_group) scale_color_manual(values = sample_colors_2)} +
-    theme(legend.position="none",
+    # Without colouring by condition, the colours of the samples in the other plots (the reference sample has no ratio: ggplot's default
+    # colours of the remaining samples would be shifted)
+    {if(color_group) scale_color_manual("Condition", values = setNames(group_colors, group_names))
+     else scale_color_manual(values = setNames(sample_palette, sample_names))} +
+    theme(legend.position = if (color_group) "bottom" else "none",
+        legend.title=element_text(size=16),
+        legend.text=element_text(size=16),
         plot.title=element_text(size=20),
         axis.title=element_text(size=18),
-        axis.text.x=element_text(angle=90,size=18),
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(n_ratio_samples, ratio_width - 80)),
         axis.text.y=element_text(size=18))
-  
+
   ##Plotting and printing 'Ratio distribution for each sample' ratio plot (.svg or .png dependent on set parameters) with download link##
-  
-  cat(htmltools::HTML(plot_figure_as_html(ratioPlot, "Ratio_distribution_for_each_sample", svg = format_svg)))
+
+  cat(htmltools::HTML(plot_figure_as_html(ratioPlot, "Ratio_distribution_for_each_sample", ratio_width, 600, svg = format_svg)))
   figure_note(paste0("Distribution of the log2 ratios of the intensities of each sample to those of the reference sample (", reference_sample,
                      ", the sample with the fewest missing values), protein by protein, before normalization. The median of each box is the shift ",
                      "removed by the normalization; a wide box means that the sample differs from the reference for many proteins."))
@@ -652,23 +726,28 @@ if (Normalization){
   median = log10(median(normDF$intensity,na.rm = T))
   
   normDF$sample <- factor(normDF$sample, as.character(sample_names))
-  
+  # Coloured by condition (color_group), the curves have a legend of the conditions (see the legends of the density plots, chunk density_plot)
+  if (color_group) normDF$condition <- factor(sample_conditions[match(normDF$sample, sample_names)], levels = group_names)
+
   ##Framing 'Intensity distribution over all samples after normalization' line graph with ggplots##
-  
+
   densityPlot <- ggplot(normDF) +
-    geom_density(mapping = aes(x=log10(intensity),group=sample,color=sample), na.rm = T) +
+    {if (color_group) geom_density(mapping = aes(x=log10(intensity),group=sample,color=condition), na.rm = T)
+     else geom_density(mapping = aes(x=log10(intensity),group=sample,color=sample), na.rm = T)} +
     ggtitle("Intensity distribution over all samples after normalization")+
     xlab("intensity")+
     #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete=T,breaks=sample_names)+
     #geom_vline(aes(xintercept=median), linetype="dashed", size=1)+
     #geom_text(mapping=aes(x=median, y=0, label="median"), size=4, angle=90, vjust=-0.4, hjust=0) +
-    {if(color_group) scale_color_manual(values = sample_colors)} +
+    {if(color_group) scale_color_manual("Condition", values = setNames(group_colors, group_names))} +
     theme(plot.title = element_text(size=20),
           axis.title=element_text(size=18),
           axis.text=element_text(size=18),
           legend.title = element_text(size=16),
-          legend.text=element_text(size=16))
-  
+          legend.text=element_text(size=16)) +
+    {if (color_group) theme(legend.position = "bottom")} +
+    {if (shared_legend) theme(legend.position = "none")}
+
   ##Plotting and printing of 'Intensity distribution over all samples after normalization' line graph (.svg or .png dependent on set parameters)##
   ##with download link##
   
@@ -686,25 +765,25 @@ if (Normalization){
 
 if (Normalization){
 
+  # Coloured by condition (color_group), with a legend of the conditions as the density plot; otherwise one colour per sample, no legend
   bxPlot <- ggplot(normDF) +
-    geom_boxplot(mapping = aes(x=sample,y=log10(intensity),color=sample), na.rm = T) +
+    geom_boxplot(mapping = aes(x=sample,y=log10(intensity),color=.data[[if (color_group) "condition" else "sample"]],group=sample), na.rm = T) +
     ggtitle("Intensity distribution in each sample after normalization")+
     xlab("")+
-    #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete=T,breaks=sample_names)+
-    #geom_vline(aes(xintercept=median), linetype="dashed", size=1)+
-    #geom_text(mapping=aes(x=median, y=0, label="median"), size=4, angle=90, vjust=-0.4, hjust=0) +
-    {if(color_group) scale_color_manual(values = sample_colors)} +
+    {if(color_group) scale_color_manual("Condition", values = setNames(group_colors, group_names))} +
     theme(plot.title = element_text(size=20),
           axis.title=element_text(size=18),
           axis.text=element_text(size=18),
-          axis.text.x=element_text(angle=90,size=18),
-          legend.position="none")
+          axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names))),
+          legend.position = if (color_group) "bottom" else "none",
+          legend.title=element_text(size=16),
+          legend.text=element_text(size=16))
   
   ##Plotting and printing 'Intensity distribution in each sample after normalization' box plot into html doc (.svg or .png dependent##
   ##on set parameters) with download link##
   
   htmltools::HTML(plot_figure_as_html(bxPlot, "Intensity_distribution_in_each_sample_after_normalization", svg = format_svg))
-  
+
 }
 
 
@@ -713,6 +792,13 @@ if (Normalization){
 
 </div>
 </div>
+
+```{r density_legend_after_normalization, results='asis'}
+# Legend panel shared by the density and box plots above (many samples)
+if (Normalization && shared_legend) {
+  cat(htmltools::HTML(plot_figure_as_html(sample_legend$plot, "Samples_legend_after_normalization", 1200, sample_legend$height, svg = format_svg)))
+}
+```
 
 
 ```{r normalization_legend, results='asis'}
@@ -740,19 +826,22 @@ if (Normalization){
 ```{r na_count_by_sample, echo=FALSE, results='asis'}
 ##Framing 'Missing values distribution across samples' bar graph using ggplot##
 
+# Coloured by condition (color_group), with a legend of the conditions as the total intensity plot; otherwise one colour per sample, no legend
+na_fill <- if (color_group) factor(sample_conditions, levels = group_names) else factor(sample_names, levels = sample_names)
 barPlot <-ggplot(data=na_by_sample) +
-  geom_bar(stat="identity",aes(x=factor(sample_names,level=sample_names), y=na_count_by_sample,fill=sample_names))+
+  geom_bar(stat="identity",aes(x=factor(sample_names,level=sample_names), y=na_count_by_sample,fill=na_fill))+
   scale_y_continuous(name = expression("Count"), sec.axis = sec_axis(~ . * 1/nrow(data) *100 , name = "Frequency (%)"))+
-  #viridis::scale_fill_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T)+
   ggtitle("Missing values distribution across samples") +
   ylab("Count")+
   xlab("")+
-  {if(color_group) scale_fill_manual(values = sample_colors)} +
-  theme(legend.position="none",
+  {if(color_group) scale_fill_manual("Condition", values = setNames(group_colors, group_names))} +
+  theme(legend.position = if (color_group) "bottom" else "none",
+        legend.title=element_text(size=16),
+        legend.text=element_text(size=16),
         plot.title = element_text(size=22),
         axis.title=element_text(size=18),
         axis.text=element_text(size=18),
-        axis.text.x=element_text(angle=90))
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names))))
 
 ##Plotting and printing 'Missing values distribution across samples' bar graph into html (.svg or .png dependent on set parameters)##
 ##with download link##
@@ -795,7 +884,7 @@ barPlot <- ggplot() +
 <br>
 
 <div class="row">
-<div class = "col-md-6">
+<div class = "col-md-12">
 ```{r missing_values_imputation, results='asis'}
 ##Checks if normalized abundance data exists##
 
@@ -874,7 +963,8 @@ histogram <- ggplot() +
 ##Plotting and printing 'Log intensities distribution with imputed values' histogram to html doc (.svg or .png dependent on set parameters)##
 ##with download link##
 
-  htmltools::HTML(plot_figure_as_html(histogram, "Log_intensities_distribution_with_imputed_values", svg = format_svg))
+  # Full-width row
+  htmltools::HTML(plot_figure_as_html(histogram, "Log_intensities_distribution_with_imputed_values", 1100, 600, svg = format_svg))
 
 ##Prints explanation of histogram data##
 
@@ -935,7 +1025,7 @@ cat(text_spec("\n Log10 intensities, each protein centered. Proteins vary in wei
 <div class = "col-md-6">
 ```{r pca_scaled_plot, echo=FALSE, results='asis'}
 htmltools::HTML(plot_figure_as_html(plot_pca_samples(pca_scaled, pca_samples, "PCA of the samples, proteins scaled (technical view)", pca_subtitle, pca_colors), "PCA_samples_scaled", 700, 700, svg = format_svg))
-cat(text_spec("\n Each protein is also scaled to unit variance, so all proteins weigh the same, including the many proteins that do not change. Their technical noise then has as much weight as the biological changes: this view helps to detect technical effects (injection order, batches), not biological ones.", italic = T, font_size = "12px"))
+cat(text_spec("\n Log10 intensities, each protein centered and scaled to unit variance, so all proteins weigh the same, including the many proteins that do not change. Their technical noise then has as much weight as the biological changes: this view helps to detect technical effects (injection order, batches), not biological ones.", italic = T, font_size = "12px"))
 ```
 </div>
 </div>
@@ -943,7 +1033,7 @@ cat(text_spec("\n Each protein is also scaled to unit variance, so all proteins 
 <br>
 
 <div class="row">
-<div class = "col-md-6">
+<div class = "col-md-12">
 ```{r pca_depth, echo=FALSE, results='asis'}
 ## Do the first components follow the proteome depth of the samples? ##
 
@@ -958,20 +1048,25 @@ depth_df$component <- factor(depth_df$component, levels = c("PC1", "PC2"),
 depth_plot <- ggplot(depth_df, aes(x = n_quantified, y = score)) +
   {if (has_design) geom_point(aes(colour = condition), size = 3) else geom_point(size = 3)} +
   {if (has_design && color_group) scale_colour_manual(values = setNames(group_colors, group_names))} +
-  facet_wrap(~component, ncol = 1, scales = "free_y") +
-  labs(title = "Components vs proteome depth", x = "Number of quantified proteins (before imputation)", y = "Sample score") +
-  theme(plot.title = element_text(size = 20),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14),
-        strip.text = element_text(size = 14),
-        legend.title = element_text(size = 14),
-        legend.text = element_text(size = 12))
+  # Full-width row: PC1 and PC2 side by side
+  facet_wrap(~component, ncol = 2, scales = "free_y") +
+  labs(title = "Components vs proteome depth", x = "Number of quantified proteins (before imputation)", y = "Sample score", colour = "Condition") +
+  theme(plot.title = element_text(size = 22),
+        axis.title = element_text(size = 20),
+        axis.text = element_text(size = 18),
+        strip.text = element_text(size = 18),
+        legend.title = element_text(size = 18),
+        legend.text = element_text(size = 16))
 
-htmltools::HTML(plot_figure_as_html(depth_plot, "PCA_vs_proteome_depth", 700, 700, svg = format_svg))
+htmltools::HTML(plot_figure_as_html(depth_plot, "PCA_vs_proteome_depth", 1100, 550, svg = format_svg))
 cat(text_spec("\n Sample scores of the main PCA against the number of proteins quantified in each sample. A strong correlation (|r| close to 1) means that the component mostly reflects differences in proteome depth (and therefore imputed values) rather than biology.", italic = T, font_size = "12px"))
 ```
 </div>
+</div>
 
+<br>
+
+<div class="row">
 <div class = "col-md-6">
 ```{r pca_scree, echo=FALSE, results='asis'}
 ## Variance explained by the first components of both PCAs ##
@@ -984,23 +1079,22 @@ scree_df <- rbind(
 
 scree_plot <- ggplot(scree_df, aes(x = factor(component), y = variance)) +
   geom_col(fill = "dodgerblue3") +
-  geom_text(aes(label = paste0(round(variance, 1), "%")), vjust = -0.4, size = 3.5) +
+  geom_text(aes(label = paste0(round(variance, 1), "%")), vjust = -0.4, size = 5) +
   facet_wrap(~pca, ncol = 1) +
-  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
   labs(title = "Variance explained", x = "Component", y = "% of variance") +
-  theme(plot.title = element_text(size = 20),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14),
-        strip.text = element_text(size = 14))
+  theme(plot.title = element_text(size = 22),
+        axis.title = element_text(size = 20),
+        axis.text = element_text(size = 18),
+        strip.text = element_text(size = 18))
 
-cat(htmltools::HTML(plot_figure_as_html(scree_plot, "PCA_variance_explained", 700, 700, svg = format_svg)))
+# Half-width column, next to the table of the loadings: 600 px, so that it is not shrunk
+cat(htmltools::HTML(plot_figure_as_html(scree_plot, "PCA_variance_explained", 600, 650, svg = format_svg)))
 figure_note("Percentage of the variance of the samples explained by each of the first components, for both PCAs. A first component well above the others means that one main effect (e.g. the conditions, or a technical effect) dominates the differences between samples.")
 ```
 </div>
-</div>
 
-<br>
-
+<div class = "col-md-6">
 ```{r pca_top_loadings, echo=FALSE}
 ## Proteins contributing most to the first two components of the main PCA ##
 
@@ -1025,6 +1119,8 @@ kable(top_loadings, format = "html", booktabs = T,
   kable_styling(bootstrap_options = "condensed", full_width = F, position = "left") %>%
   collapse_rows(columns = 1, valign = "top")
 ```
+</div>
+</div>
 
 
 <br>
@@ -1033,232 +1129,66 @@ kable(top_loadings, format = "html", booktabs = T,
 </div>
 <br>
 
-```{r echo=FALSE}
-##Assigns abundance matrix to a new sample, computes the distance matrix between proteins, and performs hierarchical clustering on the distance matrix##
-
-inputProteins = imputed_abundance
-distMatrixProteins <- dist(inputProteins)
-hClustProteins <- fastcluster::hclust(distMatrixProteins)
-
-##Transposes matrix to obtain matrix of samples, computes distance matrix between samples, hierarchical clustering on distance matrix##
-
-inputSamples <- t(inputProteins)
-distMatrixSamples <- dist(inputSamples)
-hClustSamples <- fastcluster::hclust(distMatrixSamples)
-
-```
-
-
 ```{r heatmaps, echo=FALSE, warning=FALSE, results='asis'}
+## Heatmaps of all the proteins in each sample, with the proteins and the samples ordered by hierarchical clustering
+## (see plot_clustered_heatmap in the library): log10 intensities, then z-scores of each protein ##
 
-# Create data frame
-nProteins = nrow(data)
+# Log10 intensities after normalization (if enabled) and imputation, one column per sample. The imputed values are used by the
+# clusterings (a complete matrix is needed) but are left blank in the heatmaps
+heatmap_values <- as.matrix(imputed_abundance)
+colnames(heatmap_values) <- sample_names
+n_heatmap_samples <- length(sample_names)
 
-proteinRank = c()
-for (i in 1:length(sample_names)){
-  proteinRank = c(proteinRank,1:nProteins)
+# Orientation: proteins in rows when they need more room than the samples (usual case), samples in rows otherwise (many samples).
+# The sample axis grows with the number of samples (25 px per sample, at most 2400 px) so that the names stay readable; the heatmap
+# itself takes about 7/8 of the height or 8/9 of the width left by the legend.
+proteins_in_rows <- heatmap_proteins_in_rows(nrow(heatmap_values), n_heatmap_samples)
+sample_axis_px <- min(2400, max(700, 25 * n_heatmap_samples + 300))
+if (proteins_in_rows) {
+  heatmap_width <- sample_axis_px; heatmap_height <- 950
+  heatmap_label_size <- sample_axis_text_size(n_heatmap_samples, (heatmap_width - 150) * 8 / 9)
+} else {
+  heatmap_width <- 1300; heatmap_height <- sample_axis_px
+  heatmap_label_size <- sample_axis_text_size(n_heatmap_samples, (heatmap_height - 100) * 7 / 8)
 }
-# write.csv(imputed_abundance, "imputed_abundance.csv")
-heatmapDF = reshape2::melt(imputed_abundance)
-heatmapDF$variable = sub(paste0(pattern,"_imputed_log"),"",heatmapDF$variable)
-heatmapDF = cbind(heatmapDF,proteinRank,imputed)
-colnames(heatmapDF) = c("sample","log_intensity","proteinRank","imputed")
+heatmap_axes <- if (proteins_in_rows) "all the proteins (rows) in each sample (columns)" else "all the proteins (columns) in each sample (rows)"
+heatmap_dendrograms <- if (proteins_in_rows) "dendrograms of the proteins on the left and of the samples above" else "dendrograms of the samples on the left and of the proteins above"
 
-heatmapDF=subset(heatmapDF,heatmapDF$imputed==F)
+intensity_heatmap <- plot_clustered_heatmap(heatmap_values, blank = missing_before_imputation, title = "Log10 intensities",
+                                            fill_label = "log10(intensity)", label_size = heatmap_label_size, proteins_in_rows = proteins_in_rows)
 
-# Order samples according to clustering results
-orderedSamples <- sample_names[hClustSamples$order]
-orderedSamples <- orderedSamples[!is.na(orderedSamples)]
-# (keep the clustering order, so that the rows match the dendrogram)
-heatmapDF$orderedSamples <- factor(heatmapDF$sample, levels = orderedSamples)
-heatmapDF$x <- as.numeric(heatmapDF$orderedSamples)
+# Centered values (as the main PCA): each protein centered across the samples, as log2, i.e. the log2 fold change of each value to the
+# average of its protein. The proteins that change most stand out, the stable ones stay pale. Own clusterings, computed on these values,
+# and colors limited to +/- 2 (4-fold), so that a few extreme proteins do not flatten the scale.
+centered_values <- (heatmap_values - rowMeans(heatmap_values)) * log2(10)
+centered_heatmap <- plot_clustered_heatmap(centered_values, blank = missing_before_imputation, title = "Log2 fold change to the protein average (centered) - as the main PCA",
+                                           fill_label = "log2 fold change", limits = c(-2, 2), label_size = heatmap_label_size, proteins_in_rows = proteins_in_rows)
 
-# Order proteins according to clustering results
-heatmapDF$orderedProteins <- factor(heatmapDF$proteinRank, levels = hClustProteins$order)
-heatmapDF$y <- as.numeric(heatmapDF$orderedProteins)
-
-# Adjust colors
-minRatio <- min(heatmapDF$log_intensity)
-maxRatio <- max(heatmapDF$log_intensity)
-maxabsRatio <- max(abs(heatmapDF$log_intensity))
-
-# Make ratio plot
-# hcPlot <- ggplot() +
-#     geom_raster(data = heatmapDF, mapping = aes(x = y, y = x, fill = log_intensity)) +
-#     scale_fill_gradientn(colours=c("green","yellow","red")) +
-#     #scale_fill_scico(palette = "tokyo") +
-#     ggtitle("")+
-#     # ylab("")+
-#     scale_y_continuous(name = "Sample", breaks = 1:length(orderedSamples), labels = orderedSamples, expand = c(0, 0)) +
-#     scale_x_continuous(name = "Protein", expand = c(0, 0)) +
-#     theme(axis.text.y = element_blank(),
-#           axis.ticks.y = element_blank(),
-#           plot.title=element_text(size=22),
-#           axis.title=element_text(size=18),
-#           axis.text=element_text(angle=90, size=14),
-#           legend.text=element_text(size=16),
-#           legend.title=element_text(size=18))
-
-hcPlot <- ggplot(data = heatmapDF) +
-    geom_raster(mapping = aes(x = y, y = x, fill = log_intensity)) +
-    scale_fill_gradientn(colours=c("green","yellow","red")) +
-    #scale_fill_scico(palette = "berlin") +
-    ggtitle("")+
-    scale_y_continuous(name = "Sample", breaks = 1:length(orderedSamples), labels = orderedSamples, expand = c(0, 0), position = "right") +
-    scale_x_continuous(name = "Proteins", breaks = NULL, labels = NULL, expand = c(0, 0)) +
-    labs(title = "Log Intensities Heatmap") +
-    theme(#axis.text.y = element_blank(),
-      axis.title.y = element_blank(),
-      axis.ticks.y = element_blank(),
-      plot.title=element_text(size=30),
-      axis.title=element_text(size=25),
-      axis.text.y=element_text(size=12),
-      axis.text.x=element_text(angle = 90),
-      legend.text=element_text(size=16),
-      legend.title=element_text(size=18))
-
-matrixGrob <- ggplotGrob(hcPlot)
-
-#Make dendrogram plots
-dendrogramSamples <- dendro_data(hClustSamples, type="rectangle")
-dendrogramDataSamples <- segment(dendrogramSamples)
-dendrogramSamplesPlot <- ggplot() +
-    geom_segment(data = dendrogramDataSamples, mapping = aes(x=x, y=y, xend=xend, yend=yend)) +
-    coord_flip() +
-    scale_y_reverse(expand = c(0, 0)) +
-    #scale_y_continuous(expand = c(0, 0)) +
-    #scale_x_continuous(expand = c(0, 0), limits = c(0.5, 6.5)) +
-    theme(axis.line = element_blank(),
-          axis.ticks = element_blank(),
-          axis.text = element_blank(),
-          axis.title = element_blank(),
-          panel.background = element_blank(),
-          panel.grid = element_blank(),
-          panel.border = element_blank())
-dendroSampleGrob <- ggplotGrob(dendrogramSamplesPlot)
-
-diff_cols <- ncol(matrixGrob) - ncol(dendroSampleGrob)
-
-if (diff_cols > 0) {
-  dendroSampleGrob <- gtable_add_cols(dendroSampleGrob, unit(rep(1, ncol(matrixGrob) - ncol(dendroSampleGrob)), "null"), pos = -1)
-}
-
-# result <- rbind(dendroSampleGrob[7, ], matrixGrob[7:nrow(matrixGrob), ], size = "last")
-# result <- rbind(matrixGrob[1:6, ], result, size = "last")
-result <- cbind(dendroSampleGrob[, 5], matrixGrob[, 5:ncol(matrixGrob)], size = "last")
-result <- cbind(matrixGrob[, 1:4], result, size = "last")
-result$heights[7] <- unit(0.2, "null")
-result$widths[5] <- unit(0.2, "null")
-
-# write.csv(heatmapDF, "heatmapDF.csv")
-# heatmapDF <- cbind(heatmapDF[, 1], as.data.frame(scale(heatmapDF[, 2])), heatmapDF[, 3:ncol(heatmapDF)])
-# colnames(heatmapDF)[1:2] <- c("Samples", "log_intensity")
-# write.csv(heatmapDF, "heatmapDF_Z.csv")
-
-imputed_abundance_Z <- t(scale(t(imputed_abundance)))
-heatmapDF_Z = reshape2::melt(imputed_abundance_Z)
-heatmapDF_Z <- heatmapDF_Z[-1]
-colnames(heatmapDF_Z)[1] <- "variable"
-
-heatmapDF_Z$variable = sub(paste0(pattern,"_imputed_log"),"",heatmapDF_Z$variable)
-heatmapDF_Z = cbind(heatmapDF_Z,proteinRank,imputed)
-colnames(heatmapDF_Z) = c("sample","log_intensity","proteinRank","imputed")
-
-heatmapDF_Z=subset(heatmapDF_Z,heatmapDF_Z$imputed==F)
-
-# Order samples according to clustering results
-orderedSamples <- sample_names[hClustSamples$order]
-orderedSamples <- orderedSamples[!is.na(orderedSamples)]
-# (keep the clustering order, so that the rows match the dendrogram)
-heatmapDF_Z$orderedSamples <- factor(heatmapDF_Z$sample, levels = orderedSamples)
-heatmapDF_Z$x <- as.numeric(heatmapDF_Z$orderedSamples)
-
-# Order proteins according to clustering results
-heatmapDF_Z$orderedProteins <- factor(heatmapDF_Z$proteinRank, levels = hClustProteins$order)
-heatmapDF_Z$y <- as.numeric(heatmapDF_Z$orderedProteins)
-
-# Adjust colors
-minRatio <- min(heatmapDF_Z$log_intensity)
-maxRatio <- max(heatmapDF_Z$log_intensity)
-maxabsRatio <- max(abs(heatmapDF_Z$log_intensity))
-
-hcPlot_scored <- ggplot(data = heatmapDF_Z) +
-    geom_raster(mapping = aes(x = y, y = x, fill = log_intensity)) +
-    scale_fill_gradientn(colours=c("green","yellow","red")) +
-    #scale_fill_scico(palette = "berlin") +
-    ggtitle("")+
-    scale_y_continuous(name = "Sample", breaks = 1:length(orderedSamples), labels = orderedSamples, expand = c(0, 0), position = "right") +
-    scale_x_continuous(name = "Proteins", breaks = NULL, labels = NULL, expand = c(0, 0)) +
-    labs(title = "Z-Scored Log Intensities Heatmap") +
-    theme(#axis.text.y = element_blank(),
-      axis.title.y = element_blank(),
-      axis.ticks.y = element_blank(),
-      plot.title=element_text(size=30),
-      axis.title=element_text(size=25),
-      axis.text.y=element_text(size=12),
-      axis.text.x=element_text(angle = 90),
-      legend.text=element_text(size=16),
-      legend.title=element_text(size=18))
-
-matrixGrob_scored <- ggplotGrob(hcPlot_scored)
-
-#Make dendrogram plots
-dendrogramSamples_scored <- dendro_data(hClustSamples, type="rectangle")
-dendrogramDataSamples_scored <- segment(dendrogramSamples_scored)
-dendrogramSamplesPlot_scored <- ggplot() +
-    geom_segment(data = dendrogramDataSamples_scored, mapping = aes(x=x, y=y, xend=xend, yend=yend)) +
-    coord_flip() +
-    scale_y_reverse(expand = c(0, 0)) +
-    # scale_y_continuous(expand = c(0, 0)) +
-    # scale_y_continuous(expand = c(0, 0), limits = c(0.5, 6.5)) +
-    theme(axis.line = element_blank(),
-          axis.ticks = element_blank(),
-          axis.text = element_blank(),
-          axis.title = element_blank(),
-          panel.background = element_blank(),
-          panel.grid = element_blank(),
-          panel.border = element_blank())
-dendroSampleGrob_scored <- ggplotGrob(dendrogramSamplesPlot_scored)
-
-# if(nProteins<10000){
-#   dendrogramProteins <- dendro_data(hClustProteins, type="rectangle")
-#   dendrogramDataProteins <- segment(dendrogramProteins)
-#   dendrogramProteinsPlot <- ggplot() +
-#     geom_segment(data = dendrogramDataProteins, mapping = aes(x=x, y=y, xend=xend, yend=yend)) +
-#     coord_flip() +
-#     scale_y_reverse(expand = c(0, 0)) +
-#     scale_x_continuous(expand = c(0, 0), limits = c(0.5, nProteins + 0.5)) +
-#     theme(axis.line = element_blank(),
-#           axis.ticks = element_blank(),
-#           axis.text = element_blank(),
-#           axis.title = element_blank(),
-#           panel.background = element_blank(),
-#           panel.grid = element_blank(),
-#           panel.border = element_blank())
-#   dendroProteinGrob <- ggplotGrob(dendrogramProteinsPlot)
-# }
-
-diff_cols_scored <- ncol(matrixGrob_scored) - ncol(dendroSampleGrob_scored)
-
-if (diff_cols_scored > 0) {
-  dendroSampleGrob_scored <- gtable_add_cols(dendroSampleGrob_scored, unit(rep(1, ncol(matrixGrob_scored) - ncol(dendroSampleGrob_scored)), "null"), pos = -1)
-}
-
-# result_scored <- rbind(dendroSampleGrob_scored[7, ], matrixGrob_scored[7:nrow(matrixGrob_scored), ], size = "last")
-# result_scored <- rbind(matrixGrob_scored[1:6, ], result_scored, size = "last")
-result_scored <- cbind(dendroSampleGrob_scored[, 5], matrixGrob_scored[, 5:ncol(matrixGrob_scored)], size = "last")
-result_scored <- cbind(matrixGrob_scored[, 1:4], result_scored, size = "last")
-result_scored$heights[7] <- unit(0.2, "null")
-result_scored$widths[5] <- unit(0.2, "null")
+# Z-scores: each protein centered and scaled across the samples (the proteins with the same value in every sample have no z-score
+# and are left out). The heatmap has its own clusterings, computed on the z-scores, and its colors are centered on 0 and limited
+# to +/- 3, so that a few extreme values do not flatten the scale.
+zscore_heatmap <- plot_clustered_heatmap(t(scale(t(heatmap_values))), blank = missing_before_imputation, title = "Z-scored log10 intensities - as the scaled PCA (technical view)",
+                                         fill_label = "z-score", limits = c(-3, 3), label_size = heatmap_label_size, proteins_in_rows = proteins_in_rows)
 
 ## Heatmaps printed into the report (PNG or SVG, see plot_figure_as_html) ##
 
-cat(htmltools::HTML(plot_figure_as_html(result, "global_hcplot", 1300, 1300, svg = format_svg)))
-figure_note(paste0("Log10 intensities", if (Normalization) " after normalization" else "", " of all the proteins (columns) in each sample (rows), from green (low) to red (high); missing values that were imputed are left blank. ",
-                   "Proteins and samples are ordered by hierarchical clustering (dendrograms): samples of the same condition should cluster together."))
-cat(htmltools::HTML(plot_figure_as_html(result_scored, "global_hcplot_scored", 1300, 1300, svg = format_svg)))
-figure_note("Same heatmap with the intensities of each protein z-scored (centered and scaled across the samples), so that the colors show how each protein varies between samples rather than its abundance: blocks of proteins higher (red) or lower (green) in a group of samples show the main differences between conditions.")
-
+cat(htmltools::HTML(plot_figure_as_html(intensity_heatmap, "global_hcplot", heatmap_width, heatmap_height, svg = format_svg)))
+figure_note(paste0("Log10 intensities", if (Normalization) " after normalization" else "", " of ", heatmap_axes, ", from green (low) to red (high); missing values that were imputed are left blank. ",
+                   "Proteins and samples are ordered by hierarchical clustering (", heatmap_dendrograms, "): samples of the same condition should cluster together. ",
+                   "The proteins are mostly ordered by abundance here, as their intensity levels differ much more than their variations between samples."))
+# Space between the heatmaps, so that they are clearly separated
+heatmap_space <- "<div style='height: 60px;'></div>"
+cat(heatmap_space)
+cat(htmltools::HTML(plot_figure_as_html(centered_heatmap, "global_hcplot_centered", heatmap_width, heatmap_height, svg = format_svg)))
+figure_note(paste0("Log2 fold change of each value to the average of its protein over the samples (each protein centered, as in the main PCA): green, lower than the average; red, higher ",
+                   "(colors limited to 4-fold). The proteins that change most between samples stand out, the stable ones stay pale. The proteins and the samples are ordered by a hierarchical ",
+                   "clustering of these values: blocks of proteins higher or lower in a group of samples show the main differences between conditions."))
+cat(heatmap_space)
+cat(htmltools::HTML(plot_figure_as_html(zscore_heatmap, "global_hcplot_scored", heatmap_width, heatmap_height, svg = format_svg)))
+figure_note(paste0("Intensities of each protein z-scored (centered and scaled across the samples, as in the scaled PCA), so that every protein weighs the same ",
+                   "(green: lower than its average, red: higher; colors limited to 3 standard deviations). The many proteins that do not change are amplified to the same level as those that change: ",
+                   "this technical view helps to detect effects on all the proteins (injection order, batches, an outlier sample), the previous heatmap the biological differences. ",
+                   "The proteins and the samples are ordered by a hierarchical clustering of the z-scores."))
 
 ```
 

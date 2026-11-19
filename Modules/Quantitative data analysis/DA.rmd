@@ -2078,12 +2078,15 @@ for (comparison in comparisons_to_display){
         axis.title=element_text(size=24),
         axis.text=element_text(size=22),
         legend.text=element_text(size=16),
-        plot.margin = unit(c(2,0,2,0), "cm"),
+        # Right margin for the group labels drawn on the right of the panel (they take no room in the layout): about 0.36 cm per
+        # character of the longest label, beyond the width of the legend (about 4.5 cm)
+        plot.margin = unit(c(2, max(0.5, 0.36 * (nchar("↑ higher in ") + max(nchar(couple))) - 4.5), 2, 0), "cm"),
         legend.title=element_text(size=18)) +
-      annotate("text", x = max(log10(current_statDF_MA$mean_intensity), na.rm = TRUE), y = min(log2(current_statDF_MA$fc), na.rm = TRUE),
-             label = couple[2], hjust = 1, vjust = 1, size = 6, font_face = "bold") +
-      annotate("text", x = max(log10(current_statDF_MA$mean_intensity), na.rm = TRUE), y = max(log2(current_statDF_MA$fc), na.rm = TRUE),
-             label = couple[1], hjust = 1, vjust = 1, size = 6, font_face = "bold")
+      # Group labels on the right of the panel, in the column of the legend, horizontal, level with the top and the bottom of the panel,
+      # so that they do not overlap the proteins and their labels (positive log2 fold change: higher in couple[1])
+      annotate("text", x = Inf, y = Inf, label = paste0("↑ higher in ", couple[1]), hjust = -0.05, vjust = 1, size = 6, fontface = "bold") +
+      annotate("text", x = Inf, y = -Inf, label = paste0("↓ higher in ", couple[2]), hjust = -0.05, vjust = 0, size = 6, fontface = "bold") +
+      coord_cartesian(clip = "off")
     
     # Adding a line break after the plot
     cat(text_spec("\n"))
@@ -2148,11 +2151,11 @@ for (comparison in comparisons_to_display){
             legend.text=element_text(size=16),
             plot.margin = unit(c(2,0,2,0), "cm"),
             legend.title=element_text(size=18)) +
-      # Adding group labels
-      annotate("text", x = min(log2(cstat_noNA$fc), na.rm = TRUE), y = max(-log10(as.numeric(cstat_noNA$pval)), na.rm = TRUE),
-             label = couple[2], hjust = 0, vjust = 1, size = 6, font_face = "bold") +
-      annotate("text", x = max(log2(cstat_noNA$fc), na.rm = TRUE), y = max(-log10(as.numeric(cstat_noNA$pval)), na.rm = TRUE),
-             label = couple[1], hjust = 1, vjust = 1, size = 6, font_face = "bold")
+      # Group labels above the panel (in the top margin), at its left and right ends, so that they do not overlap the most significant
+      # proteins and their labels (positive log2 fold change: higher in couple[1])
+      annotate("text", x = -Inf, y = Inf, label = paste0("← higher in ", couple[2]), hjust = 0, vjust = -0.6, size = 6, fontface = "bold") +
+      annotate("text", x = Inf, y = Inf, label = paste0("higher in ", couple[1], " →"), hjust = 1, vjust = -0.6, size = 6, fontface = "bold") +
+      coord_cartesian(clip = "off")
     
     # Plotting and printing of Volcano plot into html (.svg or .png dependent on set parameters) with download link
     cat(htmltools::HTML(plot_figure_as_html(Volcano, "Volcano", 1200, 1200, svg = format_svg)))
@@ -2258,8 +2261,12 @@ for (comparison in comparisons_to_display){
                 
   ########################## Framing 'Heatmap' plot  ########################## 
         
+        # Height of the heatmaps growing with the number of significant proteins (one row and one name each): 22 px per protein,
+        # between 1200 and 2400 px
+        heatmap_height <- max(1200, min(2400, 22 * nrow(significant_proteins_intensities) + 400))
+
         if (nrow(significant_proteins_intensities) >= 2) {
-          
+
           heatmap_plot <- create_heatmap(
             significant_proteins_intensities,
             imputed,
@@ -2269,7 +2276,7 @@ for (comparison in comparisons_to_display){
           )
   
           # Plotting and printing 'Heatmap' plot into html doc (.svg or .png dependent on set parameters) with download link
-          cat(htmltools::HTML(plot_figure_as_html(heatmap_plot, "Heatmap", 1200, 1000, svg = format_svg)))
+          cat(htmltools::HTML(plot_figure_as_html(heatmap_plot, "Heatmap", 1200, heatmap_height, svg = format_svg)))
           figure_note(paste0("Log10 intensities of the significant proteins of the comparison in the replicates of ", A_name, " and ", B_name,
                              ", from green (low) to red (high); imputed values are left blank. Proteins and replicates are ordered by hierarchical clustering: ",
                              "the replicates should cluster by condition. The colors mostly reflect the abundance of the proteins; see the z-scored heatmap for their changes."))
@@ -2318,7 +2325,7 @@ for (comparison in comparisons_to_display){
             "Log Intensities Heatmap (Z-scored)"
           )
           
-          cat(htmltools::HTML(plot_figure_as_html(heatmap_plot_scored, "Heatmap_scored", 1200, 1000, svg = format_svg)))
+          cat(htmltools::HTML(plot_figure_as_html(heatmap_plot_scored, "Heatmap_scored", 1200, heatmap_height, svg = format_svg)))
           figure_note(paste0("Same heatmap with the intensities of each protein z-scored (centered and scaled across the replicates of ", A_name, " and ", B_name,
                              "): red means higher and green lower than the protein's mean, so that proteins up in one condition and down in the other form two blocks."))
           

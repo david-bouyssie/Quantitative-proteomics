@@ -130,4 +130,29 @@ check("validate_inputs(): unknown condition in a comparison", grepl("does not ma
 check("validate_inputs(): intensity column of the design missing from the table",
       grepl("intensity column\\(s\\) of the experimental design not found", error_message(validate_inputs(data[setdiff(names(data), files[1])], design))))
 
+## 7. plot_sample_legend(): legend panel shared by several plots
+suppressMessages(library(ggplot2))
+samples <- sub("Intensity_", "", files)  # 40 names of up to 11 characters
+legend_panel <- plot_sample_legend(samples, rainbow(length(samples)))
+legend_df <- legend_panel$plot$data
+check("plot_sample_legend(): 40 samples in 8 columns of 5 rows, filled by columns, height for 5 rows",
+      max(legend_df$column) == 7 && max(legend_df$row) == 4 && legend_df$row[6] == 0 && legend_df$column[6] == 1 && legend_panel$height == 60 + 26 * 5)
+check("plot_sample_legend(): fewer samples than columns, one row",
+      nrow(plot_sample_legend(c("A", "B", "C"), c("red", "green", "blue"))$plot$data) == 3 &&
+        max(plot_sample_legend(c("A", "B", "C"), c("red", "green", "blue"))$plot$data$row) == 0)
+check("plot_sample_legend(): rendered as a PNG figure",
+      grepl("^<div class='figure-png'><img src='data:image/png;base64,", plot_figure_as_html(legend_panel$plot, "Samples_legend", 1200, legend_panel$height)))
+
+## 8. hclust_segments() and plot_clustered_heatmap()
+hc <- hclust(dist(c(1, 2, 10, 11, 30)))
+seg <- hclust_segments(hc)
+check("hclust_segments(): 3 segments per merge, leaves at positions 1..n and height 0, top merge at the largest height",
+      nrow(seg) == 3 * 4 && setequal(seg$x[seg$y == 0], 1:5) && max(seg$yend) == max(hc$height))
+values <- as.matrix(data[files[1:8]]); values <- log10(values[complete.cases(values), ][1:300, ])
+check("plot_clustered_heatmap(): rendered as a PNG figure (300 proteins, 8 samples, z-scores), in both orientations",
+      grepl("^<div class='figure-png'>", plot_figure_as_html(plot_clustered_heatmap(t(scale(t(values))), limits = c(-3, 3)), "heatmap", 800, 600)) &&
+        grepl("^<div class='figure-png'>", plot_figure_as_html(plot_clustered_heatmap(values, proteins_in_rows = FALSE), "heatmap", 800, 600)))
+check("heatmap_proteins_in_rows(): proteins in rows with thousands of proteins and 40 samples, not with 500 proteins and 300 samples",
+      heatmap_proteins_in_rows(2898, 40) && !heatmap_proteins_in_rows(500, 300))
+
 finish("Library tests")

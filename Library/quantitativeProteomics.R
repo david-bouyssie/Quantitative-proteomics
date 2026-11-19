@@ -575,6 +575,37 @@ plot_figure_as_html <- function(plot, name, width = 600, height = 600, svg = FAL
          name, ".png');\" >Save figure</a></div>")
 }
 
+# Size (pt) of the sample names on the x axis of a plot with one bar or box per sample, so that the (vertical) names do not overlap:
+# a name takes about 1.25 times its size in pixels (1 pt = 1 px at the 72 pixels per inch of plot_figure_as_html), and the axis of a
+# 600 px wide figure is about 520 px long. Between 6 and 18 pt (18 pt up to 23 samples).
+sample_axis_text_size <- function(n_samples, axis_px = 520){
+  max(6, min(18, axis_px / n_samples / 1.25))
+}
+
+# Legend of the samples drawn as a figure of its own, shared by several plots (e.g. the density and the box plots of the QC report),
+# when an inner legend would take too much room: one coloured square and the name of each sample, filled by columns, the number of
+# columns depending on the longest name. Returns the ggplot and the height (pixels) it needs for the given width.
+plot_sample_legend <- function(samples, colors, width = 1200, title = "Samples"){
+  n <- length(samples)
+  column_px <- 8 * max(nchar(samples)) + 50  # square, gap and label (about 8 px per character at the text size used)
+  ncol <- max(1, min(n, floor(width / column_px)))
+  nrow <- ceiling(n / ncol)
+  legend_df <- data.frame(sample = factor(samples, levels = samples),
+                          column = (seq_len(n) - 1) %/% nrow,
+                          row = (seq_len(n) - 1) %% nrow)
+  label_offset <- 20 * ncol / width  # 20 px between the square and its label, in column units
+  plot <- ggplot(legend_df, aes(x = column, y = -row)) +
+    geom_point(aes(color = sample), shape = 15, size = 5) +
+    geom_text(aes(label = sample), hjust = 0, nudge_x = label_offset, size = 5) +
+    scale_color_manual(values = setNames(colors, samples), guide = "none") +
+    scale_x_continuous(limits = c(-label_offset, ncol), expand = c(0, 0)) +
+    scale_y_continuous(limits = c(-nrow + 0.5, 0.5), expand = c(0, 0)) +
+    ggtitle(title) +
+    theme_void() +
+    theme(plot.title = element_text(size = 18), plot.margin = margin(10, 10, 10, 10))
+  list(plot = plot, height = 60 + 26 * nrow)
+}
+
 ###################
 # Figure captions #
 ###################
@@ -623,20 +654,138 @@ plot_pca_samples <- function(p, samples, title, subtitle = NULL, colors = NULL){
     g <- g + geom_point(size = 3.5)
   }
   g +
-    ggrepel::geom_text_repel(aes(label = sample), size = 3, colour = "grey30", max.overlaps = 20) +
+    ggrepel::geom_text_repel(aes(label = sample), size = 4.5, colour = "grey30", max.overlaps = 20) +
     labs(title = title, subtitle = subtitle,
          x = paste0("PC1 (", round(ve[1], 1), "%)"), y = paste0("PC2 (", round(ve[2], 1), "%)")) +
-    theme(plot.title = element_text(size = 20),
-          plot.subtitle = element_text(size = 14),
-          axis.title = element_text(size = 18),
-          axis.text = element_text(size = 16),
-          legend.title = element_text(size = 16),
-          legend.text = element_text(size = 14))
+    theme(plot.title = element_text(size = 22),
+          plot.subtitle = element_text(size = 16),
+          axis.title = element_text(size = 20),
+          axis.text = element_text(size = 18),
+          legend.title = element_text(size = 18),
+          legend.text = element_text(size = 16))
 }
 
 ###########
 # Heatmap #
 ###########
+
+# Segments of the dendrogram of a hierarchical clustering (hclust object): data frame x, y, xend, yend, with the leaves at the
+# positions 1..n (in the order of the clustering, at y = 0) and y the heights of the merges. Computed from the merges, without
+# recursion, so that it works with any number of leaves (thousands of proteins).
+hclust_segments <- function(hc){
+  n <- length(hc$order)
+  leaf_x <- numeric(n)
+  leaf_x[hc$order] <- seq_len(n)
+  node_x <- numeric(n - 1)
+  # Position and height of a child of a merge: a leaf (negative index) or a previous merge (positive index)
+  child_x <- function(k) if (k < 0) leaf_x[-k] else node_x[k]
+  child_y <- function(k) if (k < 0) 0 else hc$height[k]
+  segments <- matrix(NA_real_, nrow = 3 * (n - 1), ncol = 4, dimnames = list(NULL, c("x", "y", "xend", "yend")))
+  for (i in seq_len(n - 1)) {
+    a <- hc$merge[i, 1]; b <- hc$merge[i, 2]
+    xa <- child_x(a); xb <- child_x(b); h <- hc$height[i]
+    node_x[i] <- (xa + xb) / 2
+    # One vertical line from each child up to the merge, and the horizontal line of the merge
+    segments[3 * i - 2, ] <- c(xa, child_y(a), xa, h)
+    segments[3 * i - 1, ] <- c(xb, child_y(b), xb, h)
+    segments[3 * i, ] <- c(xa, h, xb, h)
+  }
+  as.data.frame(segments)
+}
+
+# Orientation of a heatmap of proteins and samples: proteins in rows when they need more room than the samples, i.e. when there are
+# more proteins (at least 1 px each) than pixels needed by the sample names (sample_px each, readable names). Usually true (thousands
+# of proteins, a few dozen samples); false for designs with many samples (e.g. hundreds of single cells).
+heatmap_proteins_in_rows <- function(n_proteins, n_samples, sample_px = 25){
+  n_proteins > sample_px * n_samples
+}
+
+# Heatmap of a matrix of proteins and samples, both ordered by a hierarchical clustering of the matrix itself (Euclidean distance,
+# complete linkage), with their dendrograms aligned with the cells.
+# values: numeric matrix, one row per protein and one named column per sample. The rows with a non-finite value are left out.
+# blank: logical matrix of the cells left blank (e.g. the imputed values, which are used by the clustering but not shown), or NULL.
+# proteins_in_rows: TRUE: proteins in rows (dendrogram on the left), samples in columns (names below, dendrogram above);
+#   FALSE: samples in rows (names on the right, dendrogram on the left), proteins in columns (dendrogram above).
+#   See heatmap_proteins_in_rows().
+# limits: limits of the color scale, the values beyond having the color of the limit (NULL: range of the values).
+# label_size: size of the sample names.
+# Returns a patchwork object, to print or to give to plot_figure_as_html.
+plot_clustered_heatmap <- function(values, blank = NULL, title = "", fill_label = "", limits = NULL, colours = c("green", "yellow", "red"),
+                                   label_size = 12, proteins_in_rows = TRUE){
+  values <- as.matrix(values)
+  finite_rows <- apply(values, 1, function(x) all(is.finite(x)))
+  values <- values[finite_rows, , drop = FALSE]
+  n_proteins <- nrow(values); n_samples <- ncol(values)
+
+  protein_clustering <- fastcluster::hclust(dist(values))
+  sample_clustering <- fastcluster::hclust(dist(t(values)))
+  sample_labels <- colnames(values)[sample_clustering$order]
+  protein_title <- paste0(n_proteins, " proteins")
+
+  # One row per cell (the matrix is read column by column), at the position of its protein and of its sample in the clusterings
+  shown <- values
+  if (!is.null(blank)) shown[as.matrix(blank)[finite_rows, , drop = FALSE]] <- NA
+  cells <- data.frame(protein = rep(match(seq_len(n_proteins), protein_clustering$order), times = n_samples),
+                      sample = rep(match(seq_len(n_samples), sample_clustering$order), each = n_proteins),
+                      value = as.vector(shown))
+
+  heatmap <- ggplot(cells, if (proteins_in_rows) aes(x = sample, y = protein, fill = value) else aes(x = protein, y = sample, fill = value)) +
+    geom_raster() +
+    scale_fill_gradientn(fill_label, colours = colours, limits = limits, oob = scales::squish, na.value = "white") +
+    labs(x = NULL, y = NULL) +
+    theme(panel.grid = element_blank(),
+          legend.title = element_text(size = 16),
+          legend.text = element_text(size = 14),
+          plot.margin = margin(0, 5, 5, 0))
+  if (proteins_in_rows) {
+    heatmap <- heatmap +
+      scale_x_continuous(breaks = seq_len(n_samples), labels = sample_labels, expand = c(0, 0)) +
+      scale_y_continuous(expand = c(0, 0)) +
+      theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = label_size),
+            axis.text.y = element_blank(), axis.ticks.y = element_blank())
+  } else {
+    heatmap <- heatmap +
+      scale_x_continuous(expand = c(0, 0)) +
+      scale_y_continuous(breaks = seq_len(n_samples), labels = sample_labels, expand = c(0, 0), position = "right") +
+      labs(x = protein_title) +
+      theme(axis.text.y = element_text(size = label_size), axis.title.x = element_text(size = 18),
+            axis.text.x = element_blank(), axis.ticks.x = element_blank())
+  }
+
+  # Dendrogram aligned with an axis of the heatmap: above it (leaves at the bottom) or on its left (leaves on the right). The protein
+  # dendrogram has thin grey lines: with thousands of proteins, its leaves are less than a pixel apart.
+  dendrogram <- function(clustering, n, above, thin, axis_title = NULL) {
+    segments <- hclust_segments(clustering)
+    line_width <- if (thin) 0.1 else 0.4
+    line_colour <- if (thin) "grey40" else "black"
+    if (above) {
+      ggplot(segments) +
+        geom_segment(aes(x = x, y = y, xend = xend, yend = yend), linewidth = line_width, colour = line_colour) +
+        scale_x_continuous(limits = c(0.5, n + 0.5), expand = c(0, 0)) +
+        scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+        theme_void() +
+        theme(plot.margin = margin(0, 5, 0, 0))
+    } else {
+      ggplot(segments) +
+        geom_segment(aes(x = y, y = x, xend = yend, yend = xend), linewidth = line_width, colour = line_colour) +
+        scale_y_continuous(limits = c(0.5, n + 0.5), expand = c(0, 0)) +
+        scale_x_reverse(expand = expansion(mult = c(0.05, 0))) +
+        labs(y = axis_title) +
+        theme_void() +
+        theme(axis.title.y = element_text(size = 18, angle = 90), plot.margin = margin(0, 0, 5, 5))
+    }
+  }
+  if (proteins_in_rows) {
+    top <- dendrogram(sample_clustering, n_samples, above = TRUE, thin = FALSE)
+    left <- dendrogram(protein_clustering, n_proteins, above = FALSE, thin = TRUE, axis_title = protein_title)
+  } else {
+    top <- dendrogram(protein_clustering, n_proteins, above = TRUE, thin = TRUE)
+    left <- dendrogram(sample_clustering, n_samples, above = FALSE, thin = FALSE)
+  }
+
+  patchwork::wrap_plots(patchwork::plot_spacer(), top, left, heatmap, ncol = 2, widths = c(1, 8), heights = c(1, 7)) +
+    patchwork::plot_annotation(title = title, theme = theme(plot.title = element_text(size = 22)))
+}
 
 # This function create a heatmap with a hierarchical clustering of proteins
 create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
@@ -952,7 +1101,8 @@ create_heatmap <- function(intensities,imputed,samples_names,group_ids,htitle){
       axis.ticks.y = element_blank(),
       plot.title = element_text(size = 30),
       axis.title = element_text(size = 25),
-      axis.text.x = element_text(size = 24, angle = 90),
+      # Sample names sized to the room per sample (the heatmap panel is about 650 px wide in a 1200 px figure), at most 16 pt
+      axis.text.x = element_text(size = min(16, sample_axis_text_size(length(ordered_sample_levels), 650)), angle = 90, hjust = 1, vjust = 0.5),
       legend.text = element_text(size = 16),
       legend.title = element_text(size = 18)
     )
