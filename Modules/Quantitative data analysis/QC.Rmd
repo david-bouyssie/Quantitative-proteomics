@@ -266,9 +266,9 @@ if(coloring_by_group && file.exists(params$design_exp)){
 ##Parsing from data file the names of the samples and limits the length of sample names. If sample names > 15 characters, numbers will be used in## 
 ##the graphic keys##
 
-max_lenght_sample_name = nchar(sample_names_parsed[nchar(sample_names_parsed)==max(nchar(sample_names_parsed))][1])
+max_length_sample_name = nchar(sample_names_parsed[nchar(sample_names_parsed)==max(nchar(sample_names_parsed))][1])
 
-if (max_lenght_sample_name>15){
+if (max_length_sample_name>15){
   if(file.exists(params$design_exp)){
     # "<Condition>_<index>": the samples (one per repBio of each condition, see sample_conditions) are numbered within their
     # condition, in the order of the columns, so that the names are unique whatever the order of the design rows
@@ -290,7 +290,7 @@ colnames(namesDF)=c("Sample","Id")
 # Table of the samples: name, name in the figures (when shortened), and with an experimental design, the condition, the replicate (repBio)
 # and the intensity column(s) of the design (the files of a replicate are combined into one sample)
 samples_table <- data.frame(Sample = sample_names_parsed, check.names = FALSE)
-if (max_lenght_sample_name > 15) samples_table[["Name in the figures"]] <- sample_number
+if (max_length_sample_name > 15) samples_table[["Name in the figures"]] <- sample_number
 if (length(sample_conditions) == length(sample_names_parsed)) {
   samples_table$Condition <- sample_conditions
   samples_table$Replicate <- sample_replicates
