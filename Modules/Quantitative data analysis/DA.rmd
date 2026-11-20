@@ -483,7 +483,7 @@ if(coloring_by_group){
   
   l <- length(group_ids)
 
-  # Colours of the conditions, shared with the QC report (condition_colors in the library: Okabe-Ito up to 8 conditions)
+  # Colours of the conditions, shared with the QC report (condition_colors in the library: Paul Tol "bright" up to 7 conditions)
   group_colors <- condition_colors(l)
 
   # Matching sample colors to samples in the same group, named by sample

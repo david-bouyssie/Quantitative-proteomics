@@ -632,14 +632,14 @@ condition_legend_guide <- function(conditions, width_px, aesthetic = "colour", t
 }
 
 # Colours of n conditions, shared by the QC and DA reports (the same condition gets the same colour in both):
-# - up to 8: the Okabe-Ito palette, distinct for colour-blind readers and saturated enough for lines and points (its yellow, pale on
-#   a light background for small points, comes 7th);
-# - 9 to 12: ColorBrewer "Paired" (light and dark shades of 6 hues);
+# - up to 7: Paul Tol's "bright" palette, distinct for colour-blind readers, with clearly different hues from the first colours
+#   (blue, red, green, yellow for 4 conditions);
+# - 8 to 12: ColorBrewer "Paired" (light and dark shades of 6 hues);
 # - more than 12: colours interpolated from "Paired".
 condition_colors <- function(n){
-  # Orange, sky blue, bluish green, blue, vermillion, reddish purple, yellow, grey
-  okabe_ito <- c("#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7", "#F0E442", "#999999")
-  if (n <= 8) okabe_ito[seq_len(n)]
+  # Blue, red, green, yellow, cyan, purple, grey
+  tol_bright <- c("#4477AA", "#EE6677", "#228833", "#CCBB44", "#66CCEE", "#AA3377", "#BBBBBB")
+  if (n <= 7) tol_bright[seq_len(n)]
   else if (n <= 12) RColorBrewer::brewer.pal(n, "Paired")
   else grDevices::colorRampPalette(RColorBrewer::brewer.pal(12, "Paired"))(n)
 }

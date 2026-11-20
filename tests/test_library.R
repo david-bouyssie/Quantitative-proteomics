@@ -155,10 +155,10 @@ check("plot_clustered_heatmap(): rendered as a PNG figure (300 proteins, 8 sampl
 check("heatmap_proteins_in_rows(): proteins in rows with thousands of proteins and 40 samples, not with 500 proteins and 300 samples",
       heatmap_proteins_in_rows(2898, 40) && !heatmap_proteins_in_rows(500, 300))
 
-## 10. condition_colors(): Okabe-Ito up to 8 conditions, "Paired" beyond
-check("condition_colors(): distinct colors, Okabe-Ito up to 8 (no yellow up to 6), Paired up to 12, interpolated beyond",
-      identical(condition_colors(2), c("#E69F00", "#56B4E9")) && !("#F0E442" %in% condition_colors(6)) &&
-        length(unique(condition_colors(8))) == 8 && identical(condition_colors(10), RColorBrewer::brewer.pal(10, "Paired")) &&
+## 10. condition_colors(): Paul Tol "bright" up to 7 conditions, "Paired" beyond
+check("condition_colors(): distinct colors, Tol bright up to 7 (blue, red, green, yellow for 4), Paired up to 12, interpolated beyond",
+      identical(condition_colors(4), c("#4477AA", "#EE6677", "#228833", "#CCBB44")) && length(unique(condition_colors(7))) == 7 &&
+        identical(condition_colors(8), RColorBrewer::brewer.pal(8, "Paired")) && identical(condition_colors(10), RColorBrewer::brewer.pal(10, "Paired")) &&
         length(unique(condition_colors(20))) == 20)
 
 ## 11. Text measures: widths measured on the PNG device, sizes fitted to them

@@ -243,7 +243,7 @@ if(coloring_by_group && file.exists(params$design_exp)){
 
   ######################################################################
   
-  # Colours of the conditions, shared with the DA report (condition_colors in the library: Okabe-Ito up to 8 conditions)
+  # Colours of the conditions, shared with the DA report (condition_colors in the library: Paul Tol "bright" up to 7 conditions)
   group_colors <- condition_colors(length(group_names))
   
   ######################################################################
