@@ -25,6 +25,9 @@ if (.Platform$OS.type == "windows") {
   library(showtext)
   font_add(family = "Arial", regular = "C:/Windows/Fonts/arial.ttf")
   showtext_auto()
+  # showtext draws the texts at its own resolution (96 dpi by default): the figures are designed at 72 pixels per inch (1 pt = 1 px,
+  # see plot_figure_as_html in the library), otherwise their texts are a third larger than planned and the long ones are cut
+  showtext_opts(dpi = 72)
 }
 
 library(stringr)
