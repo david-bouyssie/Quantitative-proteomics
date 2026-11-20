@@ -141,7 +141,7 @@ check("plot_sample_legend(): fewer samples than columns, one row",
       nrow(plot_sample_legend(c("A", "B", "C"), c("red", "green", "blue"))$plot$data) == 3 &&
         max(plot_sample_legend(c("A", "B", "C"), c("red", "green", "blue"))$plot$data$row) == 0)
 check("plot_sample_legend(): rendered as a PNG figure",
-      grepl("^<div class='figure-png'><img src='data:image/png;base64,", plot_figure_as_html(legend_panel$plot, "Samples_legend", 1200, legend_panel$height)))
+      grepl("^<div class='figure-png'><img width='1200' src='data:image/png;base64,", plot_figure_as_html(legend_panel$plot, "Samples_legend", 1200, legend_panel$height)))
 
 ## 8. hclust_segments() and plot_clustered_heatmap()
 hc <- hclust(dist(c(1, 2, 10, 11, 30)))

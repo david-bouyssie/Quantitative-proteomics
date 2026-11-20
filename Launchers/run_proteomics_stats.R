@@ -25,9 +25,9 @@ if (.Platform$OS.type == "windows") {
   library(showtext)
   font_add(family = "Arial", regular = "C:/Windows/Fonts/arial.ttf")
   showtext_auto()
-  # showtext draws the texts at its own resolution (96 dpi by default): the figures are designed at 72 pixels per inch (1 pt = 1 px,
-  # see plot_figure_as_html in the library), otherwise their texts are a third larger than planned and the long ones are cut
-  showtext_opts(dpi = 72)
+  # showtext draws the texts at its own resolution: the one of the PNG figures (figure_png_res in the library, 96 pixels per inch).
+  # open_figure_png (library) also sets it when a figure is drawn, so that the texts keep their designed size if one of them changes.
+  showtext_opts(dpi = 96)
 }
 
 library(stringr)

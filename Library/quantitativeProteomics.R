@@ -533,12 +533,27 @@ impute_using_noise_model <- function(df, groups, noise_model, rows = NULL, seed 
 # Figures #
 ###########
 
+# Resolution of the PNG figures (pixels per inch).
+# The figures are laid out at 72 pixels per inch  (width and height of plot_figure_as_html, 1 pt = 1 layout pixel).
+# Their bitmaps are drawn at this resolution (96 / 72 = 4/3 more pixels each way, the same layout and text sizes) and displayed at the layout size,
+# so that their texts stay sharp when the browser enlarges them (screens with a high pixel density, zoom).
+figure_png_res <- 96
+
+# Opens the cairo PNG device of the figures: layout size width x height (72 pixels per inch), bitmap at figure_png_res.
+# showtext (loaded by the launchers on Windows) draws the texts at its own resolution: set to the one of the device,
+# otherwise the texts are drawn larger or smaller than designed.
+open_figure_png <- function(file, width, height){
+  scale <- figure_png_res / 72
+  grDevices::png(filename = file, width = round(width * scale), height = round(height * scale), res = figure_png_res, type = "cairo")
+  if ("showtext" %in% loadedNamespaces()) showtext::showtext_opts(dpi = figure_png_res)
+}
+
 # Returns a figure as HTML, with a "Save figure" link: an embedded PNG image, or an inline SVG image if svg = TRUE.
 # The link calls the savePngFigure / saveSvgFigure JavaScript functions defined in the reports (QC.Rmd, DA.rmd), and the
 # figure-png / figure-svg classes are styled by the reports' CSS (shrunk to the column width if wider, never enlarged).
-# width and height are in pixels for both formats: the SVG is drawn at width/72 x height/72 inches, 72 pixels per inch being
-# the resolution of the PNG device, so that both formats have the same layout (text sizes, margins), and its size is then
-# declared in pixels, so that it is displayed (and saved) at the same size as the PNG.
+# width and height are the layout size in pixels for both formats, at 72 pixels per inch (1 pt = 1 px): the SVG is drawn at
+# width/72 x height/72 inches and its size is declared in pixels, and the PNG bitmap is drawn at figure_png_res (more pixels, the same layout)
+# and displayed at width pixels, so that both formats are displayed at the same size with the same layout.
 # plot: a ggplot (or GGally ggmatrix) object, or a grid object (grob, gtable, e.g. gridExtra::arrangeGrob(p1, p2, ncol = 2)).
 plot_figure_as_html <- function(plot, name, width = 600, height = 600, svg = FALSE){
   # The plot is evaluated before the device is opened: building grobs (e.g. arrangeGrob of ggplots) can open a page on the
@@ -567,12 +582,13 @@ plot_figure_as_html <- function(plot, name, width = 600, height = 600, svg = FAL
   # PNG written in a temporary file, then embedded in the HTML as base64
   png_file <- tempfile(fileext = ".png")
   on.exit(unlink(png_file), add = TRUE)
-  png(filename = png_file, width = width, height = height, type = "cairo")
+  open_figure_png(png_file, width, height)
   draw()
   invisible(dev.off())
   png_base64 <- base64enc::base64encode(png_file)
-  paste0("<div class='figure-png'><img src='data:image/png;base64,", png_base64, "' ><a href='javascript:void(0);' onclick=\"javascript:savePngFigure(this, '",
-         name, ".png');\" >Save figure</a></div>")
+  # Displayed at the layout width (the bitmap has more pixels), shrunk by the CSS if wider than the column
+  paste0("<div class='figure-png'><img width='", width, "' src='data:image/png;base64,", png_base64,
+         "' ><a href='javascript:void(0);' onclick=\"javascript:savePngFigure(this, '", name, ".png');\" >Save figure</a></div>")
 }
 
 #################
@@ -588,7 +604,8 @@ text_width_px <- function(texts, size_pt, bold = FALSE, plotmath = FALSE){
   if (length(texts) == 0) return(numeric(0))
   png_file <- tempfile(fileext = ".png")
   current_device <- grDevices::dev.cur()
-  grDevices::png(png_file, width = 100, height = 100, type = "cairo")
+  # Same device as the figures (resolution, showtext): the widths in inches x 72 are in layout pixels
+  open_figure_png(png_file, 100, 100)
   on.exit({
     grDevices::dev.off()
     if (current_device > 1) grDevices::dev.set(current_device)
@@ -602,10 +619,17 @@ text_width_px <- function(texts, size_pt, bold = FALSE, plotmath = FALSE){
 }
 
 # Largest text size (pt), at most max_pt, for which the widest of the texts fits in width_px (measured, see text_width_px)
+# The widths are not exactly proportional to the size (glyphs rounded to pixels): the first estimate is measured again and reduced until the texts fit.
 fit_text_size <- function(texts, width_px, max_pt, min_pt = 6){
   widest_at_10 <- max(text_width_px(texts, 10))
   if (!is.finite(widest_at_10) || widest_at_10 <= 0) return(max_pt)
-  max(min_pt, min(max_pt, 10 * width_px / widest_at_10))
+  size <- max(min_pt, min(max_pt, 10 * width_px / widest_at_10))
+  for (i in 1:5) {
+    widest <- max(text_width_px(texts, size))
+    if (widest <= width_px || size <= min_pt) break
+    size <- max(min_pt, size * width_px / widest * 0.98)
+  }
+  size
 }
 
 # Size (pt) of the sample names on the x axis of a plot with one bar or box per sample (vertical names):
