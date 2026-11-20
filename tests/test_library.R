@@ -179,4 +179,21 @@ check("arrow_label(): valid plotmath expressions, also with quotes and backslash
                  function(l) !inherits(try(parse(text = l), silent = TRUE), "try-error"))) &&
         grepl("%up%", arrow_label("up", "A")) && grepl("%->%", arrow_label("right", "A", arrow_after = TRUE)))
 
+## 10b. display_sample_names(): names of the samples in the figures (QC and DA)
+check("display_sample_names(): names kept up to 15 characters, else <Condition>_<index> (numbered within the condition), or S<index>",
+      identical(display_sample_names(c("inj1_A", "inj2_A")), c("inj1_A", "inj2_A")) &&
+        identical(display_sample_names(c("OAEMB261105_PA_04_C1", "OAEMB261105_PA_08_C2", "OAEMB261105_PA_10_C1"), c("C1", "C2", "C1")), c("C1_1", "C2_1", "C1_2")) &&
+        identical(display_sample_names(c("a_very_long_sample_name", "b")), c("S1", "S2")))
+
+## 10. exclude_samples(): samples removed from the design and the table (all their columns), checks after the filtering
+ex <- exclude_samples(data, design, c("10amol_1", "Intensity_50amol_3"), comparisons = "50amol/10amol")
+check("exclude_samples(): design rows and all the columns of the samples removed, the others kept",
+      nrow(ex$expDesign) == nrow(design) - 2 && !any(c("Intensity_10amol_1", "Identification_type_10amol_1", "Intensity_50amol_3", "Identification_type_50amol_3") %in% names(ex$data)) &&
+        ncol(ex$data) == ncol(data) - 4 && "Intensity_10amol_2" %in% names(ex$data) &&
+        is.na(error_message(validate_inputs(ex$data, ex$expDesign, comparisons = "50amol/10amol"))))
+check("exclude_samples(): nothing to exclude leaves the inputs unchanged", identical(exclude_samples(data, design, character(0)), list(data = data, expDesign = design)))
+check("exclude_samples(): unknown sample stops", grepl("not found in the experimental design: 10amol_9", error_message(exclude_samples(data, design, "10amol_9"))))
+check("exclude_samples(): compared condition left with fewer than 2 replicates stops",
+      grepl("fewer than 2 replicates: 10amol \\(1\\)", error_message(exclude_samples(data, design, paste0("10amol_", 1:3), comparisons = "50amol/10amol"))))
+
 finish("Library tests")

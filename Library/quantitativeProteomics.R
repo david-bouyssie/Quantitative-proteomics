@@ -112,6 +112,66 @@ validate_inputs <- function(data, expDesign, comparisons = NULL, derived_suffixe
   invisible(TRUE)
 }
 
+# This function returns the names of the samples shown in the figures: the given names if none is longer than max_length characters,
+# otherwise "<Condition>_<index>" (samples numbered within their condition, in the given order), or "S<index>" without conditions
+display_sample_names <- function(names, conditions = NULL, max_length = 15){
+  names <- as.character(names)
+  if (length(names) == 0 || max(nchar(names)) <= max_length) return(names)
+  if (is.null(conditions)) return(paste0("S", seq_along(names)))
+  conditions <- as.character(conditions)
+  paste0(conditions, "_", ave(seq_along(conditions), conditions, FUN = seq_along))
+}
+
+# This function removes samples from the analysis: their rows of the experimental design and all their columns of the quantification
+# table ("<prefix><sample name>" for every prefix that exists for all the samples of the design, e.g. Intensity_ and Identification_type_).
+# It stops if a name is not in the design, or if a compared condition is left with fewer than 2 replicates.
+exclude_samples <- function(data, expDesign, excluded, comparisons = NULL){
+
+  # Inputs :
+  # data : quantification table
+  # expDesign : experimental design (columns File, repBio, Condition), File being "Intensity_<sample name>"
+  # excluded : sample names, with or without the "Intensity_" prefix
+  # comparisons : optional vector of comparisons "A/B", whose conditions must keep at least 2 replicates
+  # Output :
+  # list(data, expDesign) without the excluded samples
+
+  excluded <- unique(trimws(as.character(excluded)))
+  excluded <- excluded[!is.na(excluded) & excluded != ""]
+  if (length(excluded) == 0) return(list(data = data, expDesign = expDesign))
+
+  files <- as.character(expDesign$File)
+  names <- sub("^Intensity_", "", files)
+  excluded_names <- sub("^Intensity_", "", excluded)
+  unknown <- excluded[!excluded_names %in% names]
+  if (length(unknown) > 0) {
+    stop("Parameter Excluded.samples: sample(s) not found in the experimental design: ", paste(unknown, collapse = ", "),
+         " (existing samples: ", paste(names, collapse = ", "), ").", call. = FALSE)
+  }
+
+  # Per-sample prefixes: the ones that exist for every sample of the design (found from the columns of the first sample)
+  first_cols <- colnames(data)[endsWith(colnames(data), names[1])]
+  prefixes <- substr(first_cols, 1, nchar(first_cols) - nchar(names[1]))
+  prefixes <- prefixes[sapply(prefixes, function(p) all(paste0(p, names) %in% colnames(data)))]
+  drop_cols <- intersect(c(outer(prefixes, excluded_names, paste0)), colnames(data))
+
+  kept_design <- expDesign[!names %in% excluded_names, , drop = FALSE]
+  rownames(kept_design) <- NULL
+
+  # Compared conditions must keep at least 2 replicates (needed to estimate the variability)
+  if (length(comparisons) > 0) {
+    compared <- unique(unlist(strsplit(comparisons, "/")))
+    compared <- compared[compared %in% expDesign$Condition]
+    replicates <- sapply(compared, function(cond) length(unique(kept_design$repBio[kept_design$Condition == cond])))
+    too_few <- compared[replicates < 2]
+    if (length(too_few) > 0) {
+      stop("Parameter Excluded.samples: compared condition(s) left with fewer than 2 replicates: ",
+           paste0(too_few, " (", replicates[replicates < 2], ")", collapse = ", "), ".", call. = FALSE)
+    }
+  }
+
+  list(data = data[, setdiff(colnames(data), drop_cols), drop = FALSE], expDesign = kept_design)
+}
+
 #################
 # Normalization #
 #################

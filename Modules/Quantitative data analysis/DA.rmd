@@ -175,6 +175,11 @@ if (is.na(Vol_colors) || !Vol_colors %in% c("significance", "intensity", "monoch
 Normalization_list <- trimws(strsplit(as.character(parameters["Proteins.for.normalization",]),";")[[1]])
 Normalization_list <- Normalization_list[!is.na(Normalization_list) & Normalization_list != ""]
 
+# Samples excluded from the analysis: names separated by ";", as in the File column of the experimental design, with or without
+# the "Intensity_" prefix (absent or empty: all the samples are used)
+Excluded.samples <- if ("Excluded.samples" %in% rownames(parameters)) trimws(strsplit(as.character(parameters["Excluded.samples",]), ";")[[1]]) else character(0)
+Excluded.samples <- Excluded.samples[!is.na(Excluded.samples) & Excluded.samples != ""]
+
 # Specified proteins for labeling on volcano plot
 Vol_labels <- strsplit(as.character(parameters["Volcano.manual.accession",]),";")[[1]]
 
@@ -334,6 +339,14 @@ Test.adjust.procedure <- as.character(parameters["Test.adjust.procedure",])
 
 ## Checking that the experimental design, the quantification table and the comparisons are consistent ##
 ## (per-sample columns are then selected by their exact names, see group_cols()) ##
+
+# Excluded samples: removed from the experimental design and the quantification table before any check or processing
+# (so the replicate counts and the output table are those of the kept samples)
+kept <- exclude_samples(data, expDesign, Excluded.samples, comparisons = comparisons_to_display)
+# Positions of the removed columns in the quantification file, also removed from the output table (save_data, which reads the file again)
+excluded_column_positions <- which(!colnames(data) %in% colnames(kept$data))
+data <- kept$data
+expDesign <- kept$expDesign
 
 validate_inputs(data, expDesign, comparisons = comparisons_to_display, required_columns = c("Accession", "Gene_name", "Specific_peptides"))
 
@@ -1262,6 +1275,8 @@ pca_samples <- data.frame(sample = pca_names, row.names = NULL)
 if (!anyNA(pca_conditions)) {
   pca_samples$condition <- factor(pca_conditions, levels = group_ids)
   pca_samples$replicate <- factor(substr(pca_names, 1, nchar(pca_names) - nchar(pca_conditions) - 1))
+  # Names shown as in the QC report: "<repBio>_<Condition>", or "<Condition>_<index>" if a name is longer than 15 characters
+  pca_samples$sample <- display_sample_names(pca_names, pca_conditions)
 }
 
 pca_da <- compute_sample_pca(imputed_abundance_log[pca_columns])
@@ -2631,7 +2646,12 @@ if (source_ext %in% c("txt", "tsv")) {
 } else {
   
   stop("Unsupported file type: ", source_file)
-  
+
+}
+
+# Columns of the excluded samples (Excluded.samples) not written to the output table (same file, so same column positions)
+if (length(excluded_column_positions) > 0) {
+  df <- df[, -excluded_column_positions, drop = FALSE]
 }
 
 if (!"Id" %in% colnames(df)) {

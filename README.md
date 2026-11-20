@@ -106,6 +106,7 @@ Here you can find a description of all parameters and possible values:
 | --------- | --------- | --------- |
 | Normalisation | Should intensities be normalized or not ? | T / F |
 | Proteins.for.normalization | Proteins on which the normalization factors are computed, given by accession or Id and separated by ";" (e.g. a background proteome or housekeeping proteins). Entries not found are listed in the report and ignored; the report stops if none is found. Empty: the proteins kept for the analysis are used | Example : 2A5D_YEAST;2AAA_YEAST;1556122 |
+| Excluded.samples | Samples removed from the analysis, separated by ";", named as in the File column of the experimental design (with or without the "Intensity_" prefix). Their rows of the experimental design and all their columns of the table are removed before any check or processing, so they are absent from the report and the output table. The report stops if a name is not in the experimental design or if a compared condition is left with fewer than 2 replicates. Optional, empty: all the samples are used | Example : 10amol_1;Intensity_50amol_3 |
 | Filter.threshold.ms | Minimum number of file identified by MS/MS to keep the protein for the analysis | ℕ |
 | Filter.threshold.obs | Minimum percentage of observed intensities in one condition at least to keep the protein for the analysis | {0,100} |
 | Imputation.MNAR.model | Which model should be used to impute MNAR ? | percentile / gaussian |

@@ -262,31 +262,19 @@ if(coloring_by_group && file.exists(params$design_exp)){
 ##Parsing from data file the names of the samples and limits the length of sample names. If sample names > 15 characters, numbers will be used in## 
 ##the graphic keys##
 
-max_length_sample_name = nchar(sample_names_parsed[nchar(sample_names_parsed)==max(nchar(sample_names_parsed))][1])
-
-if (max_length_sample_name>15){
-  if(file.exists(params$design_exp)){
-    # "<Condition>_<index>": the samples (one per repBio of each condition, see sample_conditions) are numbered within their
-    # condition, in the order of the columns, so that the names are unique whatever the order of the design rows
-    sample_number <- paste0(sample_conditions, "_", ave(seq_along(sample_conditions), sample_conditions, FUN = seq_along))
-  }else{
-    # Without experimental design, the samples are numbered: S1, S2...
-    sample_number = paste0("S", seq_along(sample_names))
-  }
-  setnames(data, old=as.character(sample_names),new=sample_number)
-  sample_names = sample_number
-}else{
-  sample_number = sample_names_parsed
-  setnames(data, old=as.character(sample_names),new=sample_names_parsed)
-  sample_names = sample_names_parsed
-}
+# Names longer than 15 characters: "<Condition>_<index>" (the samples, one per repBio of each condition, see sample_conditions, numbered
+# within their condition in the order of the columns), or S1, S2... without experimental design (display_sample_names, in the library,
+# also used by the DA report)
+sample_number <- display_sample_names(sample_names_parsed, if (file.exists(params$design_exp)) sample_conditions else NULL)
+setnames(data, old=as.character(sample_names),new=sample_number)
+sample_names = sample_number
 namesDF = data.frame(sample_names_parsed,sample_number)
 colnames(namesDF)=c("Sample","Id")
 
 # Table of the samples: name, name in the figures (when shortened), and with an experimental design, the condition, the replicate (repBio)
 # and the intensity column(s) of the design (the files of a replicate are combined into one sample)
 samples_table <- data.frame(Sample = sample_names_parsed, check.names = FALSE)
-if (max_length_sample_name > 15) samples_table[["Name in the figures"]] <- sample_number
+if (!identical(sample_number, sample_names_parsed)) samples_table[["Name in the figures"]] <- sample_number
 if (length(sample_conditions) == length(sample_names_parsed)) {
   samples_table$Condition <- sample_conditions
   samples_table$Replicate <- sample_replicates
