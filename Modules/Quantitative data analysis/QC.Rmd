@@ -243,12 +243,8 @@ if(coloring_by_group && file.exists(params$design_exp)){
 
   ######################################################################
   
-  l <- length(group_names)
-  if(l <= 12){
-    group_colors <- brewer.pal(l, "Paired")
-  }else{
-    group_colors <- colorRampPalette(brewer.pal(12, "Paired"))(l)
-  }
+  # Colours of the conditions, shared with the DA report (condition_colors in the library: Okabe-Ito up to 8 conditions)
+  group_colors <- condition_colors(length(group_names))
   
   ######################################################################
   
@@ -358,13 +354,15 @@ density <- ggplot() +
   xlab("log(intensity)")+
   #viridis::scale_color_viridis(alpha=0.6,begin=0.1,end=0.6,discrete = T,breaks=sample_names)+
   geom_vline(aes(xintercept=median(na.omit(logIntensitiesDF$log_intensity))), linetype="dashed", size=1)+
-  geom_text(mapping=aes(x=median(na.omit(logIntensitiesDF$log_intensity)), y=0, label="median"), size=6, angle=90, vjust=-0.4, hjust=0) +
+  geom_text(mapping=aes(x=median(na.omit(logIntensitiesDF$log_intensity)), y=0, label="median"), size=5, angle=90, vjust=-0.4, hjust=0) +
   {if(color_group) scale_color_manual("Condition", values = setNames(group_colors, group_names))} +
-  theme(plot.title = element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text=element_text(size=18),
-        legend.text=element_text(size=16),
-        legend.title=element_text(size=18)) +
+  # Legend of the conditions wrapping on several rows if needed (widths measured, see condition_legend_guide in the library)
+  {if (color_group) condition_legend_guide(group_names, 600)} +
+  theme(plot.title = element_text(size=18),
+        axis.title=element_text(size=16),
+        axis.text=element_text(size=14),
+        legend.text=element_text(size=13),
+        legend.title=element_text(size=14)) +
   {if (color_group) theme(legend.position = "bottom")} +
   {if (shared_legend) theme(legend.position = "none")}
 
@@ -394,13 +392,15 @@ violinPlot <- ggplot() +
     xlab("")+
     ylab("log(intensity)")+
     {if(color_group) scale_color_manual("Condition", values = setNames(group_colors, group_names))} +
+    {if (color_group) condition_legend_guide(group_names, 600)} +
     theme(legend.position = if (color_group) "bottom" else "none",
-        plot.title=element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names))),
-        axis.text.y = element_text(size=18),
-        legend.title=element_text(size=18),
-        legend.text=element_text(size=16))
+        plot.title=element_text(size=18),
+        axis.title=element_text(size=16),
+        # Sample names sized to the room per sample and to their length (measured, see sample_axis_text_size in the library)
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names), labels = sample_names)),
+        axis.text.y = element_text(size=14),
+        legend.title=element_text(size=14),
+        legend.text=element_text(size=13))
 
 ##Plotting and printing 'Intensity distribution in each sample' violin plot into html (.svg or .png dependent on set parameters) with download link##
 
@@ -448,13 +448,14 @@ M_intensity_comparison <- ggplot(data = TotalIntensitiesDF) +
   ylab("Total intensity")+
   xlab("")+
   {if(color_group) scale_fill_manual("Condition", values = setNames(group_colors, group_names))} +
+  {if (color_group) condition_legend_guide(group_names, total_intensity_width, "fill")} +
   theme(legend.position = if (color_group) "bottom" else "none",
-        legend.title=element_text(size=16),
-        legend.text=element_text(size=16),
-        plot.title = element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text=element_text(size=18),
-        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names), total_intensity_width - 80)))
+        legend.title=element_text(size=14),
+        legend.text=element_text(size=13),
+        plot.title = element_text(size=18),
+        axis.title=element_text(size=16),
+        axis.text=element_text(size=14),
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names), total_intensity_width - 80, sample_names)))
 
 ##Plotting and printing 'Total intensity across runs' bar graph into html (.svg or .png dependent on set parameters) with download link##
 
@@ -476,22 +477,27 @@ figure_note("Total intensity of each sample (sum of all its observed intensities
 ##If the number of samples < 16 AND the data for each sample is < 5000 rows, a scatterplot of pairwise comparisons is framed##
 ##Else, a heatplot of correlated coefficients is framed##
 
-# Full-width row: square figure growing with the number of samples (shrunk to the page width if wider)
+# Full-width row: square figure growing with the number of samples, and with the width of their names for the heatmap (measured, see
+# text_width_px in the library), shrunk to the page width if wider
 use_ggpairs <- length(sample_names)<16 & nrow(data)<5000
-correlation_size <- if (use_ggpairs) max(600, 60 * length(sample_names)) else max(700, 25 * length(sample_names) + 250)
+names_width_at_10 <- max(text_width_px(sample_names, 10))
+legend_width <- text_width_px("Correlation coefficient", 14) + 30
+correlation_size <- if (use_ggpairs) max(600, 60 * length(sample_names)) else
+  max(700, 25 * length(sample_names) + 1.4 * names_width_at_10 + legend_width + 100)
 
 if (use_ggpairs){
   correlogram = ggpairs(log_abundance,title="Sample correlation",upper=list(continuous=wrap("cor",size=4)),lower=list(continuous=wrap("points",size=0.15))) +
     theme(axis.text = element_text(size = 10),
         strip.text = element_text(size = 10),
-        plot.title = element_text(size = 22))
+        plot.title = element_text(size = 18))
 }else{
   cormat <- round(cor(log_abundance,use = "complete.obs"),2)
   #cormat = melt(cormat)
   cormat <- reshape2::melt(cormat)
   colnames(cormat) = c("Samples1","Samples2","Coefficient")
-  # Sample label size from the room per sample (the labels and the legend take about 250 px of the figure), so that they do not overlap
-  label_size <- sample_axis_text_size(length(sample_names), correlation_size - 250)
+  # Sample label size: the names on the left (their width grows with the size) and the legend take part of the figure width, and the
+  # columns need 1.25 times the size each: size <= (width - legend - margins) / (1.25 x samples + name width per pt), at most 14 pt
+  label_size <- max(6, min(14, (correlation_size - legend_width - 60) / (1.25 * length(sample_names) + names_width_at_10 / 10)))
   correlogram = ggplot(data = cormat, aes(x=Samples1, y=Samples2, fill=Coefficient)) +
     geom_tile() +
     # Sequential scale over the observed coefficients (white = lowest, red = 1), so that the outlier samples stand out
@@ -500,12 +506,12 @@ if (use_ggpairs){
     ylab("")+
     ggtitle("Sample correlation") +
     labs(fill = "Correlation coefficient") +
-    theme(plot.title=element_text(size=22),
-        axis.title=element_text(size=18),
+    theme(plot.title=element_text(size=18),
+        axis.title=element_text(size=16),
         axis.text.y=element_text(size=label_size),
         axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=label_size),
-        legend.title=element_text(size=16),
-        legend.text = element_text(size=16))
+        legend.title=element_text(size=14),
+        legend.text = element_text(size=13))
 }
 
 ##Plotting and printing the 'sample correlation' plot into html (.svg or .png dependent on set parameters) with download link##
@@ -568,8 +574,20 @@ if(ncol(identification_type)>0){
   # Width growing with the number of samples (25 px per bar), so that the sample names and the counts keep a readable size
   n_id_samples <- nrow(id_counts)
   id_width <- max(600, 25 * n_id_samples + 100)
-  id_label_size <- sample_axis_text_size(n_id_samples, id_width - 80)
-  id_count_size <- if (n_id_samples > 20) 4.5 else 5
+  id_height <- 650
+  id_label_size <- sample_axis_text_size(n_id_samples, id_width - 80, as.character(id_counts$sample))
+  # Counts (vertical) as thick as the bars allow, at most 12 pt (geom sizes are in mm: pt / .pt)
+  id_count_pt <- max(6, min(12, (id_width - 100) / n_id_samples * 0.9 / 1.3))
+  id_count_size <- id_count_pt / ggplot2::.pt
+  # Room above the bars for the totals, written vertically: their measured width, relative to the height of the panel (figure height
+  # minus the title, the sample names and the legends, measured or estimated)
+  id_legend_rows <- if (id_by_condition) 2 + ceiling(length(group_names) / max(1, floor((id_width - 40) / (max(text_width_px(group_names, 13)) + 35)))) else 2
+  id_panel_px <- id_height - 60 - max(text_width_px(as.character(id_counts$sample), id_label_size)) - 30 * id_legend_rows
+  id_total_px <- max(text_width_px(id_counts$total, id_count_pt)) + 10
+  id_top_expansion <- min(0.6, id_total_px / max(100, id_panel_px - id_total_px))
+  # Legend of the two types (long texts), wrapping as the legend of the conditions
+  id_types <- rev(names(id_type_colors))
+  id_type_ncol <- max(1, min(2, floor((id_width - 40) / (max(text_width_px(id_types, 13)) + 35))))
 
   identification_type_plot = ggplot(id_long, aes(x = sample, y = count)) +
     {if (id_by_condition) geom_col(aes(fill = condition, alpha = type, colour = condition), width = 0.9, linewidth = 0.3)
@@ -577,9 +595,10 @@ if(ncol(identification_type)>0){
     {if (id_by_condition) list(scale_fill_manual("Condition", values = setNames(group_colors, group_names)),
                                scale_colour_manual(values = setNames(group_colors, group_names), guide = "none"),
                                scale_alpha_manual("", values = c("Identified (by MS/MS)" = 1, "Quantified without MS/MS identification" = 0.3),
-                                                  breaks = rev(names(id_type_colors)),
-                                                  guide = guide_legend(override.aes = list(fill = "grey30", colour = "grey30"))))
-     else scale_fill_manual("", values = id_type_colors, breaks = rev(names(id_type_colors)))} +
+                                                  breaks = id_types,
+                                                  guide = guide_legend(ncol = id_type_ncol, override.aes = list(fill = "grey30", colour = "grey30"))),
+                               condition_legend_guide(group_names, id_width, "fill"))
+     else scale_fill_manual("", values = id_type_colors, breaks = id_types, guide = guide_legend(ncol = id_type_ncol))} +
     # Number identified by MS/MS, inside the MS/MS segment, and number quantified, above the bar (on a white background, readable on
     # any bar colour)
     geom_label(data = id_counts, aes(x = sample, y = msms, label = msms), angle = 90, hjust = 1.05, colour = "grey10", fill = "white",
@@ -588,20 +607,20 @@ if(ncol(identification_type)>0){
               inherit.aes = FALSE) +
     {if (id_has_design && !id_by_condition) geom_point(data = id_counts, aes(x = sample, y = -0.03 * id_max, colour = condition), shape = 15, size = 3, inherit.aes = FALSE)} +
     {if (id_has_design && !id_by_condition) labs(colour = "Condition")} +
-    scale_y_continuous(expand = expansion(mult = c(0.01, 0.12))) +
+    scale_y_continuous(expand = expansion(mult = c(0.01, id_top_expansion))) +
     xlab("") +
     ylab("Number of proteins") +
     ggtitle("Identified and quantified proteins per sample") +
-    theme(plot.title = element_text(size=22),
-          axis.title=element_text(size=18),
+    theme(plot.title = element_text(size=fit_text_size("Identified and quantified proteins per sample", id_width - 60, 18)),
+          axis.title=element_text(size=16),
           axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=id_label_size),
-          axis.text.y=element_text(size=16),
+          axis.text.y=element_text(size=14),
           legend.position="bottom",
           legend.box="vertical",
-          legend.title=element_text(size=16),
-          legend.text=element_text(size=16))
+          legend.title=element_text(size=14),
+          legend.text=element_text(size=13))
 
-  cat(htmltools::HTML(plot_figure_as_html(identification_type_plot, "Identification_types_distribution_across_samples", id_width, 650, svg = format_svg)))
+  cat(htmltools::HTML(plot_figure_as_html(identification_type_plot, "Identification_types_distribution_across_samples", id_width, id_height, svg = format_svg)))
   cat(text_spec(paste0("\n Number of proteins quantified in each sample (with an intensity: bar height, number above the bar), and among them the proteins ",
                        "identified by MS/MS in that sample (", if (id_by_condition) "solid part" else "dark blue", ", number inside the bar). The others (",
                        if (id_by_condition) "light part" else "light blue", ") are quantified without MS/MS identification ",
@@ -679,20 +698,23 @@ if(Normalization){
 
   ratioPlot <- ggplot() +
     geom_boxplot(data = ratiosDF, mapping = aes(x=sample, y=log2(ratio), color=.data[[if (color_group) "condition" else "sample"]], group=sample), na.rm = T) +
-    ggtitle(paste0("Ratio distribution for each sample (to the reference sample ", reference_sample, ")"))+
+    # The reference sample in the subtitle (a long name would cut the title)
+    labs(title = "Ratio distribution for each sample", subtitle = paste0("Ratios to the reference sample ", reference_sample)) +
     ylab("log2(ratio)") +
     xlab("") +
     # Without colouring by condition, the colours of the samples in the other plots (the reference sample has no ratio: ggplot's default
     # colours of the remaining samples would be shifted)
     {if(color_group) scale_color_manual("Condition", values = setNames(group_colors, group_names))
      else scale_color_manual(values = setNames(sample_palette, sample_names))} +
+    {if (color_group) condition_legend_guide(group_names, ratio_width)} +
     theme(legend.position = if (color_group) "bottom" else "none",
-        legend.title=element_text(size=16),
-        legend.text=element_text(size=16),
-        plot.title=element_text(size=20),
-        axis.title=element_text(size=18),
-        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(n_ratio_samples, ratio_width - 80)),
-        axis.text.y=element_text(size=18))
+        legend.title=element_text(size=14),
+        legend.text=element_text(size=13),
+        plot.title=element_text(size=18),
+        plot.subtitle=element_text(size=14),
+        axis.title=element_text(size=16),
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(n_ratio_samples, ratio_width - 80, levels(ratiosDF$sample))),
+        axis.text.y=element_text(size=14))
 
   ##Plotting and printing 'Ratio distribution for each sample' ratio plot (.svg or .png dependent on set parameters) with download link##
 
@@ -740,11 +762,13 @@ if (Normalization){
     #geom_vline(aes(xintercept=median), linetype="dashed", size=1)+
     #geom_text(mapping=aes(x=median, y=0, label="median"), size=4, angle=90, vjust=-0.4, hjust=0) +
     {if(color_group) scale_color_manual("Condition", values = setNames(group_colors, group_names))} +
-    theme(plot.title = element_text(size=20),
-          axis.title=element_text(size=18),
-          axis.text=element_text(size=18),
-          legend.title = element_text(size=16),
-          legend.text=element_text(size=16)) +
+    {if (color_group) condition_legend_guide(group_names, 600)} +
+    # Title size fitted to the figure width (measured, see fit_text_size in the library)
+    theme(plot.title = element_text(size=fit_text_size("Intensity distribution over all samples after normalization", 560, 18)),
+          axis.title=element_text(size=16),
+          axis.text=element_text(size=14),
+          legend.title = element_text(size=14),
+          legend.text=element_text(size=13)) +
     {if (color_group) theme(legend.position = "bottom")} +
     {if (shared_legend) theme(legend.position = "none")}
 
@@ -771,13 +795,14 @@ if (Normalization){
     ggtitle("Intensity distribution in each sample after normalization")+
     xlab("")+
     {if(color_group) scale_color_manual("Condition", values = setNames(group_colors, group_names))} +
-    theme(plot.title = element_text(size=20),
-          axis.title=element_text(size=18),
-          axis.text=element_text(size=18),
-          axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names))),
+    {if (color_group) condition_legend_guide(group_names, 600)} +
+    theme(plot.title = element_text(size=fit_text_size("Intensity distribution in each sample after normalization", 560, 18)),
+          axis.title=element_text(size=16),
+          axis.text=element_text(size=14),
+          axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names), labels = sample_names)),
           legend.position = if (color_group) "bottom" else "none",
-          legend.title=element_text(size=16),
-          legend.text=element_text(size=16))
+          legend.title=element_text(size=14),
+          legend.text=element_text(size=13))
   
   ##Plotting and printing 'Intensity distribution in each sample after normalization' box plot into html doc (.svg or .png dependent##
   ##on set parameters) with download link##
@@ -835,13 +860,15 @@ barPlot <-ggplot(data=na_by_sample) +
   ylab("Count")+
   xlab("")+
   {if(color_group) scale_fill_manual("Condition", values = setNames(group_colors, group_names))} +
+  {if (color_group) condition_legend_guide(group_names, 600, "fill")} +
   theme(legend.position = if (color_group) "bottom" else "none",
-        legend.title=element_text(size=16),
-        legend.text=element_text(size=16),
-        plot.title = element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text=element_text(size=18),
-        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names))))
+        legend.title=element_text(size=14),
+        legend.text=element_text(size=13),
+        # Title size fitted to the figure width, which also holds a second axis (measured, see fit_text_size in the library)
+        plot.title = element_text(size=fit_text_size("Missing values distribution across samples", 540, 18)),
+        axis.title=element_text(size=16),
+        axis.text=element_text(size=14),
+        axis.text.x=element_text(angle=90, hjust=1, vjust=0.5, size=sample_axis_text_size(length(sample_names), labels = sample_names)))
 
 ##Plotting and printing 'Missing values distribution across samples' bar graph into html (.svg or .png dependent on set parameters)##
 ##with download link##
@@ -867,9 +894,9 @@ barPlot <- ggplot() +
   ylab("NA count by proteins")+
   xlab("Number of NA values")+
   scale_y_continuous(name = expression("Number of proteins"), sec.axis = sec_axis(~ . * 1/nrow(data) * 100 , name = "Frequency (%)"))+
-  theme(plot.title = element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text=element_text(size=18))
+  theme(plot.title = element_text(size=fit_text_size("Missing values distribution across proteins", 540, 18)),
+        axis.title=element_text(size=16),
+        axis.text=element_text(size=14))
 
 ##Plotting and printing 'Missing values distribution across proteins' bar plot into html doc (.svg or .png dependent on set parameters)##
 ##with download link##
@@ -954,11 +981,11 @@ histogram <- ggplot() +
   scale_fill_manual(values=c("dodgerblue3", "darkorchid4"))+
   ggtitle("Log intensities distribution with imputed values") +
   xlab("log(intensity)")+
-  theme(plot.title = element_text(size=22),
-        axis.title=element_text(size=18),
-        axis.text=element_text(size=18),
-        legend.title = element_text(size=16),
-        legend.text = element_text(size=16))
+  theme(plot.title = element_text(size=18),
+        axis.title=element_text(size=16),
+        axis.text=element_text(size=14),
+        legend.title = element_text(size=14),
+        legend.text = element_text(size=13))
 
 ##Plotting and printing 'Log intensities distribution with imputed values' histogram to html doc (.svg or .png dependent on set parameters)##
 ##with download link##
@@ -1051,12 +1078,12 @@ depth_plot <- ggplot(depth_df, aes(x = n_quantified, y = score)) +
   # Full-width row: PC1 and PC2 side by side
   facet_wrap(~component, ncol = 2, scales = "free_y") +
   labs(title = "Components vs proteome depth", x = "Number of quantified proteins (before imputation)", y = "Sample score", colour = "Condition") +
-  theme(plot.title = element_text(size = 22),
-        axis.title = element_text(size = 20),
-        axis.text = element_text(size = 18),
-        strip.text = element_text(size = 18),
-        legend.title = element_text(size = 18),
-        legend.text = element_text(size = 16))
+  theme(plot.title = element_text(size = 18),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        strip.text = element_text(size = 14),
+        legend.title = element_text(size = 14),
+        legend.text = element_text(size = 13))
 
 htmltools::HTML(plot_figure_as_html(depth_plot, "PCA_vs_proteome_depth", 1100, 550, svg = format_svg))
 cat(text_spec("\n Sample scores of the main PCA against the number of proteins quantified in each sample. A strong correlation (|r| close to 1) means that the component mostly reflects differences in proteome depth (and therefore imputed values) rather than biology.", italic = T, font_size = "12px"))
@@ -1083,10 +1110,10 @@ scree_plot <- ggplot(scree_df, aes(x = factor(component), y = variance)) +
   facet_wrap(~pca, ncol = 1) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.2))) +
   labs(title = "Variance explained", x = "Component", y = "% of variance") +
-  theme(plot.title = element_text(size = 22),
-        axis.title = element_text(size = 20),
-        axis.text = element_text(size = 18),
-        strip.text = element_text(size = 18))
+  theme(plot.title = element_text(size = 18),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        strip.text = element_text(size = 14))
 
 # Half-width column, next to the table of the loadings: 600 px, so that it is not shrunk
 cat(htmltools::HTML(plot_figure_as_html(scree_plot, "PCA_variance_explained", 600, 650, svg = format_svg)))
@@ -1146,7 +1173,7 @@ proteins_in_rows <- heatmap_proteins_in_rows(nrow(heatmap_values), n_heatmap_sam
 sample_axis_px <- min(2400, max(700, 25 * n_heatmap_samples + 300))
 if (proteins_in_rows) {
   heatmap_width <- sample_axis_px; heatmap_height <- 950
-  heatmap_label_size <- sample_axis_text_size(n_heatmap_samples, (heatmap_width - 150) * 8 / 9)
+  heatmap_label_size <- sample_axis_text_size(n_heatmap_samples, (heatmap_width - 150) * 8 / 9, sample_names)
 } else {
   heatmap_width <- 1300; heatmap_height <- sample_axis_px
   heatmap_label_size <- sample_axis_text_size(n_heatmap_samples, (heatmap_height - 100) * 7 / 8)
@@ -1161,13 +1188,15 @@ intensity_heatmap <- plot_clustered_heatmap(heatmap_values, blank = missing_befo
 # average of its protein. The proteins that change most stand out, the stable ones stay pale. Own clusterings, computed on these values,
 # and colors limited to +/- 2 (4-fold), so that a few extreme proteins do not flatten the scale.
 centered_values <- (heatmap_values - rowMeans(heatmap_values)) * log2(10)
-centered_heatmap <- plot_clustered_heatmap(centered_values, blank = missing_before_imputation, title = "Log2 fold change to the protein average (centered) - as the main PCA",
+centered_heatmap <- plot_clustered_heatmap(centered_values, blank = missing_before_imputation, title = "Centered log2 intensities",
+                                           subtitle = "Log2 fold change to the protein average - as the main PCA",
                                            fill_label = "log2 fold change", limits = c(-2, 2), label_size = heatmap_label_size, proteins_in_rows = proteins_in_rows)
 
 # Z-scores: each protein centered and scaled across the samples (the proteins with the same value in every sample have no z-score
 # and are left out). The heatmap has its own clusterings, computed on the z-scores, and its colors are centered on 0 and limited
 # to +/- 3, so that a few extreme values do not flatten the scale.
-zscore_heatmap <- plot_clustered_heatmap(t(scale(t(heatmap_values))), blank = missing_before_imputation, title = "Z-scored log10 intensities - as the scaled PCA (technical view)",
+zscore_heatmap <- plot_clustered_heatmap(t(scale(t(heatmap_values))), blank = missing_before_imputation, title = "Z-scored log10 intensities",
+                                         subtitle = "As the scaled PCA (technical view)",
                                          fill_label = "z-score", limits = c(-3, 3), label_size = heatmap_label_size, proteins_in_rows = proteins_in_rows)
 
 ## Heatmaps printed into the report (PNG or SVG, see plot_figure_as_html) ##

@@ -155,6 +155,24 @@ check("plot_clustered_heatmap(): rendered as a PNG figure (300 proteins, 8 sampl
 check("heatmap_proteins_in_rows(): proteins in rows with thousands of proteins and 40 samples, not with 500 proteins and 300 samples",
       heatmap_proteins_in_rows(2898, 40) && !heatmap_proteins_in_rows(500, 300))
 
+## 10. condition_colors(): Okabe-Ito up to 8 conditions, "Paired" beyond
+check("condition_colors(): distinct colors, Okabe-Ito up to 8 (no yellow up to 6), Paired up to 12, interpolated beyond",
+      identical(condition_colors(2), c("#E69F00", "#56B4E9")) && !("#F0E442" %in% condition_colors(6)) &&
+        length(unique(condition_colors(8))) == 8 && identical(condition_colors(10), RColorBrewer::brewer.pal(10, "Paired")) &&
+        length(unique(condition_colors(20))) == 20)
+
+## 11. Text measures: widths measured on the PNG device, sizes fitted to them
+w <- text_width_px(c("C1", "C2_SAX HP like_1"), 14)
+check("text_width_px(): longer texts wider, width proportional to the size, plotmath labels measured, device state restored",
+      w[2] > 3 * w[1] && abs(text_width_px("C2_SAX HP like_1", 28) / w[2] - 2) < 0.1 &&
+        text_width_px(arrow_label("up", "higher in A"), 14, plotmath = TRUE) > text_width_px("higher in A", 14) && grDevices::dev.cur() == 1)
+check("sample_axis_text_size(): at most 14 pt, smaller for many samples and for long names (at most 150 px long)",
+      sample_axis_text_size(10) == 14 && sample_axis_text_size(80) < 6 + 1e-9 + 520 / 80 / 1.25 &&
+        text_width_px(paste(rep("long name", 3), collapse = " "), sample_axis_text_size(10, labels = paste(rep("long name", 3), collapse = " "))) <= 151)
+check("condition_legend_guide(): a ggplot guides object (legend wrapping in the figure width)",
+      inherits(condition_legend_guide(c("C1_Kit HP", "C2_SAX HP like", "C3_SAX", "C4_NEAT"), 600), "Guides") ||
+        is.list(condition_legend_guide(c("C1_Kit HP", "C2_SAX HP like"), 600)))
+
 ## 9. arrow_label(): plotmath labels with an arrow, whatever the characters of the text
 check("arrow_label(): valid plotmath expressions, also with quotes and backslashes in the text",
       all(sapply(c(arrow_label("up", "higher in A"), arrow_label("right", 'higher in "B" \\ C', arrow_after = TRUE)),

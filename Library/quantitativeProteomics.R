@@ -575,11 +575,73 @@ plot_figure_as_html <- function(plot, name, width = 600, height = 600, svg = FAL
          name, ".png');\" >Save figure</a></div>")
 }
 
-# Size (pt) of the sample names on the x axis of a plot with one bar or box per sample, so that the (vertical) names do not overlap:
-# a name takes about 1.25 times its size in pixels (1 pt = 1 px at the 72 pixels per inch of plot_figure_as_html), and the axis of a
-# 600 px wide figure is about 520 px long. Between 6 and 18 pt (18 pt up to 23 samples).
-sample_axis_text_size <- function(n_samples, axis_px = 520){
-  max(6, min(18, axis_px / n_samples / 1.25))
+#################
+# Text measures #
+#################
+
+# Width in pixels of texts drawn at size_pt points, measured on the device that draws the PNG figures (cairo PNG, 72 pixels per inch,
+# see plot_figure_as_html), with the fonts of the machine running the report: the widths depend on the fonts installed, and cannot be
+# predicted from the number of characters. (SVG figures are drawn by the browser with its own fonts: an approximation for them.)
+# plotmath = TRUE: the texts are plotmath expressions (e.g. from arrow_label), measured as they are drawn with parse = TRUE.
+text_width_px <- function(texts, size_pt, bold = FALSE, plotmath = FALSE){
+  texts <- as.character(texts)
+  if (length(texts) == 0) return(numeric(0))
+  png_file <- tempfile(fileext = ".png")
+  current_device <- grDevices::dev.cur()
+  grDevices::png(png_file, width = 100, height = 100, type = "cairo")
+  on.exit({
+    grDevices::dev.off()
+    if (current_device > 1) grDevices::dev.set(current_device)
+    unlink(png_file)
+  }, add = TRUE)
+  gp <- grid::gpar(fontsize = size_pt, fontface = if (bold) "bold" else "plain")
+  sapply(texts, function(t) {
+    label <- if (plotmath) parse(text = t) else t
+    grid::convertWidth(grid::grobWidth(grid::textGrob(label, gp = gp)), "inches", valueOnly = TRUE) * 72
+  }, USE.NAMES = FALSE)
+}
+
+# Largest text size (pt), at most max_pt, for which the widest of the texts fits in width_px (measured, see text_width_px)
+fit_text_size <- function(texts, width_px, max_pt, min_pt = 6){
+  widest_at_10 <- max(text_width_px(texts, 10))
+  if (!is.finite(widest_at_10) || widest_at_10 <= 0) return(max_pt)
+  max(min_pt, min(max_pt, 10 * width_px / widest_at_10))
+}
+
+# Size (pt) of the sample names on the x axis of a plot with one bar or box per sample (vertical names):
+# - so that they do not overlap: a name takes about 1.25 times its size in pixels across (1 pt = 1 px at the 72 pixels per inch of
+#   plot_figure_as_html), and the axis of a 600 px wide figure is about 520 px long;
+# - and, when the names are given, so that the longest takes at most max_label_px of the figure height (measured with the fonts of
+#   the machine running the report).
+# Between 6 and max_pt.
+sample_axis_text_size <- function(n_samples, axis_px = 520, labels = NULL, max_pt = 14, max_label_px = 150){
+  size <- min(max_pt, axis_px / n_samples / 1.25)
+  if (!is.null(labels)) size <- min(size, fit_text_size(labels, max_label_px, max_pt))
+  max(6, size)
+}
+
+# Legend guide of the conditions under a plot (legend.position = "bottom"): the title above the entries, and as many entries per row
+# as fit in the width of the figure (measured), so that a legend of long condition names wraps instead of being cut.
+# aesthetic: "colour" or "fill"; text_pt: size of the legend texts; key_px: width of a key and of the space around it.
+condition_legend_guide <- function(conditions, width_px, aesthetic = "colour", text_pt = 14, key_px = 35){
+  entry_px <- max(text_width_px(conditions, text_pt)) + key_px
+  ncol <- max(1, min(length(conditions), floor((width_px - 40) / entry_px)))
+  guide <- list(ggplot2::guide_legend(ncol = ncol, title.position = "top", byrow = TRUE))
+  names(guide) <- aesthetic
+  do.call(ggplot2::guides, guide)
+}
+
+# Colours of n conditions, shared by the QC and DA reports (the same condition gets the same colour in both):
+# - up to 8: the Okabe-Ito palette, distinct for colour-blind readers and saturated enough for lines and points (its yellow, pale on
+#   a light background for small points, comes 7th);
+# - 9 to 12: ColorBrewer "Paired" (light and dark shades of 6 hues);
+# - more than 12: colours interpolated from "Paired".
+condition_colors <- function(n){
+  # Orange, sky blue, bluish green, blue, vermillion, reddish purple, yellow, grey
+  okabe_ito <- c("#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7", "#F0E442", "#999999")
+  if (n <= 8) okabe_ito[seq_len(n)]
+  else if (n <= 12) RColorBrewer::brewer.pal(n, "Paired")
+  else grDevices::colorRampPalette(RColorBrewer::brewer.pal(12, "Paired"))(n)
 }
 
 # Label "<arrow> <text>" (or "<text> <arrow>" with arrow_after = TRUE) as a plotmath expression, for annotate(..., parse = TRUE).
@@ -666,15 +728,15 @@ plot_pca_samples <- function(p, samples, title, subtitle = NULL, colors = NULL){
     g <- g + geom_point(size = 3.5)
   }
   g +
-    ggrepel::geom_text_repel(aes(label = sample), size = 4.5, colour = "grey30", max.overlaps = 20) +
-    labs(title = title, subtitle = subtitle,
+    ggrepel::geom_text_repel(aes(label = sample), size = 4, colour = "grey30", max.overlaps = 20) +
+    labs(title = title, subtitle = subtitle, colour = "Condition", shape = "Replicate",
          x = paste0("PC1 (", round(ve[1], 1), "%)"), y = paste0("PC2 (", round(ve[2], 1), "%)")) +
-    theme(plot.title = element_text(size = 22),
-          plot.subtitle = element_text(size = 16),
-          axis.title = element_text(size = 20),
-          axis.text = element_text(size = 18),
-          legend.title = element_text(size = 18),
-          legend.text = element_text(size = 16))
+    theme(plot.title = element_text(size = 18),
+          plot.subtitle = element_text(size = 14),
+          axis.title = element_text(size = 16),
+          axis.text = element_text(size = 14),
+          legend.title = element_text(size = 14),
+          legend.text = element_text(size = 13))
 }
 
 ###########
@@ -722,7 +784,7 @@ heatmap_proteins_in_rows <- function(n_proteins, n_samples, sample_px = 25){
 # limits: limits of the color scale, the values beyond having the color of the limit (NULL: range of the values).
 # label_size: size of the sample names.
 # Returns a patchwork object, to print or to give to plot_figure_as_html.
-plot_clustered_heatmap <- function(values, blank = NULL, title = "", fill_label = "", limits = NULL, colours = c("green", "yellow", "red"),
+plot_clustered_heatmap <- function(values, blank = NULL, title = "", subtitle = NULL, fill_label = "", limits = NULL, colours = c("green", "yellow", "red"),
                                    label_size = 12, proteins_in_rows = TRUE){
   values <- as.matrix(values)
   finite_rows <- apply(values, 1, function(x) all(is.finite(x)))
@@ -796,7 +858,8 @@ plot_clustered_heatmap <- function(values, blank = NULL, title = "", fill_label 
   }
 
   patchwork::wrap_plots(patchwork::plot_spacer(), top, left, heatmap, ncol = 2, widths = c(1, 8), heights = c(1, 7)) +
-    patchwork::plot_annotation(title = title, theme = theme(plot.title = element_text(size = 22)))
+    patchwork::plot_annotation(title = title, subtitle = subtitle,
+                               theme = theme(plot.title = element_text(size = 18), plot.subtitle = element_text(size = 14)))
 }
 
 # This function create a heatmap with a hierarchical clustering of proteins
