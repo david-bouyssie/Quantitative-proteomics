@@ -2056,7 +2056,7 @@ for (comparison in comparisons_to_display){
       is.finite(current_statDF$fc) & current_statDF$mean_intensity > 0 & current_statDF$fc > 0,]
   
     #Selecting the top 50 most significant proteins with the smallest pvalues
-    top_50_pval = current_statDF_MA %>% filter(significant==TRUE) %>% slice_min(pval, n = 50)
+    top_50_pval = current_statDF_MA %>% filter(significant==TRUE) %>% slice_min(pval, n = 50, with_ties = FALSE)
     
     # Creating MA plot with ggplot
     MA = ggplot(current_statDF_MA, aes(x=log10(mean_intensity), y=log2(fc))) +
@@ -2071,11 +2071,11 @@ for (comparison in comparisons_to_display){
       {if(!monochrome && !col_sig) scale_color_gradientn(colors = col_list, values = c(0, .5, 1))}+
       # automatic labeling of top 50 proteins by significance (manual labeling is not enabled)
       {if(!lblng_mnl) ggrepel::geom_text_repel(data = top_50_pval,aes(label=as.character(top_50_pval$Label)),
-                                              hjust=1,vjust=-1, size=3, box.padding = .15,max.overlaps = 10)}+
+                                              hjust=1,vjust=-1, size=4, box.padding = .15,max.overlaps = 10)}+
       {if(!lblng_mnl) labs(subtitle = "Top 50 significant hits were labeled.")} +
       # Manually labeling by accession number
       {if(lblng_mnl) ggrepel::geom_text_repel(aes(label = ifelse(current_statDF_MA$Accession %in% prtn_lbl_lst, as.character(current_statDF_MA$Label),'')), 
-                                              hjust=1,vjust=-1, size=3, box.padding = .15, max.overlaps = 10000)}+
+                                              hjust=1,vjust=-1, size=4, box.padding = .15, max.overlaps = 10000)}+
       # Stat.threshold.fc is already expressed as a log2 fold change
       geom_hline(yintercept=Stat.threshold.fc,linetype="dashed") +
       geom_hline(yintercept=-Stat.threshold.fc,linetype="dashed") +
@@ -2085,7 +2085,8 @@ for (comparison in comparisons_to_display){
       # Legend titles: significance in color and -log10(p-value) in transparency, or -log10(p-value) in color
       {if(col_sig) labs(color = "Significant", alpha = "-log10(pval)") else labs(color = "-log10(pval)")} +
       theme(legend.position = "right",
-        plot.title = element_text(size=22),
+        plot.title = element_text(size=26),
+        plot.subtitle = element_text(size=16),
         axis.title=element_text(size=24),
         axis.text=element_text(size=22),
         legend.text=element_text(size=16),
@@ -2130,6 +2131,9 @@ for (comparison in comparisons_to_display){
       Intensity <- log10(cstat_noNA$mean_intensity)
     }
     
+    # The 50 most significant proteins, labeled automatically
+    volcano_top_50 <- cstat_noNA %>% filter(significant == TRUE) %>% slice_min(pval, n = 50, with_ties = FALSE)
+
     # Creating a base volcano plot
     Volcano = ggplot(cstat_noNA, aes(x=log2(fc), y=-log10(as.numeric(cstat_noNA$pval))))
     
@@ -2151,17 +2155,21 @@ for (comparison in comparisons_to_display){
       # If coloring by significance
       {if(col_sig) scale_color_manual(values = sig_list)}+
       # Automatically labeling significant proteins
-      {if(!lblng_mnl) ggrepel::geom_text_repel(aes(label=ifelse(cstat_noNA$significant==T,as.character(cstat_noNA$Label),'')),
-                                              hjust=1,vjust=-1, size=3, box.padding = .15,max.overlaps = 15)}+
+      # Automatic labeling of the 50 most significant proteins (smallest p-values), as on the MA plot
+      {if(!lblng_mnl) ggrepel::geom_text_repel(data = volcano_top_50, aes(x = log2(fc), y = -log10(pval), label = as.character(Label)),
+                                              hjust=1,vjust=-1, size=4, box.padding = .15,max.overlaps = 15)}+
+      # In a caption below the plot: the top margin holds the group labels
+      {if(!lblng_mnl) labs(caption = "Top 50 significant hits were labeled.")} +
       # If manual labeling, label based on list of accession labels
       {if(lblng_mnl) ggrepel::geom_text_repel(aes(label = ifelse(cstat_noNA$Accession %in% prtn_lbl_lst, as.character(cstat_noNA$Label),'')), 
-                                              hjust=1,vjust=-1, size=3, box.padding = .15, max.overlaps = 10000)}+
+                                              hjust=1,vjust=-1, size=4, box.padding = .15, max.overlaps = 10000)}+
       ggtitle("")+
       xlab(paste0("log2(FC)"))+ 
       ylab(paste0('-log10(pval)'))+
       # Legend titles: significance in color and log10 intensity in transparency, or log10 intensity in color
       {if(col_sig) labs(color = "Significant", alpha = "log10(Intensity)") else labs(color = "log10(Intensity)")} +
       theme(plot.title = element_text(size=22),
+            plot.caption = element_text(size=16, hjust = 0),
             axis.title=element_text(size=18),
             axis.text=element_text(size=18),
             legend.text=element_text(size=16),
