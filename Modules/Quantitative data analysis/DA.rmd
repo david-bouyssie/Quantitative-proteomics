@@ -1164,8 +1164,8 @@ if(Imputation.MNAR.model == "gaussian"){
   cat(text_spec(paste0("Missing values of the ", sum(kept_rows), " proteins kept for the analysis were imputed with the noise model. The noise level of each sample is the ",
                        Imputation.MNAR.percentage, "% percentile of its observed intensities (log10: ", formatC(min(noise_model$noise_level)*log10(2), format = "f", digits = 2), " to ",
                        formatC(max(noise_model$noise_level)*log10(2), format = "f", digits = 2), "). For each protein and condition with missing values, values are drawn around these levels with a standard deviation of ",
-                       formatC(noise_model$noise_sd, format = "f", digits = 2), " log2 (", formatC(noise_model$noise_sd*log10(2), format = "f", digits = 2),
-                       " log10), estimated within conditions on ", noise_model$n_rows, " low-intensity protein/condition measurements. The imputation uses a fixed seed and is reproducible."),italic=T,font_size="12px"))
+                       formatC(noise_model$noise_sd*log10(2), format = "f", digits = 2),
+                       " (log10), estimated within conditions on ", noise_model$n_rows, " low-intensity protein/condition measurements. The imputation uses a fixed seed and is reproducible."),italic=T,font_size="12px"))
 }else{
   cat(text_spec(paste0("Missing values of the ", sum(kept_rows), " proteins kept for the analysis were replaced by the ", Imputation.MNAR.percentage,
                        "% percentile of the observed intensities of each sample."),italic=T,font_size="12px"))
@@ -3204,13 +3204,13 @@ if (!imputation) {
     random_draws <- TRUE
     intensity_criterion <- ""
     if (Imputation.MCAR.intensity.cutoff %in% c("auto", "Q1") && !is.null(mcar_cutoff) && is.finite(mcar_cutoff$cutoff)) {
-      intensity_criterion <- paste0(", with a mean log2 intensity of at least ", fmt(mcar_cutoff$cutoff), " in this condition (",
+      intensity_criterion <- paste0(", with a mean log10 intensity of at least ", fmt(mcar_cutoff$cutoff * log10(2)), " in this condition (",
                                     if (Imputation.MCAR.intensity.cutoff == "Q1") "first quartile of the intensities" else "cutoff estimated from the missing-value rate against the intensity", "),")
     }
     mv_text <- c(mv_text, paste0(
       "Missing values of proteins quantified in at least ", Imputation.MCAR.min.obs, " biological replicates of a condition and identified by MS/MS in at least ",
       Imputation.MCAR.min.MSMS, " of them", intensity_criterion, " were considered missing at random.",
-      " They were imputed on the log2 scale from the ", knn_result$n_neighbours, " protein/condition measurements of closest mean intensity (among those with at least ",
+      " They were imputed on the log10 scale from the ", knn_result$n_neighbours, " protein/condition measurements of closest mean intensity (among those with at least ",
       Imputation.knn.min.occurrences, " observed values): the mean of the protein was kept, and the imputed values were drawn so that the standard deviation of the protein",
       " exactly matched the median standard deviation of these neighbours, multiplied by &radic;(n/k) (n biological replicates, k observed values) as the imputed values are then counted as measured."))
   }
@@ -3222,10 +3222,13 @@ if (!imputation) {
   }
   mv_text <- c(mv_text, paste0(mnar_scope, " were considered missing not at random (below the detection limit)."))
   if (Imputation.MNAR.model == "gaussian") {
+    # Coefficient of variation of the linear intensities equivalent to the noise sd (log-normal relation; the model is in log2)
+    noise_cv <- sqrt(exp((noise_model$noise_sd * log(2))^2) - 1)
     mv_text <- c(mv_text, paste0(
-      "They were replaced by values drawn on the log2 scale around the ", Imputation.MNAR.percentage, "th percentile of the observed intensities of each sample, with a standard deviation of ",
-      fmt(noise_model$noise_sd), ", the pooled within-condition standard deviation of the ", noise_model$n_rows,
-      " low-intensity protein/condition measurements (mean between the ", Imputation.MNAR.percentage, "th and 25th percentiles of all the intensities).",
+      "They were replaced by values drawn on the log10 scale around the ", Imputation.MNAR.percentage, "th percentile of the observed intensities of each sample, with a standard deviation of ",
+      fmt(noise_model$noise_sd * log10(2)), " (equivalent to a CV of about ", fmt(noise_cv * 100, 0), "% for log-normal intensities)",
+      ", the mean of the within-condition standard deviations of the ", noise_model$n_rows,
+      " low-intensity protein/condition measurements (those with a mean intensity between the ", Imputation.MNAR.percentage, "th and 25th percentiles of all the intensities).",
       " Unlike a classical random draw, the values drawn for a protein in a condition were adjusted to have exactly this standard deviation (all within &plusmn;2 standard deviations),",
       " and only the values of the missing positions were used, the observed values being kept."))
   } else {

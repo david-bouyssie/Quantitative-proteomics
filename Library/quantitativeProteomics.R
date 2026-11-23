@@ -496,8 +496,9 @@ log2_intensity_matrix <- function(df){
 
 # This function estimates the background noise model used to impute missing values (MNAR), on the log2 scale.
 # - Noise level of a sample: the given percentile of its observed values.
-# - Noise sd: pooled within-condition sd of the protein-condition rows with at least 2 observed values whose mean lies
-#   between the given percentile and the upper percentile (25%) of all the observed values.
+# - Noise sd: mean of the within-condition sds of the protein-condition rows with at least 2 observed values whose mean lies
+#   between the given percentile and the upper percentile (25%) of all the observed values (a pooled sd would be dominated by
+#   the few rows with an outlying value).
 estimate_noise_model <- function(df, groups, percentile, rows = NULL, upper_percentile = 0.25, min_rows = 100){
 
   # Inputs :
@@ -522,12 +523,12 @@ estimate_noise_model <- function(df, groups, percentile, rows = NULL, upper_perc
     stop("Imputation: no observed value in sample(s) ", paste(colnames(kept)[is.na(noise_level)], collapse = ", "), " among the proteins kept for the analysis.", call. = FALSE)
   }
 
-  # Noise sd: pooled within-condition sd of the low-intensity protein-condition rows
+  # Noise sd: mean of the within-condition sds of the low-intensity protein-condition rows
   stats <- do.call(rbind, lapply(unique(groups), function(g){
     Y <- kept[, groups == g, drop = FALSE]
     n <- rowSums(!is.na(Y)); ok <- n >= 2
     m <- rowMeans(Y[ok, , drop = FALSE], na.rm = TRUE)
-    data.frame(mean = m, ss = rowSums((Y[ok, , drop = FALSE] - m)^2, na.rm = TRUE), df = n[ok] - 1)
+    data.frame(mean = m, sd = sqrt(rowSums((Y[ok, , drop = FALSE] - m)^2, na.rm = TRUE) / (n[ok] - 1)))
   }))
   range <- quantile(kept[!is.na(kept)], c(percentile, upper_percentile), names = FALSE)
   in_range <- stats$mean >= range[1] & stats$mean <= range[2]
@@ -536,7 +537,7 @@ estimate_noise_model <- function(df, groups, percentile, rows = NULL, upper_perc
          min_rows, " are needed). Use the percentile model, or disable the imputation.", call. = FALSE)
   }
 
-  list(noise_level = noise_level, noise_sd = sqrt(sum(stats$ss[in_range]) / sum(stats$df[in_range])), n_rows = sum(in_range), range = range)
+  list(noise_level = noise_level, noise_sd = mean(stats$sd[in_range]), n_rows = sum(in_range), range = range)
 }
 
 # This function imputes missing values with background noise, using a model returned by estimate_noise_model().

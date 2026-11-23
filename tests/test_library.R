@@ -40,8 +40,8 @@ z <- sapply(2:6, function(k) { set.seed(k); draw_exact_sd(k) })
 check("draw_exact_sd(): mean 0, sd 1 and values within +/- 2", all(sapply(z, function(v) abs(mean(v)) < 1e-12 && abs(sd(v) - 1) < 1e-12 && all(abs(v) <= 2))))
 check("draw_exact_sd(1) = 0", draw_exact_sd(1) == 0)
 model <- estimate_noise_model(df, cond, 0.05, rows = keep)
-check("estimate_noise_model(): noise sd of the example (0.822 log2 from 6,564 protein/condition rows)",
-      abs(model$noise_sd - 0.822197) < 1e-5 && model$n_rows == 6564, sprintf("sd %.6f, rows %d", model$noise_sd, model$n_rows))
+check("estimate_noise_model(): noise sd of the example (mean of the row sds, 0.563 log2 from 6,564 protein/condition rows)",
+      abs(model$noise_sd - 0.563334) < 1e-5 && model$n_rows == 6564, sprintf("sd %.6f, rows %d", model$noise_sd, model$n_rows))
 check("estimate_noise_model(): noise level = 5% percentile of each sample",
       isTRUE(all.equal(unname(model$noise_level), unname(apply(X[keep, ], 2, quantile, 0.05, na.rm = TRUE)))))
 check("estimate_noise_model(): percentile outside ]0, 0.10] stops", grepl("at most 10", error_message(estimate_noise_model(df, cond, 0.2, rows = keep))))

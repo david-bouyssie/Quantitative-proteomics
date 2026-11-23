@@ -164,7 +164,7 @@ The percentile-based model consists in replacing missing values by a chosen perc
 <br/>
 The gaussian-based model (`Imputation.MNAR.model=gaussian`) replaces missing values by values drawn around the background noise level of each sample. It works on log2 intensities:
 - The noise level of a sample is the `Imputation.MNAR.percentile` percentile of its observed intensities (it must be greater than 0 and at most 10; 5 in the example).
-- The noise standard deviation is estimated on the data: it is the pooled within-condition standard deviation of the proteins whose mean intensity in a condition lies between this percentile and the 25th percentile of all the observed intensities (at least 2 observed values in the condition). At least 100 such protein/condition measurements are required.
+- The noise standard deviation is estimated on the data: it is the mean of the within-condition standard deviations of the proteins whose mean intensity in a condition lies between this percentile and the 25th percentile of all the observed intensities (at least 2 observed values in the condition). At least 100 such protein/condition measurements are required.
 - For each protein and each condition with at least one missing value, one value per sample of the condition is drawn around the noise level of the sample, in such a way that the standard deviation of the drawn set is exactly the noise standard deviation and that no value is further than 2 standard deviations. The observed values are kept, and only the missing ones are replaced.
 
 A condition where a protein is entirely missing therefore gets values with a realistic variability, and not nearly identical values.
