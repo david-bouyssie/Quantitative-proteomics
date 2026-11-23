@@ -104,6 +104,8 @@ Here you can find a description of all parameters and possible values:
 
 | Parameter | Function | Values |
 | --------- | --------- | --------- |
+| Intensity.type | Optional, only used in the Materials and methods text at the top of the report: the Proline intensities given (raw abundances exported from Proline, or abundances computed with its quantification post-processing). If absent, the text does not describe them | raw_abundance / abundance |
+| Intensity.ibaq | Optional, only used in the Materials and methods text: the intensities were converted to iBAQ values (F if absent) | T / F |
 | Normalisation | Should intensities be normalized or not ? | T / F |
 | Proteins.for.normalization | Proteins on which the normalization factors are computed, given by accession or Id and separated by ";" (e.g. a background proteome or housekeeping proteins). Entries not found are listed in the report and ignored; the report stops if none is found. Empty: the proteins kept for the analysis are used | Example : 2A5D_YEAST;2AAA_YEAST;1556122 |
 | Excluded.samples | Samples removed from the analysis, separated by ";", named as in the File column of the experimental design (with or without the "Intensity_" prefix). Their rows of the experimental design and all their columns of the table are removed before any check or processing, so they are absent from the report and the output table. The report stops if a name is not in the experimental design or if a compared condition is left with fewer than 2 replicates. Optional, empty: all the samples are used | Example : 10amol_1;Intensity_50amol_3 |

@@ -152,6 +152,9 @@ parameters <- read.csv(params$parameters, header=T, sep="=")
 
 ## Parsing parameters ##
 
+# Version of the R analysis (metadata table, output table and Materials and methods)
+analysis_version <- "2.60"
+
 # T or F using imputation
 imputation <- !as.logical(parameters["No.imputed.values",])
 
@@ -372,6 +375,15 @@ data <- data %>% mutate(Label=Gene_name) %>%
 
 <br>
 <div id="banner">
+# **Materials and methods**
+</div>
+<br>
+
+<!-- Filled at the end of the report (methods_section chunk), when all the run-specific values are known -->
+<div id="methods-placeholder"></div>
+
+<br>
+<div id="banner">
 # **Metadata**
 </div>
 <br> 
@@ -383,7 +395,7 @@ data <- data %>% mutate(Label=Gene_name) %>%
 
 ## Parsing to create a data frame in html formatting ##
 
-kable(data.frame(c("R-Analysis Version", "File", "Number of rows", "Origin File", "Date"),c("2.60",params$quant_df,nrow(data),params$origin_file,format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
+kable(data.frame(c("R-Analysis Version", "File", "Number of rows", "Origin File", "Date"),c(analysis_version,params$quant_df,nrow(data),params$origin_file,format(Sys.time(), '%y-%m-%d %H:%M:%S'))),format="html",col.names = NULL,booktabs = T, caption = "Analysis") %>%
           kable_styling(bootstrap_options="condensed",full_width = F,position = "left") %>%
           column_spec(1, bold = T)
 ```
@@ -1732,6 +1744,9 @@ precv_statDF <- statDF
 output_t <- data[c("Id", "Accession", "Gene_name", "Label", "Specific_peptides")]
 output_t <- dplyr::left_join(output_t, global_imputed_abundance, by = "Id")
 
+# Number of proteins tested in each comparison (Materials and methods)
+methods_tested_counts <- c()
+
 # Statistic computing for each pairwise condition comparison
 for (comparison in comparisons_to_display){
   
@@ -1745,6 +1760,7 @@ for (comparison in comparisons_to_display){
 
   # Extract filtered outputs
   filtered_data <- as.data.frame(cond_fltr[[1]])
+  methods_tested_counts[comparison] <- nrow(filtered_data)
   mean_abundance_repbio <- as.data.frame(cond_fltr[[2]])
 
   # Keep only imputed abundance rows that passed the comparison-specific filter
@@ -2528,7 +2544,7 @@ DT::datatable(matrix(),
 analysis_metadata <- data.frame(
   Field = c("R-Analysis Version", "File", "Number of rows", "Origin File", "Date"),
   Value = c(
-    "2.60",
+    analysis_version,
     params$quant_df,
     nrow(data),
     params$origin_file,
@@ -3114,6 +3130,168 @@ openxlsx::saveWorkbook(
   overwrite = TRUE
 )
 
+```
+
+
+```{r methods_section, results='asis'}
+
+## Materials and methods: text describing the analysis of this run, to be copied into a paper. It is written at the end of the ##
+## report, when all the run-specific values are known, and moved by a script to the top of the report (methods-placeholder). ##
+## The text is plain ASCII with HTML entities (the browser converts them when the text is copied). ##
+
+fmt <- function(x, digits = 2) formatC(x, format = "f", digits = digits)
+enumerate <- function(x) if (length(x) <= 1) x else paste0(paste(x[-length(x)], collapse = ", "), " and ", x[length(x)])
+optional_parameter <- function(name) if (name %in% rownames(parameters)) trimws(as.character(parameters[name, ])) else ""
+
+# Biological replicates of each condition, and technical replicates
+bio_reps <- unique(expDesign[c("repBio", "Condition")])
+n_bio <- table(factor(bio_reps$Condition, levels = group_ids))
+has_technical_replicates <- nrow(expDesign) > nrow(bio_reps)
+sample_word <- if (has_technical_replicates) "run" else "sample"
+
+methods <- list()
+
+# 1. Data
+intensity_type <- optional_parameter("Intensity.type")
+intensity_ibaq <- toupper(optional_parameter("Intensity.ibaq")) %in% c("T", "TRUE")
+tool_text <- paste0("analysed with the Quantitative-proteomics R scripts (version ", analysis_version,
+                    ", https://github.com/david-bouyssie/Quantitative-proteomics) in R ", R.version$major, ".", R.version$minor, ".")
+ibaq_text <- if (intensity_ibaq) ", converted to iBAQ values (abundance divided by the number of theoretically observable peptides)" else ""
+data_text <- if (intensity_type == "raw_abundance") {
+  paste0("Protein raw abundances were exported from Proline", ibaq_text, " and ", tool_text)
+} else if (intensity_type == "abundance") {
+  paste0("Protein abundances were computed with the quantification post-processing of Proline", ibaq_text, " and ", tool_text)
+} else {
+  paste0("Protein intensities were ", tool_text)
+}
+data_text <- paste0(data_text, " The analysis included ", length(group_ids), " conditions ", if (length(unique(as.integer(n_bio))) == 1) {
+  paste0("of ", n_bio[[1]], " biological replicates each.")
+} else {
+  paste0("(", enumerate(paste0(names(n_bio), ": ", as.integer(n_bio))), " biological replicates).")
+})
+if (length(Excluded.samples) > 0) {
+  data_text <- paste0(data_text, " ", if (length(Excluded.samples) > 1) "Samples " else "Sample ", enumerate(Excluded.samples),
+                      if (length(Excluded.samples) > 1) " were" else " was", " excluded from the analysis.")
+}
+methods$data <- data_text
+
+# 2. Filtering, normalization and technical replicates
+filter_obs <- as.numeric(as.character(parameters["Filter.threshold.obs", ]))
+filter_ms <- as.numeric(as.character(parameters["Filter.threshold.ms", ]))
+processing_text <- paste0("Proteins with at least one specific peptide, identified by MS/MS in at least ", filter_ms, " ", sample_word, "s and quantified in at least ",
+                          fmt(filter_obs * 100, 0), "% of the biological replicates of at least one condition were kept for the analysis (", length(kept_ids), " proteins).")
+if (normalization) {
+  processing_text <- paste0(processing_text, " Intensities were normalized by dividing each ", sample_word, " by the median of its protein intensity ratios to a reference ",
+                            sample_word, " (the ", sample_word, " with the fewest missing values), computed on ",
+                            if (length(Normalization_list) > 0) paste0(sum(normalization_rows), " selected proteins") else "the proteins kept for the analysis", ".")
+} else {
+  processing_text <- paste0(processing_text, " Intensities were not normalized.")
+}
+if (has_technical_replicates) {
+  processing_text <- paste0(processing_text, " The intensities of the technical replicates of each biological replicate were then averaged.")
+}
+methods$processing <- processing_text
+
+# 3. Missing values
+if (!imputation) {
+  mv_text <- "Missing values were not imputed: the fold changes and the statistical tests used the observed values only."
+} else {
+  mv_text <- character(0)
+  random_draws <- Imputation.MNAR.model == "gaussian"
+
+  # MCAR values imputed from the neighbours
+  if (imputation_method == "knn") {
+    random_draws <- TRUE
+    intensity_criterion <- ""
+    if (Imputation.MCAR.intensity.cutoff %in% c("auto", "Q1") && !is.null(mcar_cutoff) && is.finite(mcar_cutoff$cutoff)) {
+      intensity_criterion <- paste0(", with a mean log2 intensity of at least ", fmt(mcar_cutoff$cutoff), " in this condition (",
+                                    if (Imputation.MCAR.intensity.cutoff == "Q1") "first quartile of the intensities" else "cutoff estimated from the missing-value rate against the intensity", "),")
+    }
+    mv_text <- c(mv_text, paste0(
+      "Missing values of proteins quantified in at least ", Imputation.MCAR.min.obs, " biological replicates of a condition and identified by MS/MS in at least ",
+      Imputation.MCAR.min.MSMS, " of them", intensity_criterion, " were considered missing at random.",
+      " They were imputed on the log2 scale from the ", knn_result$n_neighbours, " protein/condition measurements of closest mean intensity (among those with at least ",
+      Imputation.knn.min.occurrences, " observed values): the mean of the protein was kept, and the imputed values were drawn so that the standard deviation of the protein",
+      " exactly matched the median standard deviation of these neighbours, multiplied by &radic;(n/k) (n biological replicates, k observed values) as the imputed values are then counted as measured."))
+  }
+
+  # MNAR values imputed with the background noise
+  mnar_scope <- if (imputation_method == "knn") "The other missing values" else "Missing values"
+  if (is.finite(Imputation.MNAR.max.obs)) {
+    mnar_scope <- paste0(mnar_scope, " of proteins quantified in at most ", Imputation.MNAR.max.obs, " biological replicate", if (Imputation.MNAR.max.obs > 1) "s" else "", " of a condition")
+  }
+  mv_text <- c(mv_text, paste0(mnar_scope, " were considered missing not at random (below the detection limit)."))
+  if (Imputation.MNAR.model == "gaussian") {
+    mv_text <- c(mv_text, paste0(
+      "They were replaced by values drawn on the log2 scale around the ", Imputation.MNAR.percentage, "th percentile of the observed intensities of each sample, with a standard deviation of ",
+      fmt(noise_model$noise_sd), ", the pooled within-condition standard deviation of the ", noise_model$n_rows,
+      " low-intensity protein/condition measurements (mean between the ", Imputation.MNAR.percentage, "th and 25th percentiles of all the intensities).",
+      " Unlike a classical random draw, the values drawn for a protein in a condition were adjusted to have exactly this standard deviation (all within &plusmn;2 standard deviations),",
+      " and only the values of the missing positions were used, the observed values being kept."))
+  } else {
+    mv_text <- c(mv_text, paste0("They were replaced by the ", Imputation.MNAR.percentage, "th percentile of the observed intensities of each sample."))
+  }
+  if (is.finite(Imputation.MNAR.max.obs)) mv_text <- c(mv_text, "The other missing values were left missing.")
+  if (random_draws) mv_text <- c(mv_text, "The imputation was made reproducible with a fixed random seed per protein and condition.")
+  mv_text <- paste(mv_text, collapse = " ")
+}
+methods$missing_values <- mv_text
+
+# 4. Statistical testing
+scale_text <- paste0(if (Test.log) "log10-transformed" else "untransformed", if (imputation) " intensities (after imputation)" else " intensities")
+tested_text <- paste0("the proteins meeting the filtering criteria in the two compared conditions (", enumerate(paste0(methods_tested_counts, " for ", names(methods_tested_counts))), ")")
+sided_text <- switch(alternative, "two.sided" = "two-sided", "greater" = "one-sided (greater)", "less" = "one-sided (less)", alternative)
+pairing_text <- if (Test.paired) paste0(" Replicates were paired by ", if (Test.paired.by == "name") "name" else "their order in the experimental design", ".") else ""
+
+if (Test.type %in% c("anova", "kruskall")) {
+  test_text <- paste0("Proteins were first tested over all the conditions with a ", if (Test.type == "anova") "one-way ANOVA" else "Kruskal-Wallis test", " on ", scale_text, ".")
+  if (Test.anova.gating == "bh") {
+    test_text <- paste0(test_text, " Only the proteins with a Benjamini-Hochberg adjusted global p-value &le; ", Stat.threshold.significance, " were tested in the comparisons.")
+  }
+  pairwise_test <- if (Test.type == "anova") paste0("a two-sided ", if (Test.var.equal) "Student's" else "Welch's", " t-test") else "a two-sided Wilcoxon rank-sum test"
+  test_text <- paste0(test_text, " Each comparison was then tested on ", tested_text, ", ", switch(Test.posthoc.procedure,
+    "tukey" = "with Tukey's honest significant difference test.",
+    "none" = paste0("with ", pairwise_test, ", not corrected over the comparisons."),
+    paste0("with ", pairwise_test, ", the p-values of each protein being corrected over its comparisons with the ", if (Test.posthoc.procedure == "holm") "Holm" else "Bonferroni", " procedure.")))
+} else {
+  test_name <- switch(Test.type,
+    "t.test" = paste0(sided_text, " ", if (Test.paired) "paired t-test" else if (Test.var.equal) "Student's t-test" else "Welch's t-test"),
+    "limma" = paste0("moderated t-test (limma ", as.character(packageVersion("limma")), ") with an intensity-dependent prior variance (limma-trend) and a robust empirical Bayes moderation",
+                     if (Test.paired) ", the pair of replicates being a factor of the linear model" else ""),
+    "wilcoxon" = paste0(sided_text, " Wilcoxon ", if (Test.paired) "signed-rank" else "rank-sum", " test"),
+    Test.type)
+  test_text <- paste0("For each comparison, ", tested_text, " were tested on ", scale_text, " with a ", test_name, ".")
+}
+test_text <- paste0(test_text, pairing_text)
+
+# Fold change, multiple testing correction and significance
+test_text <- paste0(test_text, " Fold changes were computed as ", if (Test.paired) "the geometric mean of the ratios of the paired replicates" else "the ratio of the mean intensities of the two conditions",
+                    if (imputation) " (after imputation)" else "", ".")
+adjusted <- Test.adjust.procedure != "none"
+if (adjusted) {
+  procedure_name <- switch(Test.adjust.procedure, "BH" = "Benjamini-Hochberg", "ABH" = "adaptive Benjamini-Hochberg", Test.adjust.procedure)
+  test_text <- paste0(test_text, " P-values were adjusted over all the proteins tested in each comparison with the ", procedure_name, " procedure.")
+}
+test_text <- paste0(test_text, " Proteins with ", if (adjusted) "an adjusted p-value" else "a p-value", " &le; ", Stat.threshold.significance,
+                    if (Stat.threshold.fc > 0) paste0(" and an absolute log2 fold change &ge; ", Stat.threshold.fc, " (", fmt(2^Stat.threshold.fc, 1), "-fold)") else "",
+                    " were considered differentially abundant.")
+methods$testing <- test_text
+
+# Printing the text (moved to the top of the report), with a button copying it to the clipboard
+cat(paste0(
+  '<div id="methods-text" style="font-size: 14px; max-width: 1000px;">',
+  paste0("<p>", unlist(methods), "</p>", collapse = "\n"),
+  '</div>\n',
+  '<p id="methods-copy" class="no-print"><button type="button" onclick="navigator.clipboard.writeText(document.getElementById(\'methods-text\').innerText)">Copy text</button> ',
+  '<i style="font-size: 12px;">Generated from the parameters of this run: please check it before use.</i></p>\n',
+  '<script>\n',
+  '(function() {\n',
+  '  var placeholder = document.getElementById("methods-placeholder");\n',
+  '  var text = document.getElementById("methods-text");\n',
+  '  var copy = document.getElementById("methods-copy");\n',
+  '  if (placeholder && text && copy) { placeholder.appendChild(text); placeholder.appendChild(copy); }\n',
+  '})();\n',
+  '</script>\n'))
 ```
 
 
