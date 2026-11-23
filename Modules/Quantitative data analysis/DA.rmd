@@ -1882,9 +1882,10 @@ for (comparison in comparisons_to_display){
         row.names(data_limma) <- row.names(unique_rownames)
         }
     
-      # Fit Limma model and apply empirical Bayes moderation
+      # Fit Limma model and apply empirical Bayes moderation (limma-trend): the prior variance depends on the mean intensity of the protein,
+      # as low intensity proteins vary more; robust: proteins with outlier variances (e.g. some imputed ones) do not distort the prior
       fit <- lmFit(data_limma, design)
-      fit <- eBayes(fit)
+      fit <- eBayes(fit, trend = TRUE, robust = TRUE)
   
       # Extract all Limma results
       alllimma<-topTable(fit, coef=2, number=Inf, sort.by="none")
